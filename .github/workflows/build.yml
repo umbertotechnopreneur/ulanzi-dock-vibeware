@@ -1,0 +1,71 @@
+# VBWR B
+# Project: UlanziDock VibeWare version
+# Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+# Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+# VibeWare is Human intent, AI, and plenty of tokens ;-)
+# Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
+# AI Versions: Tools and models may vary by contributor and execution environment.
+# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+# Copyright (c) 2026 Umberto Giacobbi
+# SPDX-License-Identifier: MIT
+# License: MIT - see LICENSE
+# Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+# VBWR E
+
+name: Build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            label: windows-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add Rust target
+        shell: pwsh
+        run: rustup target add ${{ matrix.target }}
+      - name: Build standalone EXE
+        shell: pwsh
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Check CLI
+        shell: pwsh
+        run: |
+          & "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" themes
+          & "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" --help
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" package/
+          Copy-Item README.md,LICENSE,docs/ulanzi-dock-vibeware-guide-v1.pdf package/
+          Compress-Archive -Path package/* -DestinationPath "ulanzi-dock-vibeware-${{ matrix.label }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ulanzi-dock-vibeware-${{ matrix.label }}
+          path: ulanzi-dock-vibeware-${{ matrix.label }}.zip
+
+  portable-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile source
+        run: cargo check --locked
