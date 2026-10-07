@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI, and plenty of tokens ;-)
+ * VibeWare is Human intent. AI implementation. Accountable human review.
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -15,7 +15,7 @@
 
 use crate::{
     art,
-    model::{PageConfig, Theme, CLOCK_KEY, KEY_COUNT},
+    model::{PageConfig, Theme, CLOCK_KEY, KEY_COUNT, NEXT_KEY},
 };
 use anyhow::{Context, Result};
 use hidapi::{HidApi, HidDevice};
@@ -74,9 +74,23 @@ impl Dock {
     // theme: selected artwork family.
     // held: pressed key to draw; all other keys use up artwork.
     // Errors: image, archive, or USB write failure.
-    pub fn show(&self, page: &PageConfig, theme: Theme, held: Option<usize>) -> Result<()> {
-        let archive = make_archive(page, theme, held)?;
-        self.send_file(0x0001, &archive)
+    pub fn show(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        held: Option<usize>,
+        enabled: bool,
+        status_display: bool,
+    ) -> Result<()> {
+        let archive = make_archive(page, theme, held, enabled, status_display)?;
+        if status_display {
+            self.background()?;
+        }
+        self.send_file(0x0001, &archive)?;
+        if status_display {
+            self.background()?;
+        }
+        Ok(())
     }
 
     // Update only the pressed or released display key. Page changes still use show().
@@ -87,9 +101,42 @@ impl Dock {
         theme: Theme,
         index: usize,
         pressed: bool,
+        enabled: bool,
     ) -> Result<()> {
-        let archive = make_key_archive(page, theme, index, pressed)?;
+        let archive = make_key_archive(page, theme, index, pressed, enabled)?;
         self.send_file(0x000d, &archive)
+    }
+
+    // A focus change replaces only the twelve application keys, preserving
+    // NEXT PAGE and the clock. No updates are sent while availability is stable.
+    pub fn refresh_availability(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        held: Option<usize>,
+        enabled: bool,
+        status_display: bool,
+    ) -> Result<()> {
+        let mut keys = (0..CLOCK_KEY)
+            .filter(|&i| i != NEXT_KEY)
+            .collect::<Vec<_>>();
+        if status_display {
+            keys.push(CLOCK_KEY);
+        }
+        let archive = make_archive_for_keys(page, theme, held, &keys, enabled, status_display)?;
+        self.send_file(0x000d, &archive)?;
+        if status_display {
+            self.background()?;
+        }
+        Ok(())
+    }
+
+    // Keep the wide panel in custom-background mode without clock overlays.
+    // Use the same ASCII field encoding as clock mode. A binary mode byte can
+    // leave native statistic overlays visible on the owner's firmware.
+    pub fn background(&self) -> Result<()> {
+        let payload = b"2|0|0|00:00:00|0";
+        self.send_packet(0x0006, payload, payload.len() as u32)
     }
 
     // Errors: clock encoding or USB write failure.
@@ -182,8 +229,21 @@ impl Dock {
 // theme: selected artwork family.
 // held: currently pressed key, if any.
 // Errors: PNG or ZIP generation failure; archive boundary retry exhaustion.
-pub fn make_archive(page: &PageConfig, theme: Theme, held: Option<usize>) -> Result<Vec<u8>> {
-    make_archive_for_keys(page, theme, held, &(0..KEY_COUNT).collect::<Vec<_>>())
+pub fn make_archive(
+    page: &PageConfig,
+    theme: Theme,
+    held: Option<usize>,
+    enabled: bool,
+    status_display: bool,
+) -> Result<Vec<u8>> {
+    make_archive_for_keys(
+        page,
+        theme,
+        held,
+        &(0..KEY_COUNT).collect::<Vec<_>>(),
+        enabled,
+        status_display,
+    )
 }
 
 // Build an additive archive containing exactly one ordinary display key.
@@ -192,12 +252,20 @@ pub fn make_key_archive(
     theme: Theme,
     index: usize,
     pressed: bool,
+    enabled: bool,
 ) -> Result<Vec<u8>> {
     anyhow::ensure!(
         index < CLOCK_KEY,
         "key {index} is not an ordinary display key"
     );
-    make_archive_for_keys(page, theme, pressed.then_some(index), &[index])
+    make_archive_for_keys(
+        page,
+        theme,
+        pressed.then_some(index),
+        &[index],
+        enabled,
+        false,
+    )
 }
 
 fn make_archive_for_keys(
@@ -205,6 +273,8 @@ fn make_archive_for_keys(
     theme: Theme,
     held: Option<usize>,
     keys: &[usize],
+    enabled: bool,
+    status_display: bool,
 ) -> Result<Vec<u8>> {
     let archive_id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
@@ -212,14 +282,20 @@ fn make_archive_for_keys(
     let pictures = keys
         .iter()
         .copied()
-        .map(|i| art::render(theme, page, i, held == Some(i)))
+        .map(|i| {
+            if i == CLOCK_KEY && status_display {
+                art::render_status(theme, page, enabled)
+            } else {
+                art::render_available(theme, page, i, held == Some(i), enabled)
+            }
+        })
         .collect::<Result<Vec<_>>>()?;
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut base = ZipWriter::new(Cursor::new(Vec::new()));
     let mut manifest = Map::new();
     for (&index, picture) in keys.iter().zip(pictures.iter()) {
         // New names make the firmware load each replacement icon.
-        let name = if index == CLOCK_KEY {
+        let name = if index == CLOCK_KEY && !status_display {
             String::new()
         } else {
             let name = format!("Images/key-{index:02}-{archive_id:x}.png");
@@ -228,10 +304,11 @@ fn make_archive_for_keys(
             name
         };
         let position = format!("{}_{}", index % 5, index / 5);
-        manifest.insert(
-            position,
-            json!({"State":0,"ViewParam":[{"Text":"","Icon":name}]}),
-        );
+        let mut entry = json!({"State":0,"ViewParam":[{"Text":"","Icon":name}]});
+        if index == CLOCK_KEY && status_display {
+            entry["SmallViewMode"] = json!(2);
+        }
+        manifest.insert(position, entry);
     }
     base.start_file("manifest.json", options)?;
     base.write_all(&serde_json::to_vec(&Value::Object(manifest))?)?;
@@ -268,7 +345,7 @@ mod tests {
     #[test]
     fn full_layout_contains_thirteen_icons_and_safe_boundaries() -> Result<()> {
         let page = &Config::default().pages[0];
-        let bytes = make_archive(page, Theme::DarkClassic, Some(4))?;
+        let bytes = make_archive(page, Theme::DarkClassic, Some(4), true, false)?;
         assert!((1016..bytes.len())
             .step_by(PACKET)
             .all(|n| bytes[n] != 0 && bytes[n] != 0x7c));
@@ -301,7 +378,7 @@ mod tests {
         let page = &Config::default().pages[0];
         let mut names = Vec::new();
         for _ in 0..2 {
-            let data = make_archive(page, Theme::LightAbstract, None)?;
+            let data = make_archive(page, Theme::LightAbstract, None, true, false)?;
             let mut zip = zip::ZipArchive::new(Cursor::new(data))?;
             let mut manifest = String::new();
             zip.by_name("manifest.json")?
@@ -318,7 +395,7 @@ mod tests {
         let page = &Config::default().pages[0];
         let mut images = Vec::new();
         for pressed in [false, true] {
-            let bytes = make_key_archive(page, Theme::LightAbstract, 4, pressed)?;
+            let bytes = make_key_archive(page, Theme::LightAbstract, 4, pressed, true)?;
             assert!((1016..bytes.len())
                 .step_by(PACKET)
                 .all(|n| bytes[n] != 0 && bytes[n] != 0x7c));
@@ -339,7 +416,7 @@ mod tests {
             images.push(png);
         }
         assert_ne!(images[0], images[1]);
-        assert!(make_key_archive(page, Theme::LightAbstract, CLOCK_KEY, false).is_err());
+        assert!(make_key_archive(page, Theme::LightAbstract, CLOCK_KEY, false, true).is_err());
         Ok(())
     }
 
@@ -347,13 +424,78 @@ mod tests {
     fn every_default_page_and_theme_can_be_packaged() -> Result<()> {
         for page in &Config::default().pages {
             for theme in Theme::ALL {
-                let data = make_archive(page, theme, None)?;
+                let data = make_archive(page, theme, None, true, false)?;
                 assert!(data.starts_with(b"PK"));
                 assert!((1016..data.len())
                     .step_by(PACKET)
                     .all(|offset| data[offset] != 0 && data[offset] != 0x7c));
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn inactive_focus_update_is_grayscale_and_preserves_navigation_and_clock() -> Result<()> {
+        let page = &Config::default().pages[1];
+        let keys = (0..CLOCK_KEY)
+            .filter(|&i| i != NEXT_KEY)
+            .collect::<Vec<_>>();
+        let bytes = make_archive_for_keys(page, Theme::CyberpunkNeon, None, &keys, false, false)?;
+        assert!((1016..bytes.len())
+            .step_by(PACKET)
+            .all(|n| bytes[n] != 0 && bytes[n] != 0x7c));
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
+        let mut manifest = String::new();
+        zip.by_name("manifest.json")?
+            .read_to_string(&mut manifest)?;
+        let positions: Value = serde_json::from_str(&manifest)?;
+        assert_eq!(positions.as_object().expect("manifest object").len(), 12);
+        assert!(positions.get("4_0").is_none());
+        assert!(positions.get("3_2").is_none());
+        for entry in positions.as_object().expect("manifest object").values() {
+            let mut png = Vec::new();
+            zip.by_name(entry["ViewParam"][0]["Icon"].as_str().expect("icon"))?
+                .read_to_end(&mut png)?;
+            let image = image::load_from_memory(&png)?.to_rgba8();
+            assert_eq!(image.dimensions(), (196, 196));
+            assert!(image
+                .pixels()
+                .all(|p| p[0] == p[1] && p[1] == p[2] && p[3] == 255));
+        }
+        assert_eq!(
+            art::render_available(Theme::CyberpunkNeon, page, NEXT_KEY, false, false)?,
+            art::render_available(Theme::CyberpunkNeon, page, NEXT_KEY, false, true)?
+        );
+        assert_eq!(
+            art::render_available(Theme::CyberpunkNeon, page, 0, true, false)?,
+            art::render_available(Theme::CyberpunkNeon, page, 0, false, false)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn custom_status_panel_uses_wide_geometry_and_background_mode() -> Result<()> {
+        let page = &Config::default().pages[2];
+        let mut panels = Vec::new();
+        for enabled in [false, true] {
+            let bytes = make_archive(page, Theme::LightAbstract, None, enabled, true)?;
+            let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
+            let mut manifest = String::new();
+            zip.by_name("manifest.json")?
+                .read_to_string(&mut manifest)?;
+            let positions: Value = serde_json::from_str(&manifest)?;
+            assert_eq!(positions["3_2"]["SmallViewMode"], 2);
+            let name = positions["3_2"]["ViewParam"][0]["Icon"]
+                .as_str()
+                .expect("wide panel icon");
+            let mut png = Vec::new();
+            zip.by_name(name)?.read_to_end(&mut png)?;
+            let image = image::load_from_memory(&png)?.to_rgba8();
+            assert_eq!(image.dimensions(), (400, 200));
+            assert!(image.pixels().all(|p| p[3] == 255));
+            panels.push(png);
+        }
+        assert_ne!(panels[0], panels[1]);
         Ok(())
     }
 }

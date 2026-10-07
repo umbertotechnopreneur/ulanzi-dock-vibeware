@@ -2,7 +2,7 @@
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI, and plenty of tokens ;-)
+# VibeWare is Human intent. AI implementation. Accountable human review.
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 # AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
 # AI Versions: Tools and models may vary by contributor and execution environment.
@@ -17,9 +17,16 @@ name: Build
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      check_cli:
+        description: "Authorize CLI checks for this manual build"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
   windows:
@@ -43,6 +50,7 @@ jobs:
         shell: pwsh
         run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Check CLI
+        if: github.event_name == 'workflow_dispatch' && inputs.check_cli
         shell: pwsh
         run: |
           & "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" themes

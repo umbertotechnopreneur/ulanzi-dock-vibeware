@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI, and plenty of tokens ;-)
+ * VibeWare is Human intent. AI implementation. Accountable human review.
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -105,18 +105,28 @@ impl Theme {
 pub struct KeyConfig {
     pub label: String,
     pub action: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub asset: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PageConfig {
     pub name: String,
     pub keys: Vec<KeyConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executables: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     pub theme: Theme,
     pub pages: Vec<PageConfig>,
+    #[serde(default)]
+    pub setup_completed: bool,
+    #[serde(skip)]
+    pub runtime: crate::applications::RuntimeSettings,
 }
 
 // name: user-facing page title.
@@ -124,11 +134,19 @@ pub struct Config {
 fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
     PageConfig {
         name: name.into(),
+        executables: match name {
+            "Codex" => vec!["Codex.exe".into(), "ChatGPT.exe".into()],
+            "VS Code" => vec!["Code.exe".into(), "Code - Insiders.exe".into()],
+            "Spotify" => vec!["Spotify.exe".into()],
+            _ => Vec::new(),
+        },
         keys: keys
             .into_iter()
             .map(|(label, action)| KeyConfig {
                 label: label.into(),
                 action: action.into(),
+                description: String::new(),
+                asset: String::new(),
             })
             .collect(),
     }
@@ -138,6 +156,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             theme: Theme::DarkClassic,
+            setup_completed: false,
+            runtime: crate::applications::RuntimeSettings::default(),
             pages: vec![
                 page(
                     "Windows / media",
@@ -198,12 +218,36 @@ impl Default for Config {
                 ),
                 Self::utility_page(),
                 Self::theme_selector(Theme::DarkClassic),
+                Self::spotify_page(),
             ],
         }
     }
 }
 
 impl Config {
+    // Spotify follows the fixed fifth theme selector, preserving existing page positions.
+    pub fn spotify_page() -> PageConfig {
+        page(
+            "Spotify",
+            [
+                ("PLAY / PAUSE", "hotkey:space"),
+                ("PREVIOUS", "media:previous"),
+                ("NEXT TRACK", "media:next"),
+                ("SHUFFLE", "hotkey:ctrl+s"),
+                ("NEXT PAGE", "page:next"),
+                ("REPEAT", "hotkey:ctrl+r"),
+                ("SEARCH", "hotkey:ctrl+k"),
+                ("LIBRARY", "hotkey:alt+shift+0"),
+                ("LIKE", "hotkey:alt+shift+b"),
+                ("QUEUE", "hotkey:alt+shift+q"),
+                ("NOW PLAYING", "hotkey:alt+shift+j"),
+                ("LIKED SONGS", "hotkey:alt+shift+s"),
+                ("HOME", "hotkey:alt+shift+h"),
+                ("CLOCK", "none"),
+            ],
+        )
+    }
+
     // Returns a Windows utility page with editable, non-destructive defaults.
     pub fn utility_page() -> PageConfig {
         page(
@@ -237,16 +281,22 @@ impl Config {
             KeyConfig {
                 label: String::new(),
                 action: "none".into(),
+                description: String::new(),
+                asset: String::new(),
             };
             KEY_COUNT
         ];
         keys[NEXT_KEY] = KeyConfig {
             label: "NEXT PAGE".into(),
             action: "page:next".into(),
+            description: String::new(),
+            asset: String::new(),
         };
         keys[CLOCK_KEY] = KeyConfig {
             label: "CLOCK".into(),
             action: "none".into(),
+            description: String::new(),
+            asset: String::new(),
         };
         for (position, theme) in THEME_KEYS
             .into_iter()
@@ -255,11 +305,14 @@ impl Config {
             keys[position] = KeyConfig {
                 label: theme.label().into(),
                 action: format!("theme:{}", theme.slug()),
+                description: String::new(),
+                asset: String::new(),
             };
         }
         PageConfig {
             name: "Themes".into(),
             keys,
+            executables: Vec::new(),
         }
     }
 
@@ -297,7 +350,26 @@ impl Config {
                 config.pages.push(Self::theme_selector(config.theme));
             }
         }
+        if !config
+            .pages
+            .iter()
+            .any(|page| page.name.eq_ignore_ascii_case("Spotify"))
+        {
+            config.pages.push(Self::spotify_page());
+        }
         config.refresh_theme_selector(config.theme)?;
+        // Older JSON files have no affinity metadata; keep application actions gated.
+        for page in &mut config.pages {
+            if page.executables.is_empty() {
+                page.executables = match page.name.as_str() {
+                    "Codex" => vec!["Codex.exe".into(), "ChatGPT.exe".into()],
+                    "VS Code" => vec!["Code.exe".into(), "Code - Insiders.exe".into()],
+                    "Spotify" => vec!["Spotify.exe".into()],
+                    _ => Vec::new(),
+                };
+            }
+        }
+        crate::applications::load(path)?.apply(&mut config)?;
         config.validate()?;
         Ok(config)
     }
@@ -387,15 +459,16 @@ mod tests {
         fs::write(&path, serde_json::to_vec(&old)?)?;
 
         let mut upgraded = Config::load(&path)?;
-        assert_eq!(upgraded.pages.len(), 5);
+        assert_eq!(upgraded.pages.len(), 6);
         assert_eq!(upgraded.pages[3].name, "Utility");
         assert_eq!(upgraded.pages[4].name, "Themes");
+        assert_eq!(upgraded.pages[5].name, "Spotify");
         upgraded.theme = Theme::CyberpunkNeon;
         upgraded.refresh_theme_selector(upgraded.theme)?;
         upgraded.save_selected_theme(&path)?;
         let saved = Config::load(&path)?;
         assert_eq!(saved.theme, Theme::CyberpunkNeon);
-        assert_eq!(saved.pages.len(), 5);
+        assert_eq!(saved.pages.len(), 6);
 
         fs::remove_file(&path)?;
         fs::remove_file(path.with_extension("json.bak"))?;

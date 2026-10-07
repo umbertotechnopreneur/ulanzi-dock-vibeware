@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI, and plenty of tokens ;-)
+ * VibeWare is Human intent. AI implementation. Accountable human review.
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -26,7 +26,114 @@ use std::{
 const SIDE: u32 = 196;
 static SOURCES: OnceLock<[DynamicImage; 3]> = OnceLock::new();
 static ICON_CACHE: OnceLock<Mutex<HashMap<(usize, usize), GrayImage>>> = OnceLock::new();
+static UNAVAILABLE_OVERLAY: OnceLock<RgbaImage> = OnceLock::new();
 static LABEL_FONT: OnceLock<Font> = OnceLock::new();
+static SPOTIFY_SYMBOLS: OnceLock<HashMap<usize, GrayImage>> = OnceLock::new();
+
+// Extend the native pictogram system; themes supply the approved internal gradients.
+fn spotify_symbols() -> &'static HashMap<usize, GrayImage> {
+    SPOTIFY_SYMBOLS.get_or_init(|| {
+        let mut symbols = HashMap::new();
+        for index in [3, 5, 7, 8, 9, 10, 11, 12] {
+            let mut mask = GrayImage::new(118 * 4, 99 * 4);
+            for y in 0..mask.height() {
+                for x in 0..mask.width() {
+                    let px = x as f32 / 4.0;
+                    let py = y as f32 / 4.0;
+                    let line = |ax: f32, ay: f32, bx: f32, by: f32| {
+                        let dx = bx - ax;
+                        let dy = by - ay;
+                        let t = (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))
+                            .clamp(0.0, 1.0);
+                        (px - ax - t * dx).powi(2) + (py - ay - t * dy).powi(2) < 3.7_f32.powi(2)
+                    };
+                    let filled = match index {
+                        3 => {
+                            line(23., 25., 92., 74.)
+                                || line(23., 74., 92., 25.)
+                                || line(78., 13., 94., 25.)
+                                || line(94., 25., 78., 37.)
+                                || line(78., 62., 94., 74.)
+                                || line(94., 74., 78., 86.)
+                        }
+                        5 => {
+                            line(23., 29., 94., 29.)
+                                || line(94., 29., 94., 58.)
+                                || line(94., 71., 23., 71.)
+                                || line(23., 71., 23., 42.)
+                                || line(79., 17., 94., 29.)
+                                || line(94., 29., 79., 41.)
+                                || line(38., 59., 23., 71.)
+                                || line(23., 71., 38., 83.)
+                        }
+                        7 => {
+                            line(25., 23., 25., 79.)
+                                || line(45., 23., 45., 79.)
+                                || line(65., 23., 65., 79.)
+                                || line(84., 24., 98., 77.)
+                                || line(25., 32., 45., 32.)
+                                || line(25., 70., 45., 70.)
+                        }
+                        8 | 11 => {
+                            let hx = (px - 59.) / 27.;
+                            let hy = (53. - py) / 25.;
+                            let heart =
+                                (hx * hx + hy * hy - 1.).powi(3) - hx * hx * hy.powi(3) <= 0.;
+                            heart
+                                || index == 11
+                                    && (line(93., 13., 93., 33.) || line(83., 23., 103., 23.))
+                        }
+                        9 => [27., 49., 71.].into_iter().any(|row| {
+                            line(42., row, 96., row)
+                                || (px - 25.).powi(2) + (py - row).powi(2) < 5.5_f32.powi(2)
+                        }),
+                        10 => {
+                            (24.0..94.0).contains(&px)
+                                && [29., 48., 67.]
+                                    .into_iter()
+                                    .any(|row| (py - row - (px - 59.).powi(2) * 0.004).abs() < 3.8)
+                        }
+                        12 => {
+                            line(20., 47., 59., 17.)
+                                || line(59., 17., 98., 47.)
+                                || line(31., 43., 31., 80.)
+                                || line(31., 80., 87., 80.)
+                                || line(87., 80., 87., 43.)
+                                || line(50., 80., 50., 59.)
+                                || line(50., 59., 68., 59.)
+                                || line(68., 59., 68., 80.)
+                        }
+                        _ => false,
+                    };
+                    if filled {
+                        mask.put_pixel(x, y, Luma([255]));
+                    }
+                }
+            }
+            symbols.insert(
+                index,
+                imageops::resize(&mask, 118, 99, imageops::FilterType::Lanczos3),
+            );
+        }
+        symbols
+    })
+}
+
+fn configured_icon(page: &PageConfig, index: usize) -> Result<GrayImage> {
+    let asset = &page.keys[index].asset;
+    if asset.is_empty() || index == NEXT_KEY {
+        return icon_mask(&page.name, index);
+    }
+    let (family, source_index) = crate::applications::validate_asset(asset)?;
+    let source_page = match family {
+        "codex" => "Codex",
+        "vscode" => "VS Code",
+        "utility" => "Utility",
+        "spotify" => "Spotify",
+        _ => "Windows / media",
+    };
+    icon_mask(source_page, source_index)
+}
 
 // page_name: name of one of the three default pages.
 // Returns the source atlas index and measured card geometry.
@@ -91,6 +198,15 @@ fn utility_symbol(index: usize) -> GrayImage {
 // index: physical key index from 0 through 12.
 // Errors: a missing icon in the bundled source atlas.
 fn icon_mask(page_name: &str, index: usize) -> Result<GrayImage> {
+    if page_name == "Spotify" {
+        if let Some(mask) = spotify_symbols().get(&index) {
+            return Ok(mask.clone());
+        }
+        return match index {
+            6 => icon_mask("VS Code", 3),
+            _ => icon_mask("Windows / media", index),
+        };
+    }
     if page_name == "Utility" && matches!(index, 2 | 12) {
         return Ok(utility_symbol(index));
     }
@@ -200,6 +316,72 @@ fn mix(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     ]
 }
 
+// The approved ImageGen concept uses one three-color treatment per theme.
+// Keep the source pictogram mask sharp while varying color inside its silhouette.
+fn icon_gradient(theme: Theme, pressed: bool, base: [u8; 3], fx: f32, fy: f32) -> [u8; 3] {
+    let (stops, t): ([[u8; 3]; 3], f32) = match theme {
+        Theme::DarkClassic => (
+            [[0, 187, 91], [57, 242, 151], [234, 255, 214]],
+            0.76 * fx + 0.24 * (1.0 - fy),
+        ),
+        Theme::DarkAbstract => (
+            [[103, 58, 255], [242, 65, 193], [255, 171, 98]],
+            0.68 * fx + 0.32 * fy,
+        ),
+        Theme::LightClassic => (
+            [[151, 103, 28], [201, 159, 68], [50, 105, 82]],
+            0.58 * fx + 0.42 * fy,
+        ),
+        Theme::LightAbstract => (
+            [[0, 117, 151], [113, 86, 190], [189, 78, 159]],
+            0.88 * fx + 0.12 * fy,
+        ),
+        Theme::MangaInk => (
+            [[20, 24, 32], [75, 74, 68], [203, 51, 43]],
+            (0.78 * fx + 0.22 * fy).powf(1.3),
+        ),
+        Theme::SteampunkBrass => (
+            [[255, 219, 107], [200, 130, 45], [137, 69, 32]],
+            (0.65 * fx + 0.35 * fy).sqrt(),
+        ),
+        Theme::CyberpunkNeon => (
+            [[7, 232, 248], [109, 67, 247], [255, 69, 190]],
+            0.78 * fx + 0.22 * fy,
+        ),
+        Theme::Moire => (
+            [[14, 103, 204], [8, 174, 171], [225, 249, 242]],
+            0.74 * fx + 0.26 * (1.0 - fy),
+        ),
+        Theme::Cubism => (
+            [[183, 68, 42], [235, 145, 96], [62, 100, 140]],
+            0.65 * fx + 0.35 * fy,
+        ),
+        Theme::ArtDeco => (
+            [[255, 221, 144], [185, 209, 125], [42, 206, 159]],
+            0.69 * fx + 0.31 * fy,
+        ),
+        Theme::UkiyoE => (
+            [[28, 58, 122], [235, 69, 57], [255, 240, 197]],
+            0.62 * fx + 0.38 * fy,
+        ),
+        Theme::Solarpunk => (
+            [[35, 129, 57], [139, 183, 42], [220, 166, 42]],
+            0.80 * fx + 0.20 * (1.0 - fy),
+        ),
+        Theme::Memphis => (
+            [[220, 71, 94], [145, 96, 199], [206, 163, 32]],
+            0.67 * fx + 0.33 * fy,
+        ),
+    };
+    let t = t.clamp(0.0, 1.0);
+    let tint = if t < 0.5 {
+        mix(stops[0], stops[1], t * 2.0)
+    } else {
+        mix(stops[1], stops[2], (t - 0.5) * 2.0)
+    };
+    mix(tint, base, if pressed { 0.18 } else { 0.04 })
+}
+
 // theme: visual family selected by the user.
 // pressed: whether the physical key is down.
 // Returns full-bleed gradient colors and icon/text colors, with no card border.
@@ -283,6 +465,24 @@ fn colors(theme: Theme, pressed: bool) -> ([u8; 3], [u8; 3], [u8; 3], [u8; 3]) {
         (Theme::Solarpunk, true) => ([255, 219, 133], [145, 208, 151], [18, 76, 57], [28, 67, 52]),
         (Theme::Memphis, false) => ([255, 194, 163], [239, 176, 211], [27, 46, 89], [28, 43, 74]),
         (Theme::Memphis, true) => ([255, 174, 124], [178, 184, 243], [25, 40, 89], [25, 39, 74]),
+    }
+}
+
+fn accent_color(theme: Theme) -> [u8; 3] {
+    match theme {
+        Theme::DarkClassic => [0, 113, 54],
+        Theme::DarkAbstract => [236, 64, 130],
+        Theme::LightClassic => [255, 236, 198],
+        Theme::LightAbstract => [195, 245, 232],
+        Theme::MangaInk => [255, 143, 144],
+        Theme::SteampunkBrass => [176, 102, 49],
+        Theme::CyberpunkNeon => [28, 154, 220],
+        Theme::Moire => [207, 242, 236],
+        Theme::Cubism => [255, 226, 161],
+        Theme::ArtDeco => [11, 149, 124],
+        Theme::UkiyoE => [210, 83, 67],
+        Theme::Solarpunk => [255, 246, 183],
+        Theme::Memphis => [255, 238, 153],
     }
 }
 
@@ -383,21 +583,7 @@ fn background(theme: Theme, pressed: bool, top: [u8; 3], bottom: [u8; 3]) -> Rgb
             let fx = x as f32 / (SIDE - 1) as f32;
             let mut color = mix(top, bottom, fy * 0.75 + fx * 0.25);
             let glow = (1.0 - (((fx - 0.78).powi(2) + (fy - 0.15).powi(2)).sqrt() / 0.9)).max(0.0);
-            let accent = match theme {
-                Theme::DarkClassic => [0, 113, 54],
-                Theme::DarkAbstract => [236, 64, 130],
-                Theme::LightClassic => [255, 236, 198],
-                Theme::LightAbstract => [195, 245, 232],
-                Theme::MangaInk => [255, 143, 144],
-                Theme::SteampunkBrass => [176, 102, 49],
-                Theme::CyberpunkNeon => [28, 154, 220],
-                Theme::Moire => [207, 242, 236],
-                Theme::Cubism => [255, 226, 161],
-                Theme::ArtDeco => [11, 149, 124],
-                Theme::UkiyoE => [210, 83, 67],
-                Theme::Solarpunk => [255, 246, 183],
-                Theme::Memphis => [255, 238, 153],
-            };
+            let accent = accent_color(theme);
             color = mix(color, accent, glow * if pressed { 0.31 } else { 0.16 });
             if let Some((tint, amount)) = motif(theme, x, y) {
                 color = mix(color, tint, amount);
@@ -414,13 +600,45 @@ fn background(theme: Theme, pressed: bool, top: [u8; 3], bottom: [u8; 3]) -> Rgb
 // color: foreground RGB color.
 // alpha: foreground coverage from 0 to 255.
 fn blend(canvas: &mut RgbaImage, x: i32, y: i32, color: [u8; 3], alpha: u8) {
-    if x < 0 || y < 0 || x >= SIDE as i32 || y >= SIDE as i32 || alpha == 0 {
+    if x < 0 || y < 0 || x >= canvas.width() as i32 || y >= canvas.height() as i32 || alpha == 0 {
         return;
     }
     let old = canvas.get_pixel(x as u32, y as u32).0;
     let t = alpha as f32 / 255.0;
     let rgb = mix([old[0], old[1], old[2]], color, t);
     canvas.put_pixel(x as u32, y as u32, Rgba([rgb[0], rgb[1], rgb[2], 255]));
+}
+
+// Tint the single bundled ribbon with the current theme while keeping its
+// cream lettering and edge line legible over the grayscale key artwork.
+fn overlay_unavailable(canvas: &mut RgbaImage, theme: Theme) {
+    let overlay = UNAVAILABLE_OVERLAY.get_or_init(|| {
+        let image = image::load_from_memory(include_bytes!("../assets/overlay/not-available.png"))
+            .expect("bundled unavailable overlay");
+        image
+            .resize_exact(SIDE, SIDE, imageops::FilterType::Lanczos3)
+            .to_rgba8()
+    });
+    let accent = accent_color(theme);
+    for (x, y, pixel) in overlay.enumerate_pixels() {
+        let [red, green, blue, alpha] = pixel.0;
+        if alpha == 0 {
+            continue;
+        }
+        let cream = red > 145
+            && green > 140
+            && blue > 125
+            && red.abs_diff(green) < 70
+            && green.abs_diff(blue) < 80;
+        let color = if cream {
+            [255, 246, 220]
+        } else {
+            let luminance =
+                (77 * red as u32 + 150 * green as u32 + 29 * blue as u32) as f32 / (255.0 * 256.0);
+            mix([8, 18, 24], accent, 0.32 + 0.40 * luminance)
+        };
+        blend(canvas, x as i32, y as i32, color, alpha);
+    }
 }
 
 // canvas: gradient face being rendered.
@@ -464,11 +682,9 @@ fn draw_icon(
                 [0, 0, 0],
                 alpha / 3,
             );
-            let tint = mix(
-                color,
-                [255, 255, 255],
-                y as f32 / mask.height() as f32 * 0.12,
-            );
+            let fx = x as f32 / mask.width().saturating_sub(1).max(1) as f32;
+            let fy = y as f32 / mask.height().saturating_sub(1).max(1) as f32;
+            let tint = icon_gradient(theme, pressed, color, fx, fy);
             blend(canvas, left + x as i32, top + y as i32, tint, alpha);
         }
     }
@@ -491,7 +707,10 @@ fn draw_swatch(canvas: &mut RgbaImage, theme: Theme, pressed: bool) {
                 let distance = (((x - cx).pow(2) + (y - cy).pow(2)) as f32).sqrt();
                 let coverage = (radius as f32 + 0.5 - distance).clamp(0.0, 1.0);
                 blend(canvas, x + 3, y + 4, [0, 0, 0], (coverage * 58.0) as u8);
-                blend(canvas, x, y, tint, (coverage * 236.0) as u8);
+                let fx = (x - cx + radius) as f32 / (radius * 2) as f32;
+                let fy = (y - cy + radius) as f32 / (radius * 2) as f32;
+                let gradient = icon_gradient(theme, pressed, tint, fx, fy);
+                blend(canvas, x, y, gradient, (coverage * 236.0) as u8);
             }
         }
     }
@@ -571,7 +790,15 @@ fn draw_label(canvas: &mut RgbaImage, label: &str, color: [u8; 3]) {
 // index: physical key index from 0 through 13.
 // pressed: true uses the active state.
 // Errors: invalid index, missing source icon, or failed PNG encoding.
-pub fn render(theme: Theme, page: &PageConfig, index: usize, pressed: bool) -> Result<Vec<u8>> {
+// Disabled faces are derived from the rendered theme on demand, not stored assets.
+// Navigation and the reserved clock position retain their normal appearance.
+pub fn render_available(
+    theme: Theme,
+    page: &PageConfig,
+    index: usize,
+    pressed: bool,
+    enabled: bool,
+) -> Result<Vec<u8>> {
     anyhow::ensure!(index < page.keys.len(), "key index out of range");
     let mut output = Cursor::new(Vec::new());
     if index == CLOCK_KEY {
@@ -579,6 +806,8 @@ pub fn render(theme: Theme, page: &PageConfig, index: usize, pressed: bool) -> R
             .write_to(&mut output, ImageFormat::Png)?;
         return Ok(output.into_inner());
     }
+    let disabled = !enabled && index != NEXT_KEY;
+    let pressed = pressed && !disabled;
     let selected = page.keys[index]
         .action
         .strip_prefix("theme:")
@@ -592,13 +821,116 @@ pub fn render(theme: Theme, page: &PageConfig, index: usize, pressed: bool) -> R
     } else {
         draw_icon(
             &mut canvas,
-            &icon_mask(&page.name, index)?,
+            &configured_icon(page, index)?,
             icon,
             display_theme,
             pressed,
         );
     }
     draw_label(&mut canvas, &page.keys[index].label, label);
+    if disabled {
+        for pixel in canvas.pixels_mut() {
+            // Integer luminance preserves layout, contrast, and alpha.
+            let gray = ((77 * pixel[0] as u32 + 150 * pixel[1] as u32 + 29 * pixel[2] as u32 + 128)
+                >> 8) as u8;
+            pixel[0] = gray;
+            pixel[1] = gray;
+            pixel[2] = gray;
+        }
+        overlay_unavailable(&mut canvas, theme);
+    }
     DynamicImage::ImageRgba8(canvas).write_to(&mut output, ImageFormat::Png)?;
     Ok(output.into_inner())
+}
+
+// Render the optional wide information panel from the same theme palette.
+// Its 400x200 geometry follows the observed vendor double-key artwork format.
+pub fn render_status(theme: Theme, page: &PageConfig, enabled: bool) -> Result<Vec<u8>> {
+    let (top, bottom, _, foreground) = colors(theme, false);
+    let mut canvas = imageops::resize(
+        &background(theme, false, top, bottom),
+        400,
+        200,
+        imageops::FilterType::CatmullRom,
+    );
+    draw_panel_text(&mut canvas, "VIBEWARE", 24, 30, 15.0, foreground);
+    draw_panel_text(&mut canvas, &page.name, 24, 79, 32.0, foreground);
+    draw_panel_text(
+        &mut canvas,
+        &format!("THEME: {}", theme.label()),
+        24,
+        119,
+        20.0,
+        foreground,
+    );
+    let marker = if enabled {
+        [36, 196, 111]
+    } else {
+        [148, 148, 148]
+    };
+    for y in 149..166 {
+        for x in 25..42 {
+            if (x as i32 - 33).pow(2) + (y as i32 - 157).pow(2) <= 64 {
+                canvas.put_pixel(x, y, Rgba([marker[0], marker[1], marker[2], 255]));
+            }
+        }
+    }
+    draw_panel_text(
+        &mut canvas,
+        if enabled { "ACTIVE" } else { "INACTIVE" },
+        54,
+        166,
+        25.0,
+        foreground,
+    );
+    let mut output = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(canvas).write_to(&mut output, ImageFormat::Png)?;
+    Ok(output.into_inner())
+}
+
+fn draw_panel_text(
+    canvas: &mut RgbaImage,
+    text: &str,
+    left: i32,
+    baseline: i32,
+    mut size: f32,
+    color: [u8; 3],
+) {
+    let font = LABEL_FONT.get_or_init(|| {
+        Font::from_bytes(
+            include_bytes!("../assets/fonts/VeraBd.ttf").as_slice(),
+            FontSettings::default(),
+        )
+        .expect("bundled Bitstream Vera Bold font")
+    });
+    let text = if text.chars().count() > 48 {
+        format!("{}...", text.chars().take(45).collect::<String>())
+    } else {
+        text.to_string()
+    };
+    while text
+        .chars()
+        .map(|c| font.metrics(c, size).advance_width)
+        .sum::<f32>()
+        > (canvas.width() as i32 - left - 24) as f32
+        && size > 8.0
+    {
+        size -= 1.0;
+    }
+    let mut pen = left as f32;
+    for character in text.chars() {
+        let (metrics, bitmap) = font.rasterize(character, size);
+        for gy in 0..metrics.height {
+            for gx in 0..metrics.width {
+                blend(
+                    canvas,
+                    pen.round() as i32 + metrics.xmin + gx as i32,
+                    baseline - metrics.height as i32 - metrics.ymin + gy as i32,
+                    color,
+                    bitmap[gy * metrics.width + gx],
+                );
+            }
+        }
+        pen += metrics.advance_width;
+    }
 }

@@ -1,0 +1,214 @@
+# VBWR B
+# Project: UlanziDock VibeWare version
+# Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+# Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+# VibeWare is Human intent. AI implementation. Accountable human review.
+# Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
+# AI Versions: Tools and models may vary by contributor and execution environment.
+# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+# Copyright (c) 2026 Umberto Giacobbi
+# SPDX-License-Identifier: MIT
+# License: MIT - see LICENSE
+# Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+# VBWR E
+
+# Restart the controller after edits. Omit action to retain settings.json shortcuts.
+# Asset IDs select a bundled pictogram; the active theme supplies its gradient.
+version: 1
+runtime:
+  auto_switch: true
+  focus_poll_seconds: 1
+applications:
+  - name: "Codex"
+    page: "Codex"
+    executables: ["Codex.exe", "ChatGPT.exe"]
+    commands:
+      - key: 0
+        name: "NEW CHAT"
+        description: "Start a new Codex conversation."
+        asset: "codex:0"
+        action: "hotkey:ctrl+n"
+      - key: 1
+        name: "PROJECTS"
+        description: "Open the Codex project list."
+        asset: "codex:1"
+        action: "hotkey:ctrl+alt+shift+o"
+      - key: 2
+        name: "ATTENTION"
+        description: "Open notifications or items requiring attention."
+        asset: "codex:2"
+        action: "hotkey:ctrl+alt+a"
+      - key: 3
+        name: "SIDE CHAT"
+        description: "Open a secondary conversation."
+        asset: "codex:3"
+        action: "hotkey:ctrl+alt+s"
+      - key: 5
+        name: "REVIEW"
+        description: "Open the code review view."
+        asset: "codex:5"
+        action: "hotkey:ctrl+shift+g"
+      - key: 6
+        name: "TERMINAL"
+        description: "Toggle the integrated terminal."
+        asset: "codex:6"
+        action: "hotkey:ctrl+grave"
+      - key: 7
+        name: "FILES"
+        description: "Open the project files view."
+        asset: "codex:7"
+        action: "hotkey:ctrl+p"
+      - key: 8
+        name: "COMMANDS"
+        description: "Open the command palette."
+        asset: "codex:8"
+        action: "hotkey:ctrl+shift+p"
+      - key: 9
+        name: "COPY LINK"
+        description: "Copy the current conversation link."
+        asset: "codex:9"
+        action: "hotkey:ctrl+alt+l"
+      - key: 10
+        name: "COPY"
+        description: "Copy the current selection."
+        asset: "codex:10"
+        action: "hotkey:ctrl+c"
+      - key: 11
+        name: "PASTE"
+        description: "Paste clipboard contents into the focused control."
+        asset: "codex:11"
+        action: "hotkey:ctrl+v"
+      - key: 12
+        name: "FIND"
+        description: "Find text in the current view."
+        asset: "codex:12"
+        action: "hotkey:ctrl+f"
+  - name: "VS Code"
+    page: "VS Code"
+    executables: ["Code.exe","Code - Insiders.exe"]
+    commands:
+      - key: 0
+        name: "QUICK OPEN"
+        description: "Find and open a workspace file by name."
+        asset: "vscode:0"
+        action: "hotkey:ctrl+p"
+      - key: 1
+        name: "COMMANDS"
+        description: "Open the command palette."
+        asset: "vscode:1"
+        action: "hotkey:ctrl+shift+p"
+      - key: 2
+        name: "TERMINAL"
+        description: "Toggle the integrated terminal."
+        asset: "vscode:2"
+        action: "hotkey:ctrl+grave"
+      - key: 3
+        name: "SEARCH"
+        description: "Search text across the workspace."
+        asset: "vscode:3"
+        action: "hotkey:ctrl+shift+f"
+      - key: 5
+        name: "EXPLORER"
+        description: "Show the file Explorer sidebar."
+        asset: "vscode:5"
+        action: "hotkey:ctrl+shift+e"
+      - key: 6
+        name: "SOURCE CTRL"
+        description: "Run SOURCE CTRL in the foreground VS Code app."
+        asset: "vscode:6"
+        action: "hotkey:ctrl+shift+g"
+      - key: 7
+        name: "DEBUG"
+        description: "Show the Run and Debug view."
+        asset: "vscode:7"
+        action: "hotkey:ctrl+shift+d"
+      - key: 8
+        name: "EXTENSIONS"
+        description: "Show the Extensions view."
+        asset: "vscode:8"
+        action: "hotkey:ctrl+shift+x"
+      - key: 9
+        name: "SAVE"
+        description: "Save the active file."
+        asset: "vscode:9"
+        action: "hotkey:ctrl+s"
+      - key: 10
+        name: "NEW FILE"
+        description: "Create an untitled file."
+        asset: "vscode:10"
+        action: "hotkey:ctrl+n"
+      - key: 11
+        name: "FORMAT"
+        description: "Format the active document."
+        asset: "vscode:11"
+        action: "hotkey:shift+alt+f"
+      - key: 12
+        name: "PROBLEMS"
+        description: "Show errors and warnings in the Problems panel."
+        asset: "vscode:12"
+        action: "hotkey:ctrl+shift+m"
+  - name: "Spotify"
+    page: "Spotify"
+    executables: ["Spotify.exe"]
+    commands:
+      - key: 0
+        name: "PLAY / PAUSE"
+        description: "Toggle playback in the foreground Spotify app."
+        asset: "spotify:0"
+        action: "hotkey:space"
+      - key: 1
+        name: "PREVIOUS"
+        description: "Send the Windows previous-track media command; routing follows the active media session."
+        asset: "spotify:1"
+        action: "media:previous"
+      - key: 2
+        name: "NEXT TRACK"
+        description: "Send the Windows next-track media command; routing follows the active media session."
+        asset: "spotify:2"
+        action: "media:next"
+      - key: 3
+        name: "SHUFFLE"
+        description: "Toggle shuffle in Spotify."
+        asset: "spotify:3"
+        action: "hotkey:ctrl+s"
+      - key: 5
+        name: "REPEAT"
+        description: "Cycle the Spotify repeat mode."
+        asset: "spotify:5"
+        action: "hotkey:ctrl+r"
+      - key: 6
+        name: "SEARCH"
+        description: "Open Spotify search."
+        asset: "spotify:6"
+        action: "hotkey:ctrl+k"
+      - key: 7
+        name: "LIBRARY"
+        description: "Open Your Library."
+        asset: "spotify:7"
+        action: "hotkey:alt+shift+0"
+      - key: 8
+        name: "LIKE"
+        description: "Like or dislike the current song, depending on Spotify context."
+        asset: "spotify:8"
+        action: "hotkey:alt+shift+b"
+      - key: 9
+        name: "QUEUE"
+        description: "Open the playback queue."
+        asset: "spotify:9"
+        action: "hotkey:alt+shift+q"
+      - key: 10
+        name: "NOW PLAYING"
+        description: "Open the Now Playing view."
+        asset: "spotify:10"
+        action: "hotkey:alt+shift+j"
+      - key: 11
+        name: "LIKED SONGS"
+        description: "Open Liked Songs."
+        asset: "spotify:11"
+        action: "hotkey:alt+shift+s"
+      - key: 12
+        name: "HOME"
+        description: "Open Spotify Home."
+        asset: "spotify:12"
+        action: "hotkey:alt+shift+h"

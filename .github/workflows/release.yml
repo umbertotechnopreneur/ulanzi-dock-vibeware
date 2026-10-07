@@ -1,0 +1,176 @@
+# VBWR B
+# Project: UlanziDock VibeWare version
+# Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+# Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+# VibeWare is Human intent. AI implementation. Accountable human review.
+# Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
+# AI Versions: Tools and models may vary by contributor and execution environment.
+# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+# Copyright (c) 2026 Umberto Giacobbi
+# SPDX-License-Identifier: MIT
+# License: MIT - see LICENSE
+# Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+# VBWR E
+
+name: Release
+run-name: Release ${{ inputs.tag }} (draft=${{ inputs.draft }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "New tag matching Cargo.toml, e.g. v0.3.0"
+        required: true
+        type: string
+      draft:
+        description: "Create a draft for review"
+        type: boolean
+        default: true
+      prerelease:
+        description: "Mark as prerelease"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require a new tag matching the package version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+            throw 'Use a version tag such as v0.3.0 or v0.3.0-preview.1.'
+          }
+          $versionLine = Select-String -LiteralPath Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          if (-not $versionLine) { throw 'Package version was not found in Cargo.toml.' }
+          $version = $versionLine.Matches[0].Groups[1].Value
+          if ($env:RELEASE_TAG -cne "v$version") { throw 'Tag must match the Cargo.toml package version.' }
+          $existing = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not check existing tags.' }
+          if ($existing) { throw 'This tag already exists. Choose a new package version and tag.' }
+
+  package:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            label: windows-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build target
+        shell: pwsh
+        run: |
+          rustup target add ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed.' }
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          cargo build --locked --release --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+      - name: Package launcher, executable, and documentation
+        shell: pwsh
+        env:
+          PACKAGE_LABEL: ${{ matrix.label }}
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path package/docs,package/assets/fonts | Out-Null
+          Copy-Item "target/$env:BUILD_TARGET/release/ulanzi-dock-vibeware.exe" package/
+          Copy-Item README.md,LICENSE package/
+          Copy-Item docs/ARTWORK.md,docs/ulanzi-dock-vibeware-guide-v2.pdf package/docs/
+          Copy-Item assets/fonts/bitstream-vera-license.txt package/assets/fonts/
+          $launcher = @'
+          @echo off
+          REM VBWR B
+          REM Project: UlanziDock VibeWare version
+          REM Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+          REM Creator: Umberto Giacobbi ^| https://umbertogiacobbi.biz
+          REM VibeWare is Human intent. AI implementation. Accountable human review.
+          REM Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+          REM AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
+          REM AI Versions: Tools and models may vary by contributor and execution environment.
+          REM AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+          REM Copyright (c) 2026 Umberto Giacobbi
+          REM SPDX-License-Identifier: MIT
+          REM License: MIT - see LICENSE
+          REM Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+          REM VBWR E
+          cd /d "%~dp0"
+          if errorlevel 1 goto failed
+          if exist "settings.json" goto run
+          "%~dp0ulanzi-dock-vibeware.exe" init
+          if errorlevel 1 goto failed
+          :run
+          "%~dp0ulanzi-dock-vibeware.exe" run --status-display
+          if errorlevel 1 goto failed
+          exit /b 0
+          :failed
+          echo UlanziDock could not start. Check the message above and close other dock controllers.
+          pause
+          exit /b 1
+          '@
+          ($launcher -replace '\r?\n', "`r`n") | Set-Content -LiteralPath package/Start-UlanziDock.cmd -Encoding ascii
+          $zip = "ulanzi-dock-vibeware-$env:RELEASE_TAG-$env:PACKAGE_LABEL.zip"
+          Compress-Archive -Path package/* -DestinationPath $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $zip" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.label }}
+          path: |
+            ulanzi-dock-vibeware-*.zip
+            ulanzi-dock-vibeware-*.zip.sha256
+          if-no-files-found: error
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Create the requested release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          IS_DRAFT: ${{ inputs.draft }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zips = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' | Sort-Object Name)
+          $checksums = @(Get-ChildItem -LiteralPath dist -Filter '*.zip.sha256' | Sort-Object Name)
+          if ($zips.Count -ne 2 -or $checksums.Count -ne 2) { throw 'Both architecture packages and checksums are required.' }
+          Get-Content -LiteralPath $checksums.FullName | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
+          $cliArgs = @('release', 'create', $env:RELEASE_TAG, '--target', $env:SOURCE_SHA,
+            '--title', "UlanziDock VibeWare version $env:RELEASE_TAG", '--generate-notes',
+            "--draft=$env:IS_DRAFT", "--prerelease=$env:IS_PRERELEASE")
+          $cliArgs += $zips.FullName
+          $cliArgs += 'dist/SHA256SUMS.txt'
+          gh @cliArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases are never overwritten.' }
