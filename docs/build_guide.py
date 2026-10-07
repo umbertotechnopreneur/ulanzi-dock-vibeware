@@ -120,9 +120,9 @@ def cover(pdf):
     label_value(pdf, 221, "PAGES", "Windows / media - Codex - VS Code")
     label_value(pdf, 264, "THEMES", "Two dark and two light; up/down per key")
     label_value(pdf, 307, "DELIVERY", "Source portable; Windows x64 and ARM64 binaries")
-    box(pdf, 36, 365, 730, 67, PANEL)
+    box(pdf, 36, 365, 730, 83, PANEL)
     baseline(pdf, "EVIDENCE STATUS", 50, 387, "JetMonoBold", 8, BLUE)
-    paragraph(pdf, "Windows x64 build and layout packaging tests passed. The owner confirmed the clock and NEXT PAGE on the D200H with earlier artwork. The new borderless 196 x 196 faces are verified offline and await a physical display check. ARM64 device behavior is unverified.", 50, 406, 700, 9.6, 14, MUTED)
+    paragraph(pdf, "Windows x64 build and layout packaging tests passed. On 7 October 2026, the owner confirmed the final light-abstract Windows/media set on the D200H: icons and labels were intact and readable. The timed display later cleared; resident mode restored it. NEXT PAGE then displayed Codex and VS Code with intact, readable artwork. The other three themes and ARM64 device behavior remain unverified.", 50, 406, 700, 9.6, 14, MUTED)
     pdf.showPage()
 
 

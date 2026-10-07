@@ -19,7 +19,7 @@ VBWR E -->
 
 A standalone, resident CLI controller for the Ulanzi D200H. It uses the operating system's HID access; it is not a kernel driver. The program shows button artwork, reads only the dock's consumer HID interface, and sends a configured shortcut or media command when a dock button is released. It does not require Ulanzi Studio, OpenDeck, or WSL.
 
-The source is portable across Windows, Linux, and macOS. The first binary distribution targets Windows x64 and Windows ARM64. Windows x64 tests confirmed device input, visible artwork, the clock, and NEXT PAGE with an earlier sprite revision. The current borderless production sprites still require an on-device acceptance test. The CI build does not prove device behavior on ARM64.
+The source is portable across Windows, Linux, and macOS. The first binary distribution targets Windows x64 and Windows ARM64. Windows x64 tests confirmed device input and the clock. On 7 October 2026 the owner confirmed that the final borderless light-abstract Windows/media set rendered with all icons and labels intact and readable during a 20-second, no-actions run. It remained visible briefly after exit, then cleared. A resident no-actions run restored the icons and clock; two NEXT PAGE presses displayed Codex and then VS Code, both with intact, readable artwork. The other three themes have not yet been checked on the physical display. The CI build does not prove device behavior on ARM64.
 
 ## Get started on Windows
 
