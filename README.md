@@ -19,9 +19,9 @@ VBWR E -->
 
 **Protocol credit:** I built this controller using published D200H protocol research, especially the [OpenActionMirrors D200 project](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200). I did not copy its AGPL source code.
 
-<img src="docs/photos/setup-banner-enhanced.png" alt="Enhanced wide view of my real desk with the Ulanzi D200H controller" width="100%">
+<img src="docs/photos/setup-triptych-banner.png" alt="Three enhanced views of my real desk and Ulanzi D200H controller in one panoramic banner" width="100%">
 
-*My actual desk and dock, presented as an AI-enhanced photo banner.*
+*Three views of my actual desk and dock, combined into an AI-enhanced banner.*
 
 ## Why I built it
 
@@ -31,7 +31,7 @@ I am sharing my original implementation under the [MIT license](LICENSE). Anyone
 
 ## My setup
 
-I photographed the controller on my own desk. These two views have improved framing, exposure and sharpness. They are AI-enhanced from the real photos, so I use the unaltered terminal screenshots below for exact software text and behavior.
+I photographed the controller on my own desk. The banner combines three views; the two larger views below show more detail. They are AI-enhanced from the real photos, so I use the unaltered terminal screenshots below for exact software text and behavior.
 
 <table>
   <tr>
@@ -42,7 +42,11 @@ I photographed the controller on my own desk. These two views have improved fram
 
 ## What it does
 
-I use the operating system's HID access to display themed button artwork, listen to the dock's button events, and run the shortcuts I configure. The current source has six pages and thirteen themes. It does not install a custom driver or require Ulanzi Studio, OpenDeck, or WSL. The local Windows executable I inspected is about **9 MB**; it runs without an installer. That size refers to the EXE, not a download package with documentation.
+I use the operating system's HID access to display themed button artwork, listen to the dock's button events, and run the shortcuts I configure. The current source has six pages: **Windows / media, Codex, VS Code, Utility, Themes and Spotify**, with thirteen visual themes. [Take a look at the themes in the PDF guide](docs/ulanzi-dock-vibeware-guide-v2.pdf).
+
+On Windows, I can let Codex, VS Code or Spotify bring its page forward automatically when that app becomes active. If I switch away, that page's app-specific controls become inactive until the app returns; **NEXT PAGE** still works. Windows / media and Utility remain general-purpose pages. I can also turn automatic page switching off.
+
+It does not install a custom driver or require Ulanzi Studio, OpenDeck, or WSL. The local Windows executable I inspected is about **9 MB**; it runs without an installer. That size refers to the EXE, not a download package with documentation.
 
 ## Get started
 
