@@ -19,13 +19,26 @@ VBWR E -->
 
 **Protocol credit:** I built this controller using published D200H protocol research, especially the [OpenActionMirrors D200 project](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200). I did not copy its AGPL source code.
 
+<img src="docs/photos/setup-banner-enhanced.png" alt="Enhanced wide view of my real desk with the Ulanzi D200H controller" width="100%">
+
+*My actual desk and dock, presented as an AI-enhanced photo banner.*
+
 ## Why I built it
 
 I bought a Ulanzi D200H to put my own controls and PNG artwork on its buttons. I was frustrated that changing a few images seemed to require almost 800 MB of vendor software. I wanted something focused, so I built my own controller in Rust.
 
 I am sharing my original implementation under the [MIT license](LICENSE). Anyone can use, modify, and share it under that license. I hope it helps someone else make this little console their own without installing a large application.
 
-![Illustration of the UlanziDock controller](assets/banners/ulanzi-dock-dark.png)
+## My setup
+
+I photographed the controller on my own desk. These two views have improved framing, exposure and sharpness. They are AI-enhanced from the real photos, so I use the unaltered terminal screenshots below for exact software text and behavior.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/photos/dock-closeup-enhanced.png" alt="Enhanced close view of my real Ulanzi D200H and its illuminated theme buttons" width="100%"></td>
+    <td width="50%"><img src="docs/photos/desk-enhanced.png" alt="Enhanced wider view of the Ulanzi D200H on my real computer desk" width="100%"></td>
+  </tr>
+</table>
 
 ## What it does
 
@@ -43,9 +56,18 @@ For a build with the guided welcome, put the executable in a writable folder, co
 
 On the first run, I show two short screens: **Meet your dock** explains the buttons and pages; **Make yourself at home** shows the selected theme and `settings.json`. Choose **Start my dock** and leave the terminal open while using it. The setup saves your settings when you continue. You can change the theme on the dock, edit shortcuts in `settings.json` while the controller is stopped, or reopen the welcome with `run --oobe`.
 
-![The second step of UlanziDock's first-run setup in a Windows terminal](docs/screenshots/first-run-setup.png)
+<table>
+  <tr>
+    <th>Controller running</th>
+    <th>First-run setup</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/controller-running-0.2.0.png" alt="Unaltered Windows terminal screenshot showing the UlanziDock controller running" width="100%"></td>
+    <td width="50%"><img src="docs/screenshots/first-run-setup.png" alt="Unaltered Windows terminal screenshot showing the second step of UlanziDock setup" width="100%"></td>
+  </tr>
+</table>
 
-The screenshot is from a local Windows run. It shows one theme and one configuration; your screen may differ. For commands and options, use `ulanzi-dock-vibeware help`.
+These are unaltered local Windows screenshots. The first is from an earlier **0.2.0** run, so its on-screen version and motto predate the current release; the second shows the guided setup. Your theme and configuration may differ. For commands and options, use `ulanzi-dock-vibeware help`.
 
 ## What I have checked
 
