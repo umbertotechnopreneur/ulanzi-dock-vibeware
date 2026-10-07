@@ -17,9 +17,22 @@ VBWR E -->
 
 **Creator:** Umberto Giacobbi · [VibeWare manifesto](https://umbertogiacobbi.biz/vibeware/manifesto)
 
-A standalone, resident CLI controller for the Ulanzi D200H. It uses the operating system's HID access; it is not a kernel driver. The program shows button artwork, reads only the dock's consumer HID interface, and sends a configured shortcut or media command when a dock button is released. It does not require Ulanzi Studio, OpenDeck, or WSL.
+A standalone, resident CLI controller for the Ulanzi D200H, **hardware tested on Windows x64**. It displays themed button artwork, reads the dock's own button events, and dispatches configured shortcuts or media commands on release. It uses the operating system's HID access and does not require a custom kernel driver, Ulanzi Studio, OpenDeck, or WSL.
 
-The source is portable across Windows, Linux, and macOS. The first binary distribution targets Windows x64 and Windows ARM64. Windows x64 tests confirmed device input and the clock. On 7 October 2026 the owner confirmed intact, readable light-abstract artwork on Windows/media, Codex, and VS Code; NEXT PAGE cycled between them. The nine new styles, Utility page, and Themes page have passed offline rendering and packaging, but have not yet been observed on the physical display. The CI build does not prove device behavior on ARM64.
+The source is designed for Windows, Linux, and macOS. Binary distribution currently targets Windows x64 and Windows ARM64. The controller must keep running while the dock is in use.
+
+## Tested on Windows
+
+Physical D200H testing on **Windows x64**, most recently on **7 October 2026**, confirmed:
+
+- Device button press/release events and the firmware clock.
+- Complete, readable light-abstract artwork on the Windows/media, Codex, and VS Code pages.
+- NEXT PAGE navigation between those pages.
+- The other keys remain visually stable during the observed single-key press/release trial after the redraw fix.
+
+The current implementation passes all six software tests. Native Windows x64 and ARM64 release builds have been produced. **ARM64 hardware operation has not been tested.** Linux and macOS device access and shortcut behavior have not been physically validated.
+
+All five pages and thirteen themes have passed offline artwork generation and ZIP packaging. Physical checks cover a subset of those combinations; end-to-end verification of every configured shortcut and media action is still incomplete.
 
 ## Get started on Windows
 
@@ -28,7 +41,7 @@ The source is portable across Windows, Linux, and macOS. The first binary distri
 3. Run `./ulanzi-dock-vibeware.exe init` to create `settings.json`.
 4. Run `./ulanzi-dock-vibeware.exe run`. Leave this console open while using the dock; press Ctrl+C to stop.
 
-The CLI sends a complete layout on startup and after button state changes. The wide bottom display is reserved for the firmware clock, updated about once per second by default. Use `--no-clock` only for a display diagnostic. Display content may disappear when the program exits. Only one controller should operate this device at a time.
+The current source sends a complete layout on startup and when the page or theme changes. Ordinary button presses and releases update only that key's artwork, keeping the other keys stable. This improvement is included in commits from `6cf8e2d` onward; the published v0.2.0 release still sends complete layouts for button state changes. The wide bottom display is reserved for the firmware clock, updated about once per second by default. Use `--no-clock` only for a display diagnostic. Display content may disappear when the program exits. Only one controller should operate this device at a time.
 
 For a bounded display-only diagnostic, use `./ulanzi-dock-vibeware.exe run --seconds 20 --no-actions`. It sends the layout and reads only dock events, but does not dispatch shortcuts or media keys. `--seconds` accepts 1-300.
 
@@ -97,7 +110,7 @@ For Windows ARM64 use target `aarch64-pc-windows-msvc`, preferably on an ARM64 W
 
 ## Protocol and provenance
 
-This is an original MIT implementation informed by observed D200H protocol behavior. The separate [OpenActionMirrors D200 project](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200) is AGPL-3.0 and was used as a protocol reference; its source code is not copied into this repository. The dock has VID `2207`, PID `0019`; the consumer interface uses usage page `0x0c`, usage `1`. On Windows, an output report consists of Report ID `0` plus 1024 protocol bytes. Full layouts use command `0x0001`; small clock data uses `0x0006`. Input is parsed only from this interface. A successful HID write is not a firmware acknowledgment or proof of visible rendering.
+This is an original MIT implementation informed by observed D200H protocol behavior. The separate [OpenActionMirrors D200 project](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200) is AGPL-3.0 and was used as a protocol reference; its source code is not copied into this repository. The dock has VID `2207`, PID `0019`; the consumer interface uses usage page `0x0c`, usage `1`. On Windows, an output report consists of Report ID `0` plus 1024 protocol bytes. Full layouts use command `0x0001`, individual key artwork updates use `0x000D`, and clock data uses `0x0006`. The additive update command is also documented in the independent [D200 protocol research](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md). Input is parsed only from this interface. A successful HID write is not a firmware acknowledgment or proof of visible rendering.
 
 The approved VibeWare logo is copied unchanged into `assets/brand/`. The production atlases are offline previews, not photos or proof of hardware output. The ImageGen source provenance and font license are documented in `docs/ARTWORK.md`.
 
