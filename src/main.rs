@@ -23,7 +23,7 @@ use clap::{Parser, Subcommand};
 use model::{Config, Theme, CLOCK_KEY, NEXT_KEY};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -48,7 +48,7 @@ enum Command {
     Doctor,
     /// Print available visual themes.
     Themes,
-    /// Create a settings file with all three pages and editable actions.
+    /// Create a settings file with five pages and editable actions.
     Init {
         #[arg(long, default_value = "settings.json")]
         config: PathBuf,
@@ -83,7 +83,9 @@ enum Command {
 // Errors: image generation or filesystem failure.
 fn export_art(output: &PathBuf, config: &Config) -> Result<()> {
     for theme in Theme::ALL {
-        for (page_number, page) in config.pages.iter().enumerate() {
+        let mut themed_config = config.clone();
+        themed_config.refresh_theme_selector(theme)?;
+        for (page_number, page) in themed_config.pages.iter().enumerate() {
             let directory = output
                 .join(theme.slug())
                 .join(format!("page-{}", page_number + 1));
@@ -106,18 +108,21 @@ fn export_art(output: &PathBuf, config: &Config) -> Result<()> {
 }
 
 // config: validated page and action definitions.
-// theme: selected visual family.
+// config_path: settings file used to persist a theme selected on page five.
+// theme: initial visual family.
 // seconds: optional bounded diagnostic duration.
 // no_actions: disable shortcut and media dispatch.
 // clock: periodically update the wide bottom clock window.
 // Errors: device access, display update, or clock failure.
 fn run(
-    config: Config,
-    theme: Theme,
+    mut config: Config,
+    config_path: &Path,
+    mut theme: Theme,
     seconds: Option<u64>,
     no_actions: bool,
     clock: bool,
 ) -> Result<()> {
+    config.refresh_theme_selector(theme)?;
     let (api, found) = dock::discover()?;
     anyhow::ensure!(
         found,
@@ -165,6 +170,21 @@ fn run(
             if event.index == NEXT_KEY {
                 page = (page + 1) % config.pages.len();
                 println!("Page: {}", config.pages[page].name);
+            } else if let Some(slug) = config.pages[page].keys[event.index]
+                .action
+                .strip_prefix("theme:")
+            {
+                let selected = Theme::from_slug(slug)
+                    .with_context(|| format!("unknown selected theme '{slug}'"))?;
+                theme = selected;
+                config.theme = selected;
+                config.refresh_theme_selector(selected)?;
+                println!("Theme: {}", selected.slug());
+                page = 0;
+                println!("Page: {}", config.pages[page].name);
+                if let Err(error) = config.save_selected_theme(config_path) {
+                    eprintln!("Could not save theme selection: {error:#}");
+                }
             } else if !no_actions {
                 let key = &config.pages[page].keys[event.index];
                 if let Err(error) = actions::execute(&key.action) {
@@ -214,7 +234,7 @@ fn main() -> Result<()> {
         } => {
             let settings = Config::load(&config)?;
             let selected = theme.unwrap_or(settings.theme);
-            run(settings, selected, seconds, no_actions, !no_clock)?;
+            run(settings, &config, selected, seconds, no_actions, !no_clock)?;
         }
     }
     Ok(())

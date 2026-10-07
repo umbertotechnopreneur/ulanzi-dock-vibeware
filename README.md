@@ -19,7 +19,7 @@ VBWR E -->
 
 A standalone, resident CLI controller for the Ulanzi D200H. It uses the operating system's HID access; it is not a kernel driver. The program shows button artwork, reads only the dock's consumer HID interface, and sends a configured shortcut or media command when a dock button is released. It does not require Ulanzi Studio, OpenDeck, or WSL.
 
-The source is portable across Windows, Linux, and macOS. The first binary distribution targets Windows x64 and Windows ARM64. Windows x64 tests confirmed device input and the clock. On 7 October 2026 the owner confirmed that the final borderless light-abstract Windows/media set rendered with all icons and labels intact and readable during a 20-second, no-actions run. It remained visible briefly after exit, then cleared. A resident no-actions run restored the icons and clock; two NEXT PAGE presses displayed Codex and then VS Code, both with intact, readable artwork. The other three themes have not yet been checked on the physical display. The CI build does not prove device behavior on ARM64.
+The source is portable across Windows, Linux, and macOS. The first binary distribution targets Windows x64 and Windows ARM64. Windows x64 tests confirmed device input and the clock. On 7 October 2026 the owner confirmed intact, readable light-abstract artwork on Windows/media, Codex, and VS Code; NEXT PAGE cycled between them. The nine new styles, Utility page, and Themes page have passed offline rendering and packaging, but have not yet been observed on the physical display. The CI build does not prove device behavior on ARM64.
 
 ## Get started on Windows
 
@@ -34,7 +34,7 @@ For a bounded display-only diagnostic, use `./ulanzi-dock-vibeware.exe run --sec
 
 ## Pages and navigation
 
-The default pages loop in this order: **Windows / media → Codex → VS Code → Windows / media**. Physical key **4**, at the top right, is **NEXT PAGE** on every page. The wide bottom position, index **13**, displays only the clock and dispatches no action.
+The default pages loop in this order: **Windows / media → Codex → VS Code → Utility → Themes → Windows / media**. Physical key **4**, at the top right, is **NEXT PAGE** on every page. The wide bottom position, index **13**, displays only the clock and dispatches no action.
 
 ```text
 top:      00  01  02  03  04 NEXT PAGE
@@ -42,7 +42,7 @@ middle:   05  06  07  08  09
 bottom:   10  11  12  [ 13 CLOCK ]
 ```
 
-The 13 action keys have separate **up** and **down** PNG art in four themes. The 12 production atlases are in `assets/production/`, one per page and theme. The executable extracts complete pictograms from three ImageGen reference sheets, draws smooth gradients and readable labels on a full-bleed 196×196 face, and sends no graphic for the reserved clock position. `render` exports 336 individual PNGs, including blank clock placeholders, without touching the device:
+The 13 action keys have separate **up** and **down** PNG art in thirteen themes. The 65 production atlases are in `assets/production/`, one per page and theme, and the [68-page PDF catalogue](docs/ulanzi-dock-vibeware-guide-v2.pdf) shows the full set. The executable extracts complete pictograms from three ImageGen reference sheets and adds native Utility symbols and theme swatches. It draws smooth gradients, decorative motifs, and readable labels on a full-bleed 196×196 face, and sends no graphic for the reserved clock position. `render` exports 1,820 individual PNGs, including blank clock placeholders, without touching the device:
 
 ```powershell
 ./ulanzi-dock-vibeware.exe render --output artwork
@@ -69,17 +69,19 @@ The 13 action keys have separate **up** and **down** PNG art in four themes. The
 
 Codex and VS Code shortcuts act on the **focused application**. A shortcut can change between application versions and OSes. Review the generated `settings.json` and customize it to your actual apps and keyboard layout.
 
+Utility provides Clipboard, Search, Emoji, Screenshot, Explorer, Desktop, Task View, Settings, the project website, Copy, Paste, and Undo. These are editable Windows-oriented defaults. The fifth page is the Themes selector. Its twelve available keys show every theme except the one currently active; choosing a theme immediately returns to Windows/media in the new appearance and saves it to `settings.json`. NEXT PAGE and the clock retain their fixed positions. An existing three-page settings file is upgraded in memory when loaded; choosing a theme writes the five-page version and saves the previous file as `settings.json.bak`.
+
 ## Change theme and actions
 
-Run `./ulanzi-dock-vibeware.exe themes` for theme IDs. Set the `theme` field in `settings.json` to `dark-classic`, `dark-abstract`, `light-classic`, or `light-abstract`, then restart `run`. For a one-session override:
+Run `./ulanzi-dock-vibeware.exe themes` for all thirteen IDs. Select a theme on page five or set the `theme` field in `settings.json` and restart `run`. `--theme` overrides the saved startup choice for that launch:
 
-`dark-classic` uses a Matrix-inspired green palette; `dark-abstract` uses a Blade Runner-inspired violet, cyan, and amber palette. The two light themes use soft ivory/blue and mint/teal gradients. None of the production sprites draws a button bezel.
+The original themes are `dark-classic` (Matrix-inspired green), `dark-abstract` (Blade Runner-inspired violet and amber), `light-classic` (ivory/blue), and `light-abstract` (mint/teal). The nine additions are `manga-ink`, `steampunk-brass`, `cyberpunk-neon`, `moire`, `cubism`, `art-deco`, `ukiyo-e`, `solarpunk`, and `memphis`. Every theme has its own palette and motif, plus a stronger down state. None of the production sprites draws a button bezel.
 
 ```powershell
 ./ulanzi-dock-vibeware.exe run --theme light-abstract
 ```
 
-Edit each action key's `label` and `action` in `settings.json`. Supported actions are `hotkey:ctrl+shift+p`, `media:play-pause`, `media:previous`, `media:next`, `media:mute`, `media:volume-down`, `media:volume-up`, and `open:https://example.com`. The final hotkey key can be a letter/digit, `grave`, `tab`, `enter`, or `escape`. `ctrl`, `alt`, `shift`, and `super` are modifiers. Key 4 remains `page:next`; key 13 remains `none` for the clock. Changed labels use the built-in text renderer so the art matches the new label.
+Edit the first four pages' action key `label` and `action` fields in `settings.json`. Supported actions are `hotkey:ctrl+shift+p`, `media:play-pause`, `media:previous`, `media:next`, `media:mute`, `media:volume-down`, `media:volume-up`, and `open:https://example.com`. The final hotkey key can be a single character, `grave`, `tab`, `enter`, or `escape`. `ctrl`, `alt`, `shift`, and `super` are modifiers. Key 4 remains `page:next`; key 13 remains `none` for the clock. The Themes page is generated from the current selection. Changed labels use the built-in text renderer so the art matches the new label.
 
 `init` refuses to replace an existing settings file. Keep a backup before editing yours. No shell commands or arbitrary executable paths are accepted in settings.
 

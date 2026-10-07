@@ -17,6 +17,7 @@
 /dist/
 /tmp/
 /settings.json
+*.json.bak
 *.log
 *.zip
 !assets/**/*.zip

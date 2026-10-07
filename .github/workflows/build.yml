@@ -52,7 +52,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path package | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" package/
-          Copy-Item README.md,LICENSE,docs/ulanzi-dock-vibeware-guide-v1.pdf package/
+          Copy-Item README.md,LICENSE,docs/ulanzi-dock-vibeware-guide-v2.pdf package/
           Compress-Archive -Path package/* -DestinationPath "ulanzi-dock-vibeware-${{ matrix.label }}.zip"
       - uses: actions/upload-artifact@v4
         with:

@@ -23,27 +23,48 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "assets" / "buttons"
 OUTPUT = ROOT / "assets" / "production"
-THEMES = ("dark-classic", "dark-abstract", "light-classic", "light-abstract")
-PAGES = (("windows", 1), ("codex", 2), ("vscode", 3))
+THEMES = (
+    "dark-classic",
+    "dark-abstract",
+    "light-classic",
+    "light-abstract",
+    "manga-ink",
+    "steampunk-brass",
+    "cyberpunk-neon",
+    "moire",
+    "cubism",
+    "art-deco",
+    "ukiyo-e",
+    "solarpunk",
+    "memphis",
+)
+PAGES = (("windows", 1), ("codex", 2), ("vscode", 3), ("utility", 4), ("themes", 5))
 SIDE = 196
 GAP = 12
 MARGIN = 24
 HEADER = 68
 
 
-# theme: one of the four production palettes.
+# theme: one of the thirteen production palettes.
 # page_name: English page label for the sheet title.
 # page_number: one-based page index in the sprite export.
 # Errors: missing or invalid source PNG raises a Pillow or filesystem exception.
 def build(theme: str, page_name: str, page_number: int) -> Path:
-    dark = theme.startswith("dark")
+    dark = theme in {
+        "dark-classic",
+        "dark-abstract",
+        "steampunk-brass",
+        "cyberpunk-neon",
+        "art-deco",
+        "ukiyo-e",
+    }
     background = "#101a2a" if dark else "#ede9de"
     foreground = "#ecf2f8" if dark else "#14304a"
     width = MARGIN * 2 + SIDE * 4 + GAP * 3
     height = MARGIN * 2 + HEADER + SIDE * 7 + GAP * 6
     sheet = Image.new("RGB", (width, height), background)
     draw = ImageDraw.Draw(sheet)
-    font_path = Path("C:/Windows/Fonts/segoeuib.ttf")
+    font_path = ROOT / "assets" / "fonts" / "VeraBd.ttf"
     font = ImageFont.truetype(str(font_path), 26) if font_path.exists() else ImageFont.load_default()
     draw.text((MARGIN, MARGIN), f"{page_name.upper()}  /  {theme.upper()}", font=font, fill=foreground)
     for index in range(14):

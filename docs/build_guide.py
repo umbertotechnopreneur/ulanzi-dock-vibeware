@@ -24,7 +24,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "docs" / "ulanzi-dock-vibeware-guide-v1.pdf"
+OUTPUT = ROOT / "docs" / "ulanzi-dock-vibeware-guide-v2.pdf"
 FONT_DIR = Path(r"C:\Windows\Fonts")
 MONO_DIR = Path(r"C:\Users\umber\AppData\Local\Microsoft\Windows\Fonts")
 W, H = landscape(A4)
@@ -75,7 +75,7 @@ def frame(pdf, number, section, title, subtitle, source, status="DESIGN / IMPLEM
     baseline(pdf, "ULANZIDOCK / " + section, 36, 30, "JetMonoBold", 8.5, BLUE)
     pdf.setFont("JetMono", 8)
     pdf.setFillColor(MUTED)
-    pdf.drawRightString(W - 36, H - 30, "07 OCT 2026 / v1")
+    pdf.drawRightString(W - 36, H - 30, "07 OCT 2026 / v2")
     baseline(pdf, title, 36, 66, "SegoeBold", 25, INK)
     baseline(pdf, subtitle, 36, 89, "Segoe", 10.5, MUTED)
     rule(pdf, 36, 104, W - 36)
@@ -117,12 +117,12 @@ def cover(pdf):
     logo = ROOT / "assets" / "brand" / "vibeware-logo.png"
     image_fit(pdf, logo, 548, 133, 220, 220)
     paragraph(pdf, "A lightweight resident CLI for 13 display keys plus the wide bottom key. The program draws a complete page, receives input from the D200H consumer HID interface and dispatches a configured action on release.", 36, 139, 473, 13, 19, INK)
-    label_value(pdf, 221, "PAGES", "Windows / media - Codex - VS Code")
-    label_value(pdf, 264, "THEMES", "Two dark and two light; up/down per key")
+    label_value(pdf, 221, "PAGES", "Windows - Codex - VS Code - Utility - Themes")
+    label_value(pdf, 264, "THEMES", "Four original + nine new; up/down per key")
     label_value(pdf, 307, "DELIVERY", "Source portable; Windows x64 and ARM64 binaries")
     box(pdf, 36, 365, 730, 83, PANEL)
     baseline(pdf, "EVIDENCE STATUS", 50, 387, "JetMonoBold", 8, BLUE)
-    paragraph(pdf, "Windows x64 build and layout packaging tests passed. On 7 October 2026, the owner confirmed the final light-abstract Windows/media set on the D200H: icons and labels were intact and readable. The timed display later cleared; resident mode restored it. NEXT PAGE then displayed Codex and VS Code with intact, readable artwork. The other three themes and ARM64 device behavior remain unverified.", 50, 406, 700, 9.6, 14, MUTED)
+    paragraph(pdf, "Windows x64 packaging and five software tests passed. On 7 October 2026, the owner confirmed intact light-abstract artwork on Windows/media, Codex, and VS Code; NEXT PAGE worked. The timed display later cleared and resident mode restored it. Nine new styles, the Utility and Themes pages, and ARM64 device behavior remain physically unverified.", 50, 406, 700, 9.6, 14, MUTED)
     pdf.showPage()
 
 
@@ -138,21 +138,21 @@ def physical_map(pdf):
     box(pdf, 225, 279, 118, 60, NAVY, 6)
     baseline(pdf, "13 CLOCK", 236, 314, "JetMonoBold", 11, colors.white)
     baseline(pdf, "NEXT PAGE", 273, 125, "JetMonoBold", 7.5, BLUE)
-    paragraph(pdf, "Cycles Windows / media -> Codex -> VS Code -> Windows / media. A release selects the next page once. The wide bottom display shows the clock only.", 36, 372, 323, 10, 15, MUTED)
+    paragraph(pdf, "Cycles Windows / media -> Codex -> VS Code -> Utility -> Themes -> Windows / media. Theme choices return to Windows/media in the selected style. The wide bottom display shows the clock only.", 36, 372, 323, 10, 15, MUTED)
     x = 392
     rows = [
-        ("00-03", "Media transport and mute", "Chat navigation", "Open/search/tools"),
+        ("00-03", "Work and media", "Utility shortcuts", "Theme choices"),
         ("04", "Next page", "Next page", "Next page"),
-        ("05-09", "Volume and windows", "Review and work", "Editor panels"),
-        ("10-12", "Capture and browser", "Copy/paste/find", "Files and problems"),
+        ("05-09", "Work and media", "Utility shortcuts", "Theme choices"),
+        ("10-12", "Work and media", "Utility shortcuts", "Theme choices"),
         ("13", "Clock", "Clock", "Clock"),
     ]
-    for i, (keys, win, codex, vscode) in enumerate(rows):
+    for i, (keys, work, utility, themes) in enumerate(rows):
         y = 132 + i * 59
         box(pdf, x, y, 376, 52, PANEL if i % 2 == 0 else colors.white, 5)
         baseline(pdf, keys, x + 10, y + 18, "JetMonoBold", 9, BLUE)
-        baseline(pdf, win, x + 70, y + 18, "Segoe", 9.4, INK)
-        baseline(pdf, codex + " / " + vscode, x + 70, y + 37, "Segoe", 8.2, MUTED)
+        baseline(pdf, work, x + 70, y + 18, "Segoe", 9.4, INK)
+        baseline(pdf, utility + " / " + themes, x + 70, y + 37, "Segoe", 8.2, MUTED)
     pdf.showPage()
 
 
@@ -177,9 +177,9 @@ def theme_page(pdf, number, slug, theme_title, page_slug, page_number, page_titl
     pdf.showPage()
 
 
-def operation(pdf):
+def operation(pdf, number):
     """Provide operating commands and evidence boundaries."""
-    frame(pdf, 15, "OPERATE", "Run, customize, verify", "A single executable embeds the artwork; settings.json changes themes and actions.", "README.md, CLI implementation and Windows x64 offline build")
+    frame(pdf, number, "OPERATE", "Run, customize, verify", "A single executable embeds the artwork; page five selects and saves a theme.", "README.md, CLI implementation and Windows x64 offline build")
     commands = [
         ("01 / CHECK DEVICE", ".\\ulanzi-dock-vibeware.exe doctor"),
         ("02 / CREATE SETTINGS", ".\\ulanzi-dock-vibeware.exe init"),
@@ -193,25 +193,47 @@ def operation(pdf):
         baseline(pdf, heading, 49, y + 17, "JetMonoBold", 7.9, BLUE)
         baseline(pdf, command, 205, y + 27, "JetMono", 10, INK)
     box(pdf, 36, 403, 770, 44, colors.HexColor("#E8F3F9"), 7)
-    paragraph(pdf, "Shortcuts target the focused app. The wide bottom display shows the clock by default and has no assigned action. USB write, visible output and button input are separate observations. Stop with Ctrl+C.", 49, 420, 738, 9.2, 13, INK)
+    paragraph(pdf, "Shortcuts target the focused app. Page five shows twelve alternatives to the active theme and saves a selection to settings.json. The wide display shows only the clock. USB writes, visible output and input are separate observations. Stop with Ctrl+C.", 49, 420, 738, 9.2, 13, INK)
     pdf.showPage()
 
 
 def main():
-    """Write the fifteen-page PDF with complete production atlases."""
+    """Write the complete five-page by thirteen-theme production catalogue."""
     pdf = canvas.Canvas(str(OUTPUT), pagesize=(W, H), pageCompression=1)
     pdf.setTitle("UlanziDock VibeWare version - Controller Atlas and Guide")
     pdf.setAuthor("Umberto Giacobbi | hello@umbertogiacobbi.biz")
-    pdf.setSubject("Ulanzi D200H pages, four themes, up/down artwork, CLI use and verification status")
+    pdf.setSubject("Ulanzi D200H pages, thirteen themes, up/down artwork, CLI use and verification status")
     pdf.setKeywords("Ulanzi D200H, VibeWare, Umberto Giacobbi, Codex, VS Code, media controller")
     cover(pdf)
     physical_map(pdf)
     number = 3
-    for slug, theme_title in (("dark-classic", "Matrix"), ("dark-abstract", "Blade Runner"), ("light-classic", "Ivory / blue"), ("light-abstract", "Mint / teal")):
-        for page_slug, page_number, page_title in (("windows", 1, "Windows / media"), ("codex", 2, "Codex"), ("vscode", 3, "VS Code")):
+    themes = (
+        ("dark-classic", "Matrix"),
+        ("dark-abstract", "Blade Runner"),
+        ("light-classic", "Ivory / blue"),
+        ("light-abstract", "Mint / teal"),
+        ("manga-ink", "Manga ink"),
+        ("steampunk-brass", "Steampunk brass"),
+        ("cyberpunk-neon", "Cyberpunk neon"),
+        ("moire", "Moire"),
+        ("cubism", "Cubism"),
+        ("art-deco", "Art deco"),
+        ("ukiyo-e", "Ukiyo-e"),
+        ("solarpunk", "Solarpunk"),
+        ("memphis", "Memphis"),
+    )
+    pages = (
+        ("windows", 1, "Windows / media"),
+        ("codex", 2, "Codex"),
+        ("vscode", 3, "VS Code"),
+        ("utility", 4, "Utility"),
+        ("themes", 5, "Themes"),
+    )
+    for slug, theme_title in themes:
+        for page_slug, page_number, page_title in pages:
             theme_page(pdf, number, slug, theme_title, page_slug, page_number, page_title)
             number += 1
-    operation(pdf)
+    operation(pdf, number)
     pdf.save()
     print(OUTPUT)
 

@@ -250,8 +250,7 @@ mod tests {
             let name = positions[&position]["ViewParam"][0]["Icon"]
                 .as_str()
                 .expect("icon name");
-            zip.by_name(name)?
-                .read_to_end(&mut png)?;
+            zip.by_name(name)?.read_to_end(&mut png)?;
             let image = image::load_from_memory(&png)?;
             assert_eq!((image.width(), image.height()), (196, 196));
         }
@@ -266,7 +265,8 @@ mod tests {
             let data = make_archive(page, Theme::LightAbstract, None)?;
             let mut zip = zip::ZipArchive::new(Cursor::new(data))?;
             let mut manifest = String::new();
-            zip.by_name("manifest.json")?.read_to_string(&mut manifest)?;
+            zip.by_name("manifest.json")?
+                .read_to_string(&mut manifest)?;
             let positions: Value = serde_json::from_str(&manifest)?;
             names.push(positions["0_0"]["ViewParam"][0]["Icon"].clone());
         }
