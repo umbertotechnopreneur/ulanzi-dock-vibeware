@@ -159,7 +159,7 @@ fn run(
             if event.pressed {
                 if held != Some(event.index) {
                     held = Some(event.index);
-                    dock.show(&config.pages[page], theme, held)?;
+                    dock.show_key(&config.pages[page], theme, event.index, true)?;
                 }
                 continue;
             }
@@ -167,9 +167,11 @@ fn run(
                 continue;
             }
             held = None;
+            let mut page_changed = false;
             if event.index == NEXT_KEY {
                 page = (page + 1) % config.pages.len();
                 println!("Page: {}", config.pages[page].name);
+                page_changed = true;
             } else if let Some(slug) = config.pages[page].keys[event.index]
                 .action
                 .strip_prefix("theme:")
@@ -182,6 +184,7 @@ fn run(
                 println!("Theme: {}", selected.slug());
                 page = 0;
                 println!("Page: {}", config.pages[page].name);
+                page_changed = true;
                 if let Err(error) = config.save_selected_theme(config_path) {
                     eprintln!("Could not save theme selection: {error:#}");
                 }
@@ -191,7 +194,11 @@ fn run(
                     eprintln!("Action '{}' failed: {error:#}", key.label);
                 }
             }
-            dock.show(&config.pages[page], theme, None)?;
+            if page_changed {
+                dock.show(&config.pages[page], theme, None)?;
+            } else {
+                dock.show_key(&config.pages[page], theme, event.index, false)?;
+            }
         }
     }
     println!("Stopped. The dock may clear its display when the program exits.");

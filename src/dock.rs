@@ -76,7 +76,20 @@ impl Dock {
     // Errors: image, archive, or USB write failure.
     pub fn show(&self, page: &PageConfig, theme: Theme, held: Option<usize>) -> Result<()> {
         let archive = make_archive(page, theme, held)?;
-        self.send_file(&archive)
+        self.send_file(0x0001, &archive)
+    }
+
+    // Update only the pressed or released display key. Page changes still use show().
+    // Errors: invalid key, image/archive generation, or USB write failure.
+    pub fn show_key(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        index: usize,
+        pressed: bool,
+    ) -> Result<()> {
+        let archive = make_key_archive(page, theme, index, pressed)?;
+        self.send_file(0x000d, &archive)
     }
 
     // Errors: clock encoding or USB write failure.
@@ -114,15 +127,16 @@ impl Dock {
         Ok(None)
     }
 
-    // archive: complete ZIP for a 14-key layout.
+    // command: full layout (0x0001) or one-key additive update (0x000d).
+    // archive: ZIP containing the intended manifest positions.
     // Errors: oversized ZIP or USB write failure.
-    fn send_file(&self, archive: &[u8]) -> Result<()> {
+    fn send_file(&self, command: u16, archive: &[u8]) -> Result<()> {
         anyhow::ensure!(
             archive.len() <= u32::MAX as usize,
             "layout ZIP exceeds protocol length"
         );
         self.send_packet(
-            0x0001,
+            command,
             &archive[..archive.len().min(1016)],
             archive.len() as u32,
         )?;
@@ -169,16 +183,41 @@ impl Dock {
 // held: currently pressed key, if any.
 // Errors: PNG or ZIP generation failure; archive boundary retry exhaustion.
 pub fn make_archive(page: &PageConfig, theme: Theme, held: Option<usize>) -> Result<Vec<u8>> {
+    make_archive_for_keys(page, theme, held, &(0..KEY_COUNT).collect::<Vec<_>>())
+}
+
+// Build an additive archive containing exactly one ordinary display key.
+pub fn make_key_archive(
+    page: &PageConfig,
+    theme: Theme,
+    index: usize,
+    pressed: bool,
+) -> Result<Vec<u8>> {
+    anyhow::ensure!(
+        index < CLOCK_KEY,
+        "key {index} is not an ordinary display key"
+    );
+    make_archive_for_keys(page, theme, pressed.then_some(index), &[index])
+}
+
+fn make_archive_for_keys(
+    page: &PageConfig,
+    theme: Theme,
+    held: Option<usize>,
+    keys: &[usize],
+) -> Result<Vec<u8>> {
     let archive_id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
-    let pictures = (0..KEY_COUNT)
+    let pictures = keys
+        .iter()
+        .copied()
         .map(|i| art::render(theme, page, i, held == Some(i)))
         .collect::<Result<Vec<_>>>()?;
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut base = ZipWriter::new(Cursor::new(Vec::new()));
     let mut manifest = Map::new();
-    for (index, picture) in pictures.iter().enumerate() {
+    for (&index, picture) in keys.iter().zip(pictures.iter()) {
         // New names make the firmware load each replacement icon.
         let name = if index == CLOCK_KEY {
             String::new()
@@ -271,6 +310,36 @@ mod tests {
             names.push(positions["0_0"]["ViewParam"][0]["Icon"].clone());
         }
         assert_ne!(names[0], names[1]);
+        Ok(())
+    }
+
+    #[test]
+    fn additive_update_contains_only_the_selected_key_and_both_states() -> Result<()> {
+        let page = &Config::default().pages[0];
+        let mut images = Vec::new();
+        for pressed in [false, true] {
+            let bytes = make_key_archive(page, Theme::LightAbstract, 4, pressed)?;
+            assert!((1016..bytes.len())
+                .step_by(PACKET)
+                .all(|n| bytes[n] != 0 && bytes[n] != 0x7c));
+            let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
+            let mut manifest = String::new();
+            zip.by_name("manifest.json")?
+                .read_to_string(&mut manifest)?;
+            let positions: Value = serde_json::from_str(&manifest)?;
+            let entries = positions.as_object().expect("manifest object");
+            assert_eq!(entries.len(), 1);
+            let name = positions["4_0"]["ViewParam"][0]["Icon"]
+                .as_str()
+                .expect("selected icon name");
+            let mut png = Vec::new();
+            zip.by_name(name)?.read_to_end(&mut png)?;
+            let image = image::load_from_memory(&png)?;
+            assert_eq!((image.width(), image.height()), (196, 196));
+            images.push(png);
+        }
+        assert_ne!(images[0], images[1]);
+        assert!(make_key_archive(page, Theme::LightAbstract, CLOCK_KEY, false).is_err());
         Ok(())
     }
 
