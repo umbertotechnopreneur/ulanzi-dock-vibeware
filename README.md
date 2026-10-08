@@ -42,11 +42,13 @@ I photographed the controller on my own desk. The banner combines three views; t
 
 ## What it does
 
-I use the operating system's HID access to display themed button artwork, listen to the dock's button events, and run the shortcuts I configure. The current source has six pages: **Windows / media, Codex, VS Code, Utility, Themes and Spotify**, with thirteen visual themes. [Take a look at the themes in the PDF guide](docs/ulanzi-dock-vibeware-guide-v2.pdf).
+I use the operating system's HID access to display themed button artwork, listen to the dock's button events, and run the shortcuts I configure. The current source has nine pages: **Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel and Themes**, with thirteen visual themes. Existing settings gain missing Office pages and are reordered in memory by page name, retaining custom keys and actions. [Take a look at the themes in the PDF guide](docs/ulanzi-dock-vibeware-guide-v2.pdf); that earlier catalogue predates this page order and the Office pages.
 
-On Windows, I can let Codex, VS Code or Spotify bring its page forward automatically when that app becomes active. If I switch away, that page's app-specific controls become inactive until the app returns; **NEXT PAGE** still works. Windows / media and Utility remain general-purpose pages. I can also turn automatic page switching off.
+On Windows, **Detect applications** checks the foreground process and marks application pages unavailable when their app loses focus; **NEXT PAGE** still works. With detection enabled, I can separately enable **Switch page automatically**: switching between Codex, VS Code, Spotify, Word, PowerPoint and Excel selects their page, and switching to another known application returns to Windows / media. Windows / media and Utility are general-purpose pages. Turning detection off keeps every page usable, removes inactive overlays, and stops foreground polling and automatic page switching. With detection on and automatic switching off, page navigation remains manual while availability checks continue.
 
-It does not install a custom driver or require Ulanzi Studio, OpenDeck, or WSL. The local Windows executable I inspected is about **9 MB**; it runs without an installer. That size refers to the EXE, not a download package with documentation.
+Each Office application has its own native command icons in every theme: Word adds text formatting and spelling; PowerPoint adds slide creation, duplication and slideshow controls; Excel adds AutoSum, cell formatting, dates, editing and filters. Process matching uses `WINWORD.EXE`, `POWERPNT.EXE` and `EXCEL.EXE`. Default shortcuts target desktop Office on Windows with a US English keyboard layout; adapt them to your Office language and layout in `settings.json` or `applications.yaml`. See the [Office command list and shortcut references](docs/ARTWORK.md).
+
+It does not install a custom driver or require Ulanzi Studio, OpenDeck, or WSL. It runs without an installer. The desktop dialogs use Slint with Winit and its software renderer; no WebView or JavaScript runtime is required.
 
 ## Get started
 
@@ -58,7 +60,31 @@ For a build with the guided welcome, put the executable in a writable folder, co
 .\ulanzi-dock-vibeware.exe run
 ```
 
-On the first run, I show two short screens: **Meet your dock** explains the buttons and pages; **Make yourself at home** shows the selected theme and `settings.json`. Choose **Start my dock** and leave the terminal open while using it. The setup saves your settings when you continue. You can change the theme on the dock, edit shortcuts in `settings.json` while the controller is stopped, or reopen the welcome with `run --oobe`.
+On the first run, I show two short screens: **Meet your dock** explains the buttons and pages; **Make yourself at home** shows the selected theme and `settings.json`. Choose **Start my dock**. On Windows, the running controller adds a VibeWare floppy icon to the system tray; an Explorer launch closes its private console after setup. A controller started from an existing terminal keeps that terminal available, including Ctrl+C to stop it. The setup saves your settings when you continue. You can change the theme on the dock, edit shortcuts in `settings.json` while the controller is stopped, or reopen the welcome with `run --oobe`.
+
+Right-click the Windows tray icon for:
+
+- **Open CLI:** open an interactive Command Prompt in the executable's folder. This opens a shell without starting another controller.
+- **Restart:** stop the current controller, remove its tray icon, and relaunch the same executable with its working directory and run options. The new process waits for the old one to exit before opening HID. The one-time `--oobe` flag is omitted because setup has already completed.
+- **GitHub:** open the [project repository](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) in the default browser.
+- **VibeWare manifesto:** open the [VibeWare manifesto](https://umbertogiacobbi.biz/vibeware/manifesto) in the default browser.
+- **About:** open a compact Slint dialog with the version, creator, original VibeWare logo, project/brand/manifesto links, and a **Configure** button. Closing either Slint window keeps the resident controller running.
+- **Exit:** stop the controller and remove its tray icon without a terminal key prompt.
+
+A left click shows only a native Windows message directing you to right-click the icon and choose About. The Slint windows remain hidden at controller startup. [Windows may initially put the icon in the tray's overflow area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area). The native tray is Windows-only; the standalone Slint dialogs have portable source for Windows, Linux, and macOS. Other platforms retain the console controller.
+
+The configuration **MainWindow** offers all thirteen themes, application detection, optional automatic page switching, and the foreground polling interval (1–60 seconds). **Save** writes settings for the next launch; **Save + Restart** also restarts the resident controller. Explicit run flags such as `--theme`, `--no-app-detection`, `--no-auto-page`, and `--focus-poll-seconds` continue to take precedence. Buttons open `settings.json` and `applications.yaml` in an editor for shortcut and application mapping changes. Saving updates the theme, adds missing pages, persists their order, and patches YAML runtime fields (`detect_applications`, `auto_switch`, `focus_poll_seconds`), retaining existing page objects, custom actions, YAML comments, and existing line endings. Changed files get adjacent `.gui.bak` backups and staged replacements; if another editor or the dock changes settings while the dialog is open, reload before saving. Inline YAML runtime maps can be edited manually.
+
+To open either dialog without connecting to HID or replacing the resident instance:
+
+```powershell
+.\ulanzi-dock-vibeware.exe about --gui
+.\ulanzi-dock-vibeware.exe configure
+```
+
+Both commands accept `--config <path>`; without it they use the Explorer-launch settings location. The existing `about` and `--about` commands still print to the terminal.
+
+The locked source dependencies require Rust 1.90 or newer. For a local Windows build, use `pwsh -NoProfile -File scripts/build-local.ps1`. To stop this workspace's running controller before compiling and replacing `artifacts/ulanzi-dock-vibeware.exe`, pass `-StopRunning`. The script checks each live executable path, waits for it to stop, and preserves settings and source files. Add `-KeepBuildCache` to retain the ignored `tmp/local-build` dependency cache between builds; otherwise temporary build data is removed.
 
 <table>
   <tr>
@@ -79,7 +105,7 @@ I have tested the D200H's button events, clock, page navigation, and a subset of
 
 ## Source and credits
 
-I wrote this MIT implementation from observed protocol behavior. I used [OpenActionMirrors D200](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200) and [independent D200 protocol research](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md) as references; I did not copy AGPL source code. Artwork and font provenance are in [ARTWORK.md](docs/ARTWORK.md). The alternate light [banner illustration](assets/banners/ulanzi-dock-light.png) is a concept, not a device photograph.
+I wrote this MIT implementation from observed protocol behavior. I used [OpenActionMirrors D200](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200) and [independent D200 protocol research](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md) as references; I did not copy AGPL source code. Artwork and font provenance are in [ARTWORK.md](docs/ARTWORK.md). Slint is used under its royalty-free desktop application license with the standard AboutSlint attribution widget; see [third-party notices](docs/THIRD-PARTY.md). The alternate light [banner illustration](assets/banners/ulanzi-dock-light.png) is a concept, not a device photograph.
 
 Copyright © 2026 Umberto Giacobbi. MIT licensed; see [LICENSE](LICENSE).
 

@@ -117,7 +117,7 @@ def cover(pdf):
     logo = ROOT / "assets" / "brand" / "vibeware-logo.png"
     image_fit(pdf, logo, 548, 133, 220, 220)
     paragraph(pdf, "A lightweight resident CLI for 13 display keys plus the wide bottom key. The program draws a complete page, receives input from the D200H consumer HID interface and dispatches a configured action on release.", 36, 139, 473, 13, 19, INK)
-    label_value(pdf, 221, "PAGES", "Windows - Codex - VS Code - Utility - Themes")
+    label_value(pdf, 221, "PAGES", "9 pages: Windows, Utility, work apps, Office, Themes")
     label_value(pdf, 264, "THEMES", "Four original + nine new; up/down per key")
     label_value(pdf, 307, "DELIVERY", "Source portable; Windows x64 and ARM64 binaries")
     box(pdf, 36, 365, 730, 83, PANEL)
@@ -138,7 +138,7 @@ def physical_map(pdf):
     box(pdf, 225, 279, 118, 60, NAVY, 6)
     baseline(pdf, "13 CLOCK", 236, 314, "JetMonoBold", 11, colors.white)
     baseline(pdf, "NEXT PAGE", 273, 125, "JetMonoBold", 7.5, BLUE)
-    paragraph(pdf, "Cycles Windows / media -> Codex -> VS Code -> Utility -> Themes -> Windows / media. Theme choices return to Windows/media in the selected style. The wide bottom display shows the clock only.", 36, 372, 323, 10, 15, MUTED)
+    paragraph(pdf, "Cycles Windows / media -> Utility -> Codex -> VS Code -> Spotify -> Word -> PowerPoint -> Excel -> Themes. Theme choices return to Windows/media in the selected style. The wide display shows the clock or optional runtime status.", 36, 372, 323, 10, 15, MUTED)
     x = 392
     rows = [
         ("00-03", "Work and media", "Utility shortcuts", "Theme choices"),
@@ -179,7 +179,7 @@ def theme_page(pdf, number, slug, theme_title, page_slug, page_number, page_titl
 
 def operation(pdf, number):
     """Provide operating commands and evidence boundaries."""
-    frame(pdf, number, "OPERATE", "Run, customize, verify", "A single executable embeds the artwork; page five selects and saves a theme.", "README.md, CLI implementation and Windows x64 offline build")
+    frame(pdf, number, "OPERATE", "Run, customize, verify", "A single executable embeds the artwork; the final page selects and saves a theme.", "README.md, CLI implementation and Windows x64 offline build")
     commands = [
         ("01 / CHECK DEVICE", ".\\ulanzi-dock-vibeware.exe doctor"),
         ("02 / CREATE SETTINGS", ".\\ulanzi-dock-vibeware.exe init"),
@@ -193,12 +193,12 @@ def operation(pdf, number):
         baseline(pdf, heading, 49, y + 17, "JetMonoBold", 7.9, BLUE)
         baseline(pdf, command, 205, y + 27, "JetMono", 10, INK)
     box(pdf, 36, 403, 770, 44, colors.HexColor("#E8F3F9"), 7)
-    paragraph(pdf, "Shortcuts target the focused app. Page five shows twelve alternatives to the active theme and saves a selection to settings.json. The wide display shows only the clock. USB writes, visible output and input are separate observations. Stop with Ctrl+C.", 49, 420, 738, 9.2, 13, INK)
+    paragraph(pdf, "Shortcuts target the focused app. The final Themes page shows twelve alternatives to the active theme and saves a selection to settings.json. The wide display shows the clock or optional runtime status. USB writes, visible output and input are separate observations. Stop with Ctrl+C or the Windows tray Exit menu.", 49, 420, 738, 9.2, 13, INK)
     pdf.showPage()
 
 
 def main():
-    """Write the complete five-page by thirteen-theme production catalogue."""
+    """Write the complete nine-page by thirteen-theme production catalogue."""
     pdf = canvas.Canvas(str(OUTPUT), pagesize=(W, H), pageCompression=1)
     pdf.setTitle("UlanziDock VibeWare version - Controller Atlas and Guide")
     pdf.setAuthor("Umberto Giacobbi | hello@umbertogiacobbi.biz")
@@ -224,10 +224,14 @@ def main():
     )
     pages = (
         ("windows", 1, "Windows / media"),
-        ("codex", 2, "Codex"),
-        ("vscode", 3, "VS Code"),
-        ("utility", 4, "Utility"),
-        ("themes", 5, "Themes"),
+        ("utility", 2, "Utility"),
+        ("codex", 3, "Codex"),
+        ("vscode", 4, "VS Code"),
+        ("spotify", 5, "Spotify"),
+        ("word", 6, "Word"),
+        ("powerpoint", 7, "PowerPoint"),
+        ("excel", 8, "Excel"),
+        ("themes", 9, "Themes"),
     )
     for slug, theme_title in themes:
         for page_slug, page_number, page_title in pages:

@@ -21,6 +21,7 @@ use std::{collections::HashSet, fs, path::Path};
 #[derive(Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeSettings {
+    pub detect_applications: bool,
     pub auto_switch: bool,
     pub focus_poll_seconds: u64,
 }
@@ -28,6 +29,7 @@ pub struct RuntimeSettings {
 impl Default for RuntimeSettings {
     fn default() -> Self {
         Self {
+            detect_applications: true,
             auto_switch: true,
             focus_poll_seconds: 1,
         }
@@ -146,7 +148,14 @@ pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
     anyhow::ensure!(
         matches!(
             family,
-            "windows" | "codex" | "vscode" | "utility" | "spotify"
+            "windows"
+                | "codex"
+                | "vscode"
+                | "utility"
+                | "spotify"
+                | "word"
+                | "powerpoint"
+                | "excel"
         ),
         "unknown asset family '{family}'"
     );

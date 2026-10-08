@@ -153,7 +153,7 @@ pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<boo
             );
             cli_pages::setup_text(
                 &format!(
-                    "{} Six pages: Windows / media, Codex, VS Code, Utility, Themes and Spotify.",
+                    "{} Nine pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel and Themes.",
                     cli_pages::setup_icon("🎛️", ">")
                 ),
                 Tone::Primary,

@@ -29,6 +29,128 @@ static ICON_CACHE: OnceLock<Mutex<HashMap<(usize, usize), GrayImage>>> = OnceLoc
 static UNAVAILABLE_OVERLAY: OnceLock<RgbaImage> = OnceLock::new();
 static LABEL_FONT: OnceLock<Font> = OnceLock::new();
 static SPOTIFY_SYMBOLS: OnceLock<HashMap<usize, GrayImage>> = OnceLock::new();
+static OFFICE_SYMBOLS: OnceLock<HashMap<(String, usize), GrayImage>> = OnceLock::new();
+
+// page_name: Word, PowerPoint, or Excel; used for application-specific command symbols.
+// index: physical command key, excluding navigation and the clock.
+// Returns original native artwork, with no Microsoft logo or third-party raster dependency.
+fn office_symbol(page_name: &str, index: usize) -> GrayImage {
+    const SCALE: u32 = 4;
+    let mut canvas = RgbaImage::new(118 * SCALE, 99 * SCALE);
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let px = x as f32 / SCALE as f32;
+            let py = y as f32 / SCALE as f32;
+            let rect = |left: f32, top: f32, right: f32, bottom: f32| {
+                px >= left && px <= right && py >= top && py <= bottom
+            };
+            let line = |ax: f32, ay: f32, bx: f32, by: f32| {
+                let dx = bx - ax;
+                let dy = by - ay;
+                let t = (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)).clamp(0., 1.);
+                (px - ax - t * dx).powi(2) + (py - ay - t * dy).powi(2) <= 3.0_f32.powi(2)
+            };
+            let document = rect(29., 10., 90., 87.) && !rect(35., 16., 84., 81.);
+            let slide = rect(15., 14., 104., 69.) && !rect(21., 20., 98., 63.)
+                || line(59., 69., 59., 84.)
+                || line(40., 85., 78., 85.);
+            let filled = match index {
+                0 => {
+                    rect(24., 10., 94., 87.)
+                        && !rect(32., 45., 86., 80.)
+                        && !rect(39., 10., 77., 33.)
+                }
+                1 => {
+                    line(17., 32., 17., 83.)
+                        || line(17., 83., 101., 83.)
+                        || line(101., 83., 101., 36.)
+                        || line(17., 32., 48., 32.)
+                        || line(48., 32., 58., 42.)
+                        || line(58., 42., 101., 42.)
+                }
+                2 => document || line(59., 34., 59., 65.) || line(44., 49., 74., 49.),
+                3 => {
+                    (rect(16., 36., 102., 70.) && !rect(22., 42., 96., 64.))
+                        || (rect(31., 12., 87., 87.) && !rect(37., 18., 81., 81.))
+                        || line(42., 72., 76., 72.)
+                }
+                5 | 6 => {
+                    let qx = if index == 6 { 118. - px } else { px };
+                    let radius = ((qx - 63.).powi(2) + (py - 54.).powi(2)).sqrt();
+                    (radius > 24. && radius < 31. && (qx > 63. || py < 54.))
+                        || (qx > 24. && qx < 48. && (py - 31.).abs() < (48. - qx) * 0.65)
+                }
+                7 => {
+                    let radius = ((px - 50.).powi(2) + (py - 40.).powi(2)).sqrt();
+                    (radius > 23. && radius < 29.) || line(70., 60., 95., 85.)
+                }
+                8..=12 if page_name == "PowerPoint" => {
+                    slide
+                        || match index {
+                            8 => px > 47. && px < 76. && (py - 42.).abs() < (px - 47.) * 0.6,
+                            9 => line(43., 32., 68., 42.) || line(68., 42., 43., 52.),
+                            10 => line(59., 28., 59., 56.) || line(45., 42., 73., 42.),
+                            11 => rect(35., 30., 81., 55.) && !rect(40., 35., 76., 50.),
+                            _ => rect(46., 29., 72., 55.),
+                        }
+                }
+                9 if page_name == "Excel" => {
+                    document
+                        || line(29., 36., 90., 36.)
+                        || line(29., 61., 90., 61.)
+                        || line(49., 10., 49., 87.)
+                        || line(69., 10., 69., 87.)
+                }
+                10 if page_name == "Excel" => {
+                    document
+                        || line(29., 32., 90., 32.)
+                        || line(44., 5., 44., 21.)
+                        || line(74., 5., 74., 21.)
+                        || rect(43., 46., 51., 54.)
+                        || rect(64., 46., 72., 54.)
+                }
+                11 if page_name == "Excel" || index == 12 && page_name == "Word" => {
+                    document
+                        || line(49., 67., 88., 28.)
+                        || line(55., 73., 94., 34.)
+                        || line(49., 67., 55., 73.)
+                }
+                12 if page_name == "Excel" => {
+                    line(19., 17., 99., 17.)
+                        || line(19., 17., 49., 53.)
+                        || line(99., 17., 69., 53.)
+                        || line(49., 53., 49., 82.)
+                        || line(69., 53., 69., 74.)
+                        || line(49., 82., 69., 74.)
+                }
+                _ => false,
+            };
+            if filled {
+                canvas.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+            }
+        }
+    }
+    let glyph = match (page_name, index) {
+        ("Word", 8) => "B",
+        ("Word", 9) => "I",
+        ("Word", 10) => "U",
+        ("Word", 11) => "Aa",
+        ("Excel", 8) => "Σ",
+        _ => "",
+    };
+    if !glyph.is_empty() {
+        draw_panel_text(
+            &mut canvas,
+            glyph,
+            31 * SCALE as i32,
+            75 * SCALE as i32,
+            62. * SCALE as f32,
+            [255; 3],
+        );
+    }
+    let small = imageops::resize(&canvas, 118, 99, imageops::FilterType::Lanczos3);
+    GrayImage::from_fn(118, 99, |x, y| Luma([small.get_pixel(x, y)[3]]))
+}
 
 // Extend the native pictogram system; themes supply the approved internal gradients.
 fn spotify_symbols() -> &'static HashMap<usize, GrayImage> {
@@ -130,6 +252,9 @@ fn configured_icon(page: &PageConfig, index: usize) -> Result<GrayImage> {
         "vscode" => "VS Code",
         "utility" => "Utility",
         "spotify" => "Spotify",
+        "word" => "Word",
+        "powerpoint" => "PowerPoint",
+        "excel" => "Excel",
         _ => "Windows / media",
     };
     icon_mask(source_page, source_index)
@@ -198,6 +323,24 @@ fn utility_symbol(index: usize) -> GrayImage {
 // index: physical key index from 0 through 12.
 // Errors: a missing icon in the bundled source atlas.
 fn icon_mask(page_name: &str, index: usize) -> Result<GrayImage> {
+    if matches!(page_name, "Word" | "PowerPoint" | "Excel") {
+        if index == NEXT_KEY {
+            return icon_mask("Windows / media", NEXT_KEY);
+        }
+        let symbols = OFFICE_SYMBOLS.get_or_init(|| {
+            let mut symbols = HashMap::new();
+            for page in ["Word", "PowerPoint", "Excel"] {
+                for key in (0..CLOCK_KEY).filter(|&key| key != NEXT_KEY) {
+                    symbols.insert((page.to_owned(), key), office_symbol(page, key));
+                }
+            }
+            symbols
+        });
+        return symbols
+            .get(&(page_name.to_owned(), index))
+            .cloned()
+            .context("missing native Office icon");
+    }
     if page_name == "Spotify" {
         if let Some(mask) = spotify_symbols().get(&index) {
             return Ok(mask.clone());
