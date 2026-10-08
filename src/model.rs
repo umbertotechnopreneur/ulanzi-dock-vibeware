@@ -113,6 +113,8 @@ pub struct KeyConfig {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PageConfig {
     pub name: String,
+    #[serde(default = "default_page_enabled")]
+    pub enabled: bool,
     pub keys: Vec<KeyConfig>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub executables: Vec<String>,
@@ -128,11 +130,17 @@ pub struct Config {
     pub runtime: crate::applications::RuntimeSettings,
 }
 
+// Older settings keep every page enabled until the owner changes its checkbox.
+fn default_page_enabled() -> bool {
+    true
+}
+
 // name: user-facing page title.
 // keys: labels and actions in physical key order.
 fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
     PageConfig {
         name: name.into(),
+        enabled: true,
         executables: match name {
             "Codex" => vec!["Codex.exe".into(), "ChatGPT.exe".into()],
             "VS Code" => vec!["Code.exe".into(), "Code - Insiders.exe".into()],
@@ -227,6 +235,24 @@ impl Default for Config {
 }
 
 impl Config {
+    // Return the general Windows page, or the first enabled custom page.
+    // Config validation guarantees that at least one page is enabled.
+    pub fn home_page(&self) -> usize {
+        self.pages
+            .iter()
+            .position(|page| page.enabled && page.name == "Windows / media")
+            .or_else(|| self.pages.iter().position(|page| page.enabled))
+            .unwrap_or(0)
+    }
+
+    // current: current page index. Disabled pages retain their actions but are skipped.
+    pub fn next_enabled_page(&self, current: usize) -> usize {
+        (1..=self.pages.len())
+            .map(|offset| (current + offset) % self.pages.len())
+            .find(|&index| self.pages[index].enabled)
+            .unwrap_or(current)
+    }
+
     // name: one of the three desktop Office applications, each with its own page.
     // Shortcuts use Windows/English defaults and remain editable in settings.json.
     pub fn office_page(name: &str) -> PageConfig {
@@ -373,6 +399,7 @@ impl Config {
         }
         PageConfig {
             name: "Themes".into(),
+            enabled: true,
             keys,
             executables: Vec::new(),
         }
@@ -475,6 +502,10 @@ impl Config {
 
     // Errors: a missing page, wrong key count, or reassigned navigation/clock key.
     pub fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.pages.iter().any(|page| page.enabled),
+            "enable at least one page"
+        );
         anyhow::ensure!(
             self.pages.last().is_some_and(|page| page.name == "Themes"),
             "the final page must be the Themes selector"

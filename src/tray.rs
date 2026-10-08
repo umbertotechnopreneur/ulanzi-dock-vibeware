@@ -292,9 +292,9 @@ mod windows {
         let height = unsafe { GetSystemMetrics(SM_CYSMICON) }.max(16) as u32;
         let source = image::load_from_memory(include_bytes!(concat!(
             env!("OUT_DIR"),
-            "/vibeware-pixel.png"
+            "/ulanzi-dock-icon-32.png"
         )))
-        .context("decoding the VibeWare tray logo")?;
+        .context("decoding the UlanziDock tray icon")?;
         let resized = source.resize(width, height, FilterType::Nearest).to_rgba8();
         let mut rgba = image::RgbaImage::new(width, height);
         image::imageops::overlay(

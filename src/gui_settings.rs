@@ -68,6 +68,7 @@ impl Settings {
     // auto_switch: enable automatic foreground application page selection.
     // detect_applications: enable application availability checks and inactive overlays.
     // poll_seconds: foreground check interval, limited to 1-60 seconds.
+    // app_pages: application page names and their explicit enabled state.
     // Errors: stale settings, validation, backup, staging, or replacement failure.
     pub fn save(
         &mut self,
@@ -75,12 +76,22 @@ impl Settings {
         detect_applications: bool,
         auto_switch: bool,
         poll_seconds: u64,
+        app_pages: &[(String, bool)],
     ) -> Result<()> {
         ensure!(
             (1..=60).contains(&poll_seconds),
             "The interval must be 1-60 seconds."
         );
         self.check_current()?;
+        for (name, _) in app_pages {
+            ensure!(
+                self.config
+                    .pages
+                    .iter()
+                    .any(|page| page.name == *name && !page.executables.is_empty()),
+                "Unknown application page: {name}"
+            );
+        }
         let mut changes = Vec::new();
         {
             // Reuse each existing raw page object: retain shortcuts and unknown nested fields.
@@ -105,6 +116,17 @@ impl Settings {
                 }
             }
             pages.extend(existing);
+            for (name, enabled) in app_pages {
+                let page = pages
+                    .iter_mut()
+                    .find(|page| page["name"].as_str() == Some(name))
+                    .context("application page missing from settings")?;
+                if page["enabled"].as_bool().unwrap_or(true) != *enabled {
+                    page.as_object_mut()
+                        .context("page must be an object")?
+                        .insert("enabled".into(), (*enabled).into());
+                }
+            }
             value
                 .as_object_mut()
                 .context("settings.json must contain an object")?
@@ -434,7 +456,13 @@ mod tests {
         let original_json = fs::read(&path)?;
         let original_yaml = fs::read_to_string(path.with_file_name("applications.yaml"))?;
         let mut settings = Settings::load(&path)?;
-        settings.save(Theme::LightClassic, false, false, 7)?;
+        settings.save(
+            Theme::LightClassic,
+            false,
+            false,
+            7,
+            &[("Word".into(), false), ("Codex".into(), false)],
+        )?;
         let expected = serde_json::from_slice::<serde_json::Value>(&original_json)?;
         let saved = serde_json::from_slice::<serde_json::Value>(&fs::read(&path)?)?;
         assert_eq!(saved["theme"], "light-classic");
@@ -446,7 +474,11 @@ mod tests {
                 .iter()
                 .find(|page| page["name"] == original_page["name"])
                 .expect("preserved page");
-            assert_eq!(saved_page, original_page);
+            let mut expected_page = original_page.clone();
+            if expected_page["name"] == "Codex" {
+                expected_page["enabled"] = false.into();
+            }
+            assert_eq!(*saved_page, expected_page);
         }
         let yaml = fs::read_to_string(path.with_file_name("applications.yaml"))?;
         assert!(
@@ -487,6 +519,24 @@ mod tests {
             ]
         );
         assert_eq!(loaded.runtime.focus_poll_seconds, 7);
+        assert!(!loaded.pages[2].enabled);
+        assert!(!loaded.pages[5].enabled);
+        assert_eq!(loaded.next_enabled_page(1), 3);
+        assert_eq!(loaded.next_enabled_page(4), 6);
+        assert_eq!(
+            crate::actions::matching_page(
+                &loaded,
+                &crate::actions::ForegroundProcess::Known("winword.exe".into())
+            ),
+            None
+        );
+        assert_eq!(
+            crate::actions::matching_page(
+                &loaded,
+                &crate::actions::ForegroundProcess::Known("POWERPNT.EXE".into())
+            ),
+            Some(6)
+        );
         Ok(())
     }
 
@@ -500,7 +550,7 @@ mod tests {
         let mut external = fs::read(&path)?;
         external.push(b'\n');
         fs::write(&path, &external)?;
-        assert!(settings.save(Theme::Memphis, false, false, 8).is_err());
+        assert!(settings.save(Theme::Memphis, false, false, 8, &[]).is_err());
         assert_eq!(fs::read(&path)?, external);
         assert_eq!(fs::read(path.with_file_name("applications.yaml"))?, yaml);
         Ok(())
@@ -518,7 +568,7 @@ mod tests {
             .0
             .join(format!("applications.gui-{}.tmp", std::process::id()));
         fs::write(&temporary, b"keep existing staging data")?;
-        assert!(settings.save(Theme::Memphis, false, false, 8).is_err());
+        assert!(settings.save(Theme::Memphis, false, false, 8, &[]).is_err());
         assert_eq!(fs::read(&path)?, json);
         assert_eq!(fs::read(path.with_file_name("applications.yaml"))?, yaml);
         assert_eq!(fs::read(&temporary)?, b"keep existing staging data");

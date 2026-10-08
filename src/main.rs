@@ -96,8 +96,8 @@ enum Command {
         /// Restrict the export to one theme.
         #[arg(long, value_enum)]
         theme: Option<Theme>,
-        /// Restrict the export to one page (1-6).
-        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=6))]
+        /// Restrict the export to one page (1-9).
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=9))]
         page: Option<u64>,
         /// Preview inactive application keys without querying focus or opening HID.
         #[arg(long)]
@@ -256,9 +256,9 @@ fn run(
         None
     };
     let mut page = if auto_page {
-        actions::matching_page(&config, &foreground).unwrap_or(0)
+        actions::matching_page(&config, &foreground).unwrap_or_else(|| config.home_page())
     } else {
-        0
+        config.home_page()
     };
     let mut held = None;
     let mut enabled = actions::page_available(&config.pages[page], &foreground);
@@ -293,7 +293,8 @@ fn run(
             {
                 if auto_page {
                     // Known applications without a dedicated page return to Windows / media.
-                    let next_page = actions::matching_page(&config, &foreground).unwrap_or(0);
+                    let next_page = actions::matching_page(&config, &foreground)
+                        .unwrap_or_else(|| config.home_page());
                     if next_page != page {
                         // A release from the previous page must never dispatch a new page's action.
                         held = None;
@@ -358,7 +359,7 @@ fn run(
             held = None;
             let mut page_changed = false;
             if event.index == NEXT_KEY {
-                page = (page + 1) % config.pages.len();
+                page = config.next_enabled_page(page);
                 println!("Page: {}", config.pages[page].name);
                 page_changed = true;
             } else if let Some(slug) = config.pages[page].keys[event.index]
@@ -371,7 +372,7 @@ fn run(
                 config.theme = selected;
                 config.refresh_theme_selector(selected)?;
                 println!("Theme: {}", selected.slug());
-                page = 0;
+                page = config.home_page();
                 println!("Page: {}", config.pages[page].name);
                 page_changed = true;
                 if let Err(error) = control

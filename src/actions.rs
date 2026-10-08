@@ -44,10 +44,9 @@ pub fn matching_page(
     if !matches!(foreground, ForegroundProcess::Known(_)) {
         return None;
     }
-    config
-        .pages
-        .iter()
-        .position(|page| !page.executables.is_empty() && page_available(page, foreground))
+    config.pages.iter().position(|page| {
+        page.enabled && !page.executables.is_empty() && page_available(page, foreground)
+    })
 }
 
 // Inspect only the owner of the foreground window; never read titles or keyboard input.

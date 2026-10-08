@@ -9,30 +9,29 @@
  * License: MIT - see LICENSE
  * VBWR E */
 
-#[path = "src/branding.rs"]
-mod branding;
-
 use std::{env, fs::File, path::PathBuf};
 
 // Errors: propagated to Cargo for UI compilation, generated artwork, or Windows resources.
 fn main() {
     println!("cargo:rerun-if-changed=ui/dialogs.slint");
-    println!("cargo:rerun-if-changed=src/branding.rs");
+    println!("cargo:rerun-if-changed=assets/brand/ulanzi-dock-icon.png");
+    println!("cargo:rerun-if-changed=assets/brand/ulanzi-dock-logo.png");
     println!("cargo:rerun-if-changed=assets/brand/vibeware-logo.png");
     let directory = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
-    let floppy = branding::floppy();
-    floppy
-        .save(directory.join("vibeware-pixel.png"))
-        .expect("pixel icon PNG");
-    image::imageops::resize(&floppy, 256, 256, image::imageops::FilterType::Nearest)
-        .save(directory.join("vibeware-pixel-preview.png"))
-        .expect("pixel icon preview");
+    let source = image::open("assets/brand/ulanzi-dock-icon.png")
+        .expect("product icon master")
+        .to_rgba8();
+    for size in [32, 256] {
+        image::imageops::resize(&source, size, size, image::imageops::FilterType::Nearest)
+            .save(directory.join(format!("ulanzi-dock-icon-{size}.png")))
+            .expect("product icon PNG");
+    }
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let frames: Vec<_> = [16, 24, 32, 48, 64, 128, 256]
             .into_iter()
             .map(|size| {
                 let pixels = image::imageops::resize(
-                    &floppy,
+                    &source,
                     size,
                     size,
                     image::imageops::FilterType::Nearest,
@@ -46,7 +45,7 @@ fn main() {
                 .expect("Windows icon frame")
             })
             .collect();
-        let icon = directory.join("vibeware-pixel.ico");
+        let icon = directory.join("ulanzi-dock.ico");
         image::codecs::ico::IcoEncoder::new(File::create(&icon).expect("Windows icon file"))
             .encode_images(&frames)
             .expect("Windows icon encoding");

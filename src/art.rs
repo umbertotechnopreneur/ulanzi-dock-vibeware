@@ -84,16 +84,29 @@ fn office_symbol(page_name: &str, index: usize) -> GrayImage {
                     let radius = ((px - 50.).powi(2) + (py - 40.).powi(2)).sqrt();
                     (radius > 23. && radius < 29.) || line(70., 60., 95., 85.)
                 }
+                11 if page_name == "PowerPoint" => {
+                    (rect(17., 15., 86., 65.) && !rect(23., 21., 80., 59.))
+                        || (rect(36., 34., 105., 84.) && !rect(42., 40., 99., 78.))
+                }
                 8..=12 if page_name == "PowerPoint" => {
                     slide
                         || match index {
-                            8 => px > 47. && px < 76. && (py - 42.).abs() < (px - 47.) * 0.6,
+                            8 => px > 47. && px < 76. && (py - 42.).abs() < (76. - px) * 0.6,
                             9 => line(43., 32., 68., 42.) || line(68., 42., 43., 52.),
                             10 => line(59., 28., 59., 56.) || line(45., 42., 73., 42.),
-                            11 => rect(35., 30., 81., 55.) && !rect(40., 35., 76., 50.),
                             _ => rect(46., 29., 72., 55.),
                         }
                 }
+                8 if page_name == "Excel" => {
+                    line(36., 14., 88., 14.)
+                        || line(36., 14., 65., 48.)
+                        || line(65., 48., 36., 82.)
+                        || line(36., 82., 88., 82.)
+                }
+                9 if page_name == "Word" => {
+                    line(67., 15., 50., 81.) || line(45., 15., 83., 15.) || line(33., 81., 71., 81.)
+                }
+                10 if page_name == "Word" => line(33., 86., 88., 86.),
                 9 if page_name == "Excel" => {
                     document
                         || line(29., 36., 90., 36.)
@@ -109,7 +122,10 @@ fn office_symbol(page_name: &str, index: usize) -> GrayImage {
                         || rect(43., 46., 51., 54.)
                         || rect(64., 46., 72., 54.)
                 }
-                11 if page_name == "Excel" || index == 12 && page_name == "Word" => {
+                11 | 12
+                    if index == 11 && page_name == "Excel"
+                        || index == 12 && page_name == "Word" =>
+                {
                     document
                         || line(49., 67., 88., 28.)
                         || line(55., 73., 94., 34.)
@@ -132,10 +148,8 @@ fn office_symbol(page_name: &str, index: usize) -> GrayImage {
     }
     let glyph = match (page_name, index) {
         ("Word", 8) => "B",
-        ("Word", 9) => "I",
         ("Word", 10) => "U",
         ("Word", 11) => "Aa",
-        ("Excel", 8) => "Σ",
         _ => "",
     };
     if !glyph.is_empty() {

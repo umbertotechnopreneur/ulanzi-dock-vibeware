@@ -11,7 +11,7 @@
 
 use crate::{gui_settings::Settings, model::Theme, tray::Control};
 use anyhow::{Context, Result};
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
 slint::include_modules!();
@@ -57,24 +57,10 @@ pub fn show_about() -> Result<()> {
 // path: settings file shared with the resident controller.
 // control: shared lifecycle state for Save + Restart.
 // mode: decides whether closing a dialog hides it or ends a standalone UI command.
-// Errors: UI initialization or embedded icon decoding.
+// Errors: UI initialization.
 fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     let about = AboutDialog::new().context("creating the About dialog")?;
     let config = MainWindow::new().context("creating the configurator")?;
-    let pixels = image::load_from_memory(include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/vibeware-pixel.png"
-    )))?
-    .to_rgba8();
-    let icon = slint::Image::from_rgba8(
-        slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            pixels.as_raw(),
-            pixels.width(),
-            pixels.height(),
-        ),
-    );
-    about.set_app_icon(icon.clone());
-    config.set_app_icon(icon);
     about.set_version(env!("CARGO_PKG_VERSION").into());
     config.set_resident(mode == Mode::Resident);
     config.set_themes(slint::ModelRc::new(slint::VecModel::from(
@@ -84,16 +70,38 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
             .collect::<Vec<slint::SharedString>>(),
     )));
     let settings = Rc::new(RefCell::new(None::<Settings>));
+    let app_pages = Rc::new(slint::VecModel::<AppPage>::default());
+    config.set_app_pages(slint::ModelRc::from(Rc::clone(&app_pages)));
+    let toggled_pages = Rc::clone(&app_pages);
+    config.on_page_toggled(move |index, enabled| {
+        if let Some(mut page) = toggled_pages.row_data(index as usize) {
+            page.enabled = enabled;
+            toggled_pages.set_row_data(index as usize, page);
+        }
+    });
     let reload: Rc<dyn Fn()> = {
         let weak = config.as_weak();
         let settings = Rc::clone(&settings);
         let path = path.clone();
+        let app_pages = Rc::clone(&app_pages);
         Rc::new(move || {
             let Some(config) = weak.upgrade() else {
                 return;
             };
             match Settings::load(&path) {
                 Ok(loaded) => {
+                    app_pages.set_vec(
+                        loaded
+                            .config
+                            .pages
+                            .iter()
+                            .filter(|page| !page.executables.is_empty())
+                            .map(|page| AppPage {
+                                name: page.name.clone().into(),
+                                enabled: page.enabled,
+                            })
+                            .collect::<Vec<_>>(),
+                    );
                     config.set_theme_index(
                         Theme::ALL
                             .iter()
@@ -127,6 +135,9 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
                 configure_reload();
             }
             config.window().set_minimized(false);
+            config
+                .window()
+                .set_size(slint::LogicalSize::new(600., 740.));
             let _ = config.show();
         }
     });
@@ -144,11 +155,16 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
             return;
         };
         let result = save_control.lock_settings().and_then(|_lock| {
+            let selected_pages = app_pages
+                .iter()
+                .map(|page| (page.name.to_string(), page.enabled))
+                .collect::<Vec<_>>();
             settings.save(
                 theme,
                 config.get_detect_applications(),
                 config.get_auto_switch(),
                 config.get_poll_seconds() as u64,
+                &selected_pages,
             )
         });
         match result {
@@ -181,6 +197,15 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
             config.set_message(format!("{error:#}").into());
         }
     });
+    let weak = config.as_weak();
+    config.on_learn_vibeware(move || {
+        if let (Err(error), Some(config)) = (
+            crate::tray::open_browser("https://umbertogiacobbi.biz/vibeware/manifesto"),
+            weak.upgrade(),
+        ) {
+            config.set_message(format!("{error:#}").into());
+        }
+    });
     let weak = about.as_weak();
     about.on_open_link(move |target| {
         let url = match target.as_str() {
@@ -189,8 +214,12 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
             "manifesto" => "https://umbertogiacobbi.biz/vibeware/manifesto",
             _ => return,
         };
-        if let (Err(error), Some(about)) = (crate::tray::open_browser(url), weak.upgrade()) {
-            about.set_message(format!("{error:#}").into());
+        let result = crate::tray::open_browser(url);
+        if let Some(about) = weak.upgrade() {
+            about.set_message(match result {
+                Ok(()) => "Opened in your default browser.".into(),
+                Err(error) => format!("{error:#}").into(),
+            });
         }
     });
     let weak = about.as_weak();

@@ -17,6 +17,7 @@
 /artifacts/
 /dist/
 /tmp/
+__pycache__/
 /settings.json
 *.json.bak
 *.gui.bak
