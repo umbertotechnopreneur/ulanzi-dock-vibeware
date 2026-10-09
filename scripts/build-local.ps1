@@ -48,6 +48,9 @@ $temporaryParent = Assert-WorkspacePath (Join-Path $project 'tmp')
 $artifactDir = Assert-WorkspacePath (Join-Path $project 'artifacts')
 $buildDir = Assert-WorkspacePath (Join-Path $temporaryParent 'local-build')
 $stableExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.exe')
+$stableLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.exe')
+$pendingLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.new.exe')
+$previousLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.previous.exe')
 $pendingExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.new.exe')
 $previousExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.previous.exe')
 
@@ -60,6 +63,14 @@ if (Test-Path -LiteralPath $previousExe) {
     }
     else {
         [System.IO.File]::Move($previousExe, $stableExe)
+    }
+}
+if (Test-Path -LiteralPath $previousLauncher) {
+    if (Test-Path -LiteralPath $stableLauncher) {
+        Remove-Item -LiteralPath $previousLauncher -Force
+    }
+    else {
+        [System.IO.File]::Move($previousLauncher, $stableLauncher)
     }
 }
 
@@ -120,10 +131,19 @@ try {
     }
 
     $builtExe = Assert-WorkspacePath (Join-Path $buildDir 'release\ulanzi-dock-vibeware.exe')
+    $builtLauncher = Assert-WorkspacePath (Join-Path $buildDir 'release\ulanzi-dock-launcher.exe')
     if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
         throw "Cargo did not produce $builtExe"
     }
     Copy-Item -LiteralPath $builtExe -Destination $pendingExe -Force
+    Copy-Item -LiteralPath $builtLauncher -Destination $pendingLauncher -Force
+    if (Test-Path -LiteralPath $stableLauncher) {
+        [System.IO.File]::Replace($pendingLauncher, $stableLauncher, $previousLauncher)
+        Remove-Item -LiteralPath $previousLauncher -Force
+    }
+    else {
+        [System.IO.File]::Move($pendingLauncher, $stableLauncher)
+    }
     if (Test-Path -LiteralPath $stableExe) {
         [System.IO.File]::Replace($pendingExe, $stableExe, $previousExe)
         Remove-Item -LiteralPath $previousExe -Force
@@ -137,6 +157,10 @@ finally {
     if (Test-Path -LiteralPath $pendingExe) {
         $pendingExe = Assert-WorkspacePath $pendingExe
         Remove-Item -LiteralPath $pendingExe -Force
+    }
+    if (Test-Path -LiteralPath $pendingLauncher) {
+        $pendingLauncher = Assert-WorkspacePath $pendingLauncher
+        Remove-Item -LiteralPath $pendingLauncher -Force
     }
     if ((Test-Path -LiteralPath $buildDir) -and -not $KeepBuildCache) {
         $buildDir = Assert-WorkspacePath $buildDir

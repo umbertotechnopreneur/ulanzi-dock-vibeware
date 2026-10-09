@@ -1,5 +1,6 @@
 # VBWR B
 # Project: UlanziDock VibeWare version
+# Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 # VibeWare is Human intent. AI implementation. Accountable human review.
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto

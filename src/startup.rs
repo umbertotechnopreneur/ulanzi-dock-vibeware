@@ -16,74 +16,67 @@
 use anyhow::Result;
 
 #[cfg(windows)]
+// enable: install or repair this user's hidden sign-in shortcut.
+// disable: remove owned shortcut and legacy command-file entries.
+// Errors: missing settings, unsafe paths, or shortcut migration failure.
 pub fn manage(enable: bool, disable: bool) -> Result<()> {
     use anyhow::{ensure, Context};
-    use std::{env, fs, path::PathBuf};
-
-    const MARKER: &str = "rem UlanziDock VibeWare startup entry";
-    let appdata = PathBuf::from(env::var_os("APPDATA").context("APPDATA is unavailable")?);
-    let startup =
-        appdata.join("Microsoft/Windows/Start Menu/Programs/Startup/UlanziDock VibeWare.cmd");
-    let existing = if startup.exists() {
-        let content = fs::read_to_string(&startup)
-            .with_context(|| format!("reading {}", startup.display()))?;
-        ensure!(
-            content.lines().any(|line| line == MARKER),
-            "{} exists but was not created by UlanziDock; preserving it",
-            startup.display()
-        );
-        true
-    } else {
-        false
-    };
-    if disable {
-        if existing {
-            fs::remove_file(&startup).with_context(|| format!("removing {}", startup.display()))?;
-            println!("Disabled launch at Windows sign-in for this user.");
-        } else {
-            println!("Launch at Windows sign-in is already disabled for this user.");
-        }
-        return Ok(());
-    }
-    if !enable {
-        println!(
-            "Launch at Windows sign-in: {}",
-            if existing { "enabled" } else { "disabled" }
-        );
-        if existing {
-            println!("Entry: {}", startup.display());
-        }
-        return Ok(());
-    }
+    use std::{env, os::windows::process::CommandExt, path::PathBuf, process::Command};
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
     let executable = env::current_exe().context("finding this executable")?;
+    let launcher = executable.with_file_name("ulanzi-dock-launcher.exe");
     let workdir = env::current_dir().context("finding the working directory")?;
     let config = workdir.join("settings.json");
     ensure!(
-        config.is_file(),
+        !enable || config.is_file(),
         "{} is missing; run 'init' in the intended working directory first",
         config.display()
+    );
+    ensure!(
+        !enable || launcher.is_file(),
+        "{} is missing; keep the Windows launcher beside the controller executable",
+        launcher.display()
     );
     for path in [&executable, &workdir, &config] {
         let value = path.to_string_lossy();
         ensure!(
-            !value
-                .chars()
-                .any(|c| matches!(c, '"' | '%' | '!' | '\n' | '\r')),
-            "a path contains characters unsafe for a Windows startup command file: {}",
+            !value.chars().any(|c| matches!(c, '"' | '\n' | '\r')),
+            "a path contains characters unsafe for a Windows startup shortcut: {}",
             path.display()
         );
     }
-    let content = format!(
-        "@echo off\r\n{MARKER}\r\ncd /d \"{}\"\r\n\"{}\" run --config \"{}\" --status-display\r\n",
-        workdir.display(),
-        executable.display(),
-        config.display()
+    let powershell = PathBuf::from(env::var_os("SystemRoot").context("SystemRoot is unavailable")?)
+        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    // Paths are process environment data, never interpolated into executable script text.
+    // PowerShell only manages the shortcut. The native GUI launcher starts the controller
+    // without a console; no shell or script runs at sign-in.
+    let output = Command::new(&powershell)
+        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
+        .arg(include_str!("startup.ps1"))
+        .env("ULANZIDOCK_STARTUP_EXE", &executable)
+        .env("ULANZIDOCK_STARTUP_LAUNCHER", &launcher)
+        .env("ULANZIDOCK_STARTUP_WORKDIR", &workdir)
+        .env("ULANZIDOCK_STARTUP_CONFIG", &config)
+        .env(
+            "ULANZIDOCK_STARTUP_MODE",
+            if disable {
+                "disable"
+            } else if enable {
+                "enable"
+            } else {
+                "status"
+            },
+        )
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .context("managing the Windows sign-in shortcut")?;
+    ensure!(
+        output.status.success(),
+        "Windows sign-in shortcut operation failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    fs::write(&startup, content).with_context(|| format!("writing {}", startup.display()))?;
-    println!("Enabled launch at Windows sign-in for this user.");
-    println!("Executable: {}", executable.display());
-    println!("Entry: {}", startup.display());
+    print!("{}", String::from_utf8_lossy(&output.stdout));
     Ok(())
 }
 

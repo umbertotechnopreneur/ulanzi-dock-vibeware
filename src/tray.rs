@@ -279,10 +279,11 @@ mod windows {
             unsafe { Shell_NotifyIconW(NIM_ADD, &data) } != 0,
             "Windows could not add the UlanziDock notification icon"
         );
-        ensure!(
-            unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) } != 0,
-            "Windows could not configure the notification icon"
-        );
+        if unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) } == 0 {
+            // Leave no partially registered icon behind if startup needs to retry.
+            unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
+            anyhow::bail!("Windows could not configure the notification icon");
+        }
         Ok(())
     }
 
@@ -460,7 +461,18 @@ mod windows {
         };
         ensure!(!window.is_null(), "creating the tray window failed");
         let window = Window(window);
-        add_icon(window.0, state.icon.0)?;
+        // Explorer's notification area may not be ready when startup entries run.
+        // Wait briefly for the shell before declaring tray initialization a failure.
+        let tray_started = std::time::Instant::now();
+        loop {
+            match add_icon(window.0, state.icon.0) {
+                Ok(()) => break,
+                Err(error) if tray_started.elapsed() >= std::time::Duration::from_secs(30) => {
+                    return Err(error);
+                }
+                Err(_) => thread::sleep(std::time::Duration::from_millis(250)),
+            }
+        }
         ready
             .send(Ok(window.0 as usize))
             .context("reporting tray startup")?;

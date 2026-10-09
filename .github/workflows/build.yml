@@ -19,17 +19,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      check_cli:
-        description: "Authorize CLI checks for this manual build"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
-  windows:
+  package:
     strategy:
       fail-fast: false
       matrix:
@@ -40,40 +35,42 @@ jobs:
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             label: windows-arm64
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            label: macos-x64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            label: macos-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Linux development libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev libxdo-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-xcb-dev libxcursor-dev libxkbcommon-x11-dev
       - name: Add Rust target
         shell: pwsh
-        run: rustup target add ${{ matrix.target }}
-      - name: Build standalone EXE
-        shell: pwsh
-        run: cargo build --locked --release --target ${{ matrix.target }}
-      - name: Check CLI
-        if: github.event_name == 'workflow_dispatch' && inputs.check_cli
+        run: |
+          rustup target add ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed.' }
+      - name: Build release executables
         shell: pwsh
         run: |
-          & "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" themes
-          & "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" --help
-      - name: Package
+          cargo build --locked --release --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+      - name: Package executable, documentation and notices
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path package | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/ulanzi-dock-vibeware.exe" package/
-          Copy-Item README.md,LICENSE,docs/ulanzi-dock-vibeware-guide-v2.pdf package/
-          Compress-Archive -Path package/* -DestinationPath "ulanzi-dock-vibeware-${{ matrix.label }}.zip"
+        run: ./scripts/package-release.ps1 -Target '${{ matrix.target }}' -Label '${{ matrix.label }}' -Tag 'v0.1.0-stable'
       - uses: actions/upload-artifact@v4
         with:
-          name: ulanzi-dock-vibeware-${{ matrix.label }}
-          path: ulanzi-dock-vibeware-${{ matrix.label }}.zip
-
-  portable-check:
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Compile source
-        run: cargo check --locked
+          name: release-${{ matrix.label }}
+          path: |
+            dist/ulanzi-dock-vibeware-*.zip
+            dist/ulanzi-dock-vibeware-*.tar.gz
+            dist/ulanzi-dock-vibeware-*.sha256
+          if-no-files-found: error

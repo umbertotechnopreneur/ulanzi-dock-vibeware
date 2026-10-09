@@ -302,6 +302,12 @@ where
 {
     let _dialogs = create(path, Arc::clone(&control), Mode::Resident)?;
     // Neither window is shown at startup. Only an explicit About/menu action shows UI.
+    let _console = crate::console::detach_if_owned()?;
+    if _console.is_some() {
+        control.enter_background();
+    }
+    // Install the tray before the controller discovers or writes to the dock.
+    let _tray = crate::tray::Tray::start(Arc::clone(&control))?;
     let worker = std::thread::Builder::new()
         .name("ulanzi-controller".into())
         .spawn(move || {

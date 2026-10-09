@@ -15,9 +15,10 @@
 
 [package]
 name = "ulanzi-dock-vibeware"
-version = "0.3.0"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.90"
+default-run = "ulanzi-dock-vibeware"
 authors = ["Umberto Giacobbi"]
 license = "MIT"
 description = "Standalone, cross-platform source controller for the Ulanzi D200H"

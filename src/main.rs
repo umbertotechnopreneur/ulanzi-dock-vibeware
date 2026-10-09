@@ -133,6 +133,9 @@ enum Command {
         /// Disable foreground detection, inactive application artwork, and page switching.
         #[arg(long)]
         no_app_detection: bool,
+        /// Run quietly in the tray without interactive first-run setup (Windows only).
+        #[arg(long, conflicts_with = "oobe")]
+        background: bool,
         /// Show the guided first-run introduction again.
         #[arg(long)]
         oobe: bool,
@@ -237,12 +240,6 @@ fn run(
     control: Arc<tray::Control>,
 ) -> Result<()> {
     config.refresh_theme_selector(theme)?;
-    let (api, found) = dock::discover()?;
-    anyhow::ensure!(
-        found,
-        "D200H consumer HID interface not found; run 'doctor'"
-    );
-    let dock = dock::Dock::open(&api)?;
     let stop = Arc::clone(&control);
     ctrlc::set_handler(move || stop.stop())?;
     let foreground = if detect_applications {
@@ -263,10 +260,53 @@ fn run(
     let mut held = None;
     let mut enabled = actions::page_available(&config.pages[page], &foreground);
     let started = Instant::now();
-    dock.show(&config.pages[page], theme, None, enabled, status_display)?;
-    if clock && !status_display {
-        dock.clock()?;
-    }
+    #[cfg(target_os = "windows")]
+    let mut last_connection_error = String::new();
+    // The tray already exists. HID enumeration, access and the initial display write can
+    // become ready later than Explorer at sign-in; keep menu actions available while waiting.
+    let dock = loop {
+        if !control.is_running()
+            || seconds.is_some_and(|limit| started.elapsed() >= Duration::from_secs(limit))
+        {
+            return Ok(());
+        }
+        let attempt = (|| -> Result<dock::Dock> {
+            let (api, found) = dock::discover()?;
+            anyhow::ensure!(found, "D200H consumer HID interface not found");
+            let dock = dock::Dock::open(&api)?;
+            dock.show(&config.pages[page], theme, None, enabled, status_display)?;
+            if clock && !status_display {
+                dock.clock()?;
+            }
+            Ok(dock)
+        })();
+        match attempt {
+            Ok(dock) => break dock,
+            Err(error) => {
+                #[cfg(not(target_os = "windows"))]
+                return Err(error);
+                #[cfg(target_os = "windows")]
+                {
+                    let message = format!("{error:#}");
+                    if message != last_connection_error {
+                        eprintln!("Waiting for D200H: {message}");
+                        last_connection_error = message;
+                    }
+                    // Check Exit/Restart every 100 ms instead of blocking the tray for two seconds.
+                    for _ in 0..20 {
+                        if !control.is_running()
+                            || seconds.is_some_and(|limit| {
+                                started.elapsed() >= Duration::from_secs(limit)
+                            })
+                        {
+                            return Ok(());
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+        }
+    };
     let mut last_clock = Instant::now();
     let mut last_focus = Instant::now();
     println!(
@@ -278,11 +318,6 @@ fn run(
         "Foreground polling: {focus_poll_seconds}s | automatic pages: {}",
         if auto_page { "on" } else { "off" }
     );
-    let _tray = tray::Tray::start(Arc::clone(&control))?;
-    let _background_console = console::detach_if_owned()?;
-    if _background_console.is_some() {
-        control.enter_background();
-    }
     while control.is_running()
         && seconds.is_none_or(|limit| started.elapsed() < Duration::from_secs(limit))
     {
@@ -503,6 +538,7 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 focus_poll_seconds: None,
                 no_auto_page: false,
                 no_app_detection: false,
+                background: false,
                 oobe: false,
             },
         }
@@ -568,10 +604,21 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             focus_poll_seconds,
             no_auto_page,
             no_app_detection,
+            background,
             oobe,
         } => {
+            // Detach before settings, UI and HID initialization. A sign-in launch never
+            // waits for console input, including when configuration loading fails.
+            let _background_console = if background {
+                anyhow::ensure!(cfg!(windows), "--background is available only on Windows");
+                control.enter_background();
+                Some(console::detach()?)
+            } else {
+                None
+            };
             let mut settings = Config::load(&config)?;
-            if (oobe || !settings.setup_completed && !no_actions)
+            if !background
+                && (oobe || !settings.setup_completed && !no_actions)
                 && !onboarding::show(&mut settings, &config, !args.is_empty())?
             {
                 return Ok(());
