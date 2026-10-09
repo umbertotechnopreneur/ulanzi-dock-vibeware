@@ -36,6 +36,9 @@ if ($isWindowsPackage) {
 }
 Copy-Item -LiteralPath (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE') -Destination $package
 Copy-Item -LiteralPath (Join-Path $root 'docs/ARTWORK.md'), (Join-Path $root 'docs/THIRD-PARTY.md'), (Join-Path $root 'docs/RELEASING.md'), (Join-Path $root 'docs/ulanzi-dock-vibeware-guide-v2.pdf') -Destination "$package/docs"
+Copy-Item -LiteralPath (Join-Path $root 'docs/photos'), (Join-Path $root 'docs/screenshots') -Destination "$package/docs" -Recurse
+New-Item -ItemType Directory -Path "$package/assets/banners" | Out-Null
+Copy-Item -LiteralPath (Join-Path $root 'assets/banners/ulanzi-dock-light.png') -Destination "$package/assets/banners"
 Copy-Item -Path (Join-Path $root 'docs/licenses/*') -Destination "$package/docs/licenses"
 Copy-Item -LiteralPath (Join-Path $root 'assets/fonts/bitstream-vera-license.txt') -Destination "$package/assets/fonts"
 
