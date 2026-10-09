@@ -44,10 +44,9 @@ pub fn matching_page(
     if !matches!(foreground, ForegroundProcess::Known(_)) {
         return None;
     }
-    config
-        .pages
-        .iter()
-        .position(|page| !page.executables.is_empty() && page_available(page, foreground))
+    config.pages.iter().position(|page| {
+        page.enabled && !page.executables.is_empty() && page_available(page, foreground)
+    })
 }
 
 // Inspect only the owner of the foreground window; never read titles or keyboard input.
@@ -161,6 +160,10 @@ fn hotkey(chord: &str) -> Result<()> {
             "escape" => Key::Escape,
             "grave" => Key::Unicode('`'),
             "space" => Key::Space,
+            "f2" => Key::F2,
+            "f5" => Key::F5,
+            "f7" => Key::F7,
+            "f12" => Key::F12,
             single if single.chars().count() == 1 => Key::Unicode(single.chars().next().unwrap()),
             _ => anyhow::bail!("unsupported hotkey token: {token}"),
         };
@@ -199,22 +202,22 @@ mod tests {
         let config = crate::model::Config::default();
         assert_eq!(
             matching_page(&config, &ForegroundProcess::Known("CODE.EXE".into())),
-            Some(2)
+            Some(3)
         );
         assert_eq!(
             matching_page(
                 &config,
                 &ForegroundProcess::Known("code - insiders.exe".into())
             ),
-            Some(2)
+            Some(3)
         );
         assert_eq!(
             matching_page(&config, &ForegroundProcess::Known("Codex.exe".into())),
-            Some(1)
+            Some(2)
         );
         assert_eq!(
             matching_page(&config, &ForegroundProcess::Known("Spotify.exe".into())),
-            Some(5)
+            Some(4)
         );
         assert_eq!(
             matching_page(&config, &ForegroundProcess::Known("my-codex.exe".into())),
@@ -222,11 +225,11 @@ mod tests {
         );
         assert_eq!(matching_page(&config, &ForegroundProcess::Unknown), None);
         assert!(!page_available(
-            &config.pages[1],
+            &config.pages[2],
             &ForegroundProcess::Unknown
         ));
         assert!(!page_available(
-            &config.pages[5],
+            &config.pages[4],
             &ForegroundProcess::Known("Code.exe".into())
         ));
         assert!(page_available(
@@ -234,7 +237,7 @@ mod tests {
             &ForegroundProcess::Unknown
         ));
         assert!(page_available(
-            &config.pages[1],
+            &config.pages[2],
             &ForegroundProcess::Unsupported
         ));
     }

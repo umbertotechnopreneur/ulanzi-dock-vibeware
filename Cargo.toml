@@ -15,9 +15,10 @@
 
 [package]
 name = "ulanzi-dock-vibeware"
-version = "0.3.0"
+version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.90"
+default-run = "ulanzi-dock-vibeware"
 authors = ["Umberto Giacobbi"]
 license = "MIT"
 description = "Standalone, cross-platform source controller for the Ulanzi D200H"
@@ -35,11 +36,17 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml_ng = "0.10"
+slint = { version = "=1.13.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2"] }
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+slint-build = "=1.13.1"
+winresource = "=0.1.23"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }

@@ -38,7 +38,7 @@ THEMES = (
     "solarpunk",
     "memphis",
 )
-PAGES = (("windows", 1), ("codex", 2), ("vscode", 3), ("utility", 4), ("themes", 5))
+PAGES = (("windows", 1), ("utility", 2), ("codex", 3), ("vscode", 4), ("spotify", 5), ("word", 6), ("powerpoint", 7), ("excel", 8), ("themes", 9))
 SIDE = 196
 GAP = 12
 MARGIN = 24

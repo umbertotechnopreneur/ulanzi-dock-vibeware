@@ -17,6 +17,7 @@
 # Asset IDs select a bundled pictogram; the active theme supplies its gradient.
 version: 1
 runtime:
+  detect_applications: true
   auto_switch: true
   focus_poll_seconds: 1
 applications:
@@ -212,3 +213,14 @@ applications:
         description: "Open Spotify Home."
         asset: "spotify:12"
         action: "hotkey:alt+shift+h"
+  - name: "Word"
+    page: "Word"
+    executables: ["WINWORD.EXE"]
+    # Office actions and native icons default to the page definitions in settings.json.
+    # Add commands here to override individual labels, actions, descriptions or assets.
+  - name: "PowerPoint"
+    page: "PowerPoint"
+    executables: ["POWERPNT.EXE"]
+  - name: "Excel"
+    page: "Excel"
+    executables: ["EXCEL.EXE"]

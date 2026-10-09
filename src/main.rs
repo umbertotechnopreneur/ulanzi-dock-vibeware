@@ -19,10 +19,13 @@ mod art;
 mod cli_pages;
 mod console;
 mod dock;
+mod gui;
+mod gui_settings;
 mod model;
 mod onboarding;
 mod singleton;
 mod startup;
+mod tray;
 
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -31,10 +34,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -57,7 +57,18 @@ enum Command {
     /// Show the product version and VibeWare identity.
     Version,
     /// Show product and creator information.
-    About,
+    About {
+        /// Open the Slint About dialog without connecting to the dock.
+        #[arg(long)]
+        gui: bool,
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Open the Slint configurator without connecting to the dock.
+    Configure {
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
     /// Manage launch at Windows sign-in for the current user.
     Startup {
         /// Register this executable to start when you sign in to Windows.
@@ -71,7 +82,7 @@ enum Command {
     Doctor,
     /// Print available visual themes.
     Themes,
-    /// Create a settings file with six pages and editable actions.
+    /// Create a settings file with nine pages and editable actions.
     Init {
         #[arg(long, default_value = "settings.json")]
         config: PathBuf,
@@ -85,8 +96,8 @@ enum Command {
         /// Restrict the export to one theme.
         #[arg(long, value_enum)]
         theme: Option<Theme>,
-        /// Restrict the export to one page (1-6).
-        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=6))]
+        /// Restrict the export to one page (1-9).
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=9))]
         page: Option<u64>,
         /// Preview inactive application keys without querying focus or opening HID.
         #[arg(long)]
@@ -119,6 +130,12 @@ enum Command {
         /// Keep manual page navigation; still disable unavailable application keys.
         #[arg(long)]
         no_auto_page: bool,
+        /// Disable foreground detection, inactive application artwork, and page switching.
+        #[arg(long)]
+        no_app_detection: bool,
+        /// Run quietly in the tray without interactive first-run setup (Windows only).
+        #[arg(long, conflicts_with = "oobe")]
+        background: bool,
         /// Show the guided first-run introduction again.
         #[arg(long)]
         oobe: bool,
@@ -198,12 +215,16 @@ fn refresh_availability(
 }
 
 // config: validated page and action definitions.
-// config_path: settings file used to persist a theme selected on page five.
+// config_path: settings file used to persist a theme selected on the final page.
 // theme: initial visual family.
 // seconds: optional bounded diagnostic duration.
 // no_actions: disable shortcut and media dispatch.
 // clock: periodically update the wide bottom clock window.
 // focus_poll_seconds: interval between foreground application checks.
+// status_display: replace the firmware clock with the optional status panel.
+// auto_page: select an application page when its process gains foreground focus.
+// detect_applications: query foreground metadata and gate unavailable application keys.
+// control: shared lifecycle state for Ctrl+C and the Windows tray menu.
 // Errors: device access, display update, or clock failure.
 fn run(
     mut config: Config,
@@ -215,35 +236,77 @@ fn run(
     status_display: bool,
     focus_poll_seconds: u64,
     auto_page: bool,
+    detect_applications: bool,
+    control: Arc<tray::Control>,
 ) -> Result<()> {
     config.refresh_theme_selector(theme)?;
-    let (api, found) = dock::discover()?;
-    anyhow::ensure!(
-        found,
-        "D200H consumer HID interface not found; run 'doctor'"
-    );
-    let dock = dock::Dock::open(&api)?;
-    let running = Arc::new(AtomicBool::new(true));
-    let stop = Arc::clone(&running);
-    ctrlc::set_handler(move || stop.store(false, Ordering::SeqCst))?;
-    let foreground = actions::foreground_process();
+    let stop = Arc::clone(&control);
+    ctrlc::set_handler(move || stop.stop())?;
+    let foreground = if detect_applications {
+        actions::foreground_process()
+    } else {
+        actions::ForegroundProcess::Unsupported
+    };
     let mut last_known_process = if matches!(foreground, actions::ForegroundProcess::Known(_)) {
         Some(foreground.clone())
     } else {
         None
     };
     let mut page = if auto_page {
-        actions::matching_page(&config, &foreground).unwrap_or(0)
+        actions::matching_page(&config, &foreground).unwrap_or_else(|| config.home_page())
     } else {
-        0
+        config.home_page()
     };
     let mut held = None;
     let mut enabled = actions::page_available(&config.pages[page], &foreground);
     let started = Instant::now();
-    dock.show(&config.pages[page], theme, None, enabled, status_display)?;
-    if clock && !status_display {
-        dock.clock()?;
-    }
+    #[cfg(target_os = "windows")]
+    let mut last_connection_error = String::new();
+    // The tray already exists. HID enumeration, access and the initial display write can
+    // become ready later than Explorer at sign-in; keep menu actions available while waiting.
+    let dock = loop {
+        if !control.is_running()
+            || seconds.is_some_and(|limit| started.elapsed() >= Duration::from_secs(limit))
+        {
+            return Ok(());
+        }
+        let attempt = (|| -> Result<dock::Dock> {
+            let (api, found) = dock::discover()?;
+            anyhow::ensure!(found, "D200H consumer HID interface not found");
+            let dock = dock::Dock::open(&api)?;
+            dock.show(&config.pages[page], theme, None, enabled, status_display)?;
+            if clock && !status_display {
+                dock.clock()?;
+            }
+            Ok(dock)
+        })();
+        match attempt {
+            Ok(dock) => break dock,
+            Err(error) => {
+                #[cfg(not(target_os = "windows"))]
+                return Err(error);
+                #[cfg(target_os = "windows")]
+                {
+                    let message = format!("{error:#}");
+                    if message != last_connection_error {
+                        eprintln!("Waiting for D200H: {message}");
+                        last_connection_error = message;
+                    }
+                    // Check Exit/Restart every 100 ms instead of blocking the tray for two seconds.
+                    for _ in 0..20 {
+                        if !control.is_running()
+                            || seconds.is_some_and(|limit| {
+                                started.elapsed() >= Duration::from_secs(limit)
+                            })
+                        {
+                            return Ok(());
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+        }
+    };
     let mut last_clock = Instant::now();
     let mut last_focus = Instant::now();
     println!(
@@ -255,24 +318,25 @@ fn run(
         "Foreground polling: {focus_poll_seconds}s | automatic pages: {}",
         if auto_page { "on" } else { "off" }
     );
-    while running.load(Ordering::SeqCst)
+    while control.is_running()
         && seconds.is_none_or(|limit| started.elapsed() < Duration::from_secs(limit))
     {
-        if last_focus.elapsed() >= Duration::from_secs(focus_poll_seconds) {
+        if detect_applications && last_focus.elapsed() >= Duration::from_secs(focus_poll_seconds) {
             let foreground = actions::foreground_process();
             if matches!(foreground, actions::ForegroundProcess::Known(_))
                 && last_known_process.as_ref() != Some(&foreground)
             {
                 if auto_page {
-                    if let Some(next_page) = actions::matching_page(&config, &foreground) {
-                        if next_page != page {
-                            // A release from the previous page must never dispatch a new page's action.
-                            held = None;
-                            page = next_page;
-                            enabled = actions::page_available(&config.pages[page], &foreground);
-                            dock.show(&config.pages[page], theme, None, enabled, status_display)?;
-                            println!("Automatic page: {}", config.pages[page].name);
-                        }
+                    // Known applications without a dedicated page return to Windows / media.
+                    let next_page = actions::matching_page(&config, &foreground)
+                        .unwrap_or_else(|| config.home_page());
+                    if next_page != page {
+                        // A release from the previous page must never dispatch a new page's action.
+                        held = None;
+                        page = next_page;
+                        enabled = actions::page_available(&config.pages[page], &foreground);
+                        dock.show(&config.pages[page], theme, None, enabled, status_display)?;
+                        println!("Automatic page: {}", config.pages[page].name);
                     }
                 }
                 // Unknown focus does not reset the manual choice or cause transient bouncing.
@@ -308,7 +372,11 @@ fn run(
                 &mut enabled,
                 &mut held,
                 status_display,
-                &actions::foreground_process(),
+                &if detect_applications {
+                    actions::foreground_process()
+                } else {
+                    actions::ForegroundProcess::Unsupported
+                },
             )?;
             if event.pressed {
                 if !enabled && event.index != NEXT_KEY {
@@ -326,7 +394,7 @@ fn run(
             held = None;
             let mut page_changed = false;
             if event.index == NEXT_KEY {
-                page = (page + 1) % config.pages.len();
+                page = config.next_enabled_page(page);
                 println!("Page: {}", config.pages[page].name);
                 page_changed = true;
             } else if let Some(slug) = config.pages[page].keys[event.index]
@@ -339,15 +407,19 @@ fn run(
                 config.theme = selected;
                 config.refresh_theme_selector(selected)?;
                 println!("Theme: {}", selected.slug());
-                page = 0;
+                page = config.home_page();
                 println!("Page: {}", config.pages[page].name);
                 page_changed = true;
-                if let Err(error) = config.save_selected_theme(config_path) {
+                if let Err(error) = control
+                    .lock_settings()
+                    .and_then(|_lock| config.save_selected_theme(config_path))
+                {
                     eprintln!("Could not save theme selection: {error:#}");
                 }
             } else if !no_actions
                 && enabled
-                && actions::page_available(&config.pages[page], &actions::foreground_process())
+                && (!detect_applications
+                    || actions::page_available(&config.pages[page], &actions::foreground_process()))
             {
                 let key = &config.pages[page].keys[event.index];
                 if let Err(error) = actions::execute(&key.action) {
@@ -355,8 +427,8 @@ fn run(
                 }
             }
             if page_changed {
-                enabled =
-                    actions::page_available(&config.pages[page], &actions::foreground_process());
+                enabled = !detect_applications
+                    || actions::page_available(&config.pages[page], &actions::foreground_process());
                 dock.show(&config.pages[page], theme, None, enabled, status_display)?;
                 last_focus = Instant::now();
             } else {
@@ -372,19 +444,31 @@ fn run(
 // Commands invoked from an existing terminal retain their normal exit behavior.
 fn main() -> ExitCode {
     let standalone = console::owns_console();
-    let code = match execute() {
+    let control = Arc::new(tray::Control::new());
+    let result = execute(Arc::clone(&control)).and_then(|()| {
+        if control.restart_requested() {
+            tray::restart_current_process()?;
+        }
+        Ok(())
+    });
+    let code = match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             if let Some(error) = error.downcast_ref::<clap::Error>() {
                 let _ = error.print();
                 ExitCode::from(error.exit_code() as u8)
             } else {
-                eprintln!("\nUlanziDock could not complete this operation:\n{error:#}");
+                let message = format!("UlanziDock could not complete this operation:\n{error:#}");
+                if control.is_background() {
+                    tray::show_error(&message);
+                } else {
+                    eprintln!("\n{message}");
+                }
                 ExitCode::FAILURE
             }
         }
     };
-    if standalone {
+    if standalone && !control.is_background() && !control.stopped_from_tray() {
         if let Err(error) = console::wait_for_close() {
             eprintln!("Could not wait for a key: {error:#}");
         }
@@ -413,8 +497,10 @@ fn launch_config() -> Result<PathBuf> {
     Ok(directory.join("settings.json"))
 }
 
-// Errors: command-specific validation, filesystem, HID, or rendering failure.
-fn execute() -> Result<()> {
+// control: lifecycle state shared with the Windows tray while the controller runs.
+// Errors: command-specific validation, filesystem, HID, rendering, or tray failure.
+fn execute(control: Arc<tray::Control>) -> Result<()> {
+    tray::wait_for_restart_parent(&control)?;
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args.len() == 1 {
         match args[0].to_str() {
@@ -436,7 +522,9 @@ fn execute() -> Result<()> {
     let cli = if args.is_empty() {
         cli_pages::print_about();
         let config = launch_config()?;
-        println!("\nStarting UlanziDock. Keep this window open while using the dock.");
+        println!("\nStarting UlanziDock.");
+        #[cfg(target_os = "windows")]
+        println!("The controller will stay in the system tray after setup.");
         println!("Settings: {}", config.display());
         println!("Press Ctrl+C to stop. For the command guide, use 'help'.\n");
         Cli {
@@ -449,6 +537,8 @@ fn execute() -> Result<()> {
                 status_display: true,
                 focus_poll_seconds: None,
                 no_auto_page: false,
+                no_app_detection: false,
+                background: false,
                 oobe: false,
             },
         }
@@ -458,7 +548,13 @@ fn execute() -> Result<()> {
     match cli.command {
         Command::Help => cli_pages::print_help(&Cli::command().render_long_help().to_string()),
         Command::Version => cli_pages::print_version(),
-        Command::About => cli_pages::print_about(),
+        Command::About { gui: false, .. } => cli_pages::print_about(),
+        Command::About { gui: true, config } => {
+            gui::standalone(config.map_or_else(launch_config, Ok)?, false, control)?;
+        }
+        Command::Configure { config } => {
+            gui::standalone(config.map_or_else(launch_config, Ok)?, true, control)?;
+        }
         Command::Startup { enable, disable } => startup::manage(enable, disable)?,
         Command::Doctor => {
             let (_, found) = dock::discover()?;
@@ -507,10 +603,22 @@ fn execute() -> Result<()> {
             status_display,
             focus_poll_seconds,
             no_auto_page,
+            no_app_detection,
+            background,
             oobe,
         } => {
+            // Detach before settings, UI and HID initialization. A sign-in launch never
+            // waits for console input, including when configuration loading fails.
+            let _background_console = if background {
+                anyhow::ensure!(cfg!(windows), "--background is available only on Windows");
+                control.enter_background();
+                Some(console::detach()?)
+            } else {
+                None
+            };
             let mut settings = Config::load(&config)?;
-            if (oobe || !settings.setup_completed && !no_actions)
+            if !background
+                && (oobe || !settings.setup_completed && !no_actions)
                 && !onboarding::show(&mut settings, &config, !args.is_empty())?
             {
                 return Ok(());
@@ -518,19 +626,32 @@ fn execute() -> Result<()> {
             let selected = theme.unwrap_or(settings.theme);
             let focus_poll_seconds =
                 focus_poll_seconds.unwrap_or(settings.runtime.focus_poll_seconds);
-            let auto_page = settings.runtime.auto_switch && !no_auto_page;
+            let detect_applications = settings.runtime.detect_applications && !no_app_detection;
+            let auto_page = detect_applications && settings.runtime.auto_switch && !no_auto_page;
             singleton::replace_existing()?;
-            run(
-                settings,
-                &config,
-                selected,
-                seconds,
-                no_actions,
-                !no_clock,
-                status_display,
-                focus_poll_seconds,
-                auto_page,
-            )?;
+            #[cfg(target_os = "windows")]
+            let ui_config = config.clone();
+            #[cfg(target_os = "windows")]
+            let ui_control = Arc::clone(&control);
+            let controller = move || {
+                run(
+                    settings,
+                    &config,
+                    selected,
+                    seconds,
+                    no_actions,
+                    !no_clock,
+                    status_display,
+                    focus_poll_seconds,
+                    auto_page,
+                    detect_applications,
+                    control,
+                )
+            };
+            #[cfg(target_os = "windows")]
+            gui::resident(ui_config, ui_control, controller)?;
+            #[cfg(not(target_os = "windows"))]
+            controller()?;
         }
     }
     Ok(())

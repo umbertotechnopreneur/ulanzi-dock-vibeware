@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn inactive_focus_update_is_grayscale_and_preserves_navigation_and_clock() -> Result<()> {
-        let page = &Config::default().pages[1];
+        let page = &Config::default().pages[2];
         let keys = (0..CLOCK_KEY)
             .filter(|&i| i != NEXT_KEY)
             .collect::<Vec<_>>();
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn custom_status_panel_uses_wide_geometry_and_background_mode() -> Result<()> {
-        let page = &Config::default().pages[2];
+        let page = &Config::default().pages[3];
         let mut panels = Vec::new();
         for enabled in [false, true] {
             let bytes = make_archive(page, Theme::LightAbstract, None, enabled, true)?;

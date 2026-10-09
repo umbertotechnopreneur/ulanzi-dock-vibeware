@@ -1,0 +1,238 @@
+/* VBWR B
+ * Project: UlanziDock VibeWare version
+ * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+ * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+ * VibeWare is Human intent. AI implementation. Accountable human review.
+ * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ * Copyright (c) 2026 Umberto Giacobbi
+ * SPDX-License-Identifier: MIT
+ * License: MIT - see LICENSE
+ * VBWR E */
+
+import { AboutSlint, CheckBox, ComboBox, ScrollView, SpinBox } from "std-widgets.slint";
+import { Palette as WidgetPalette } from "std-widgets.slint";
+
+global Palette {
+    out property <color> paper: #fff4dc;
+    out property <color> ink: #232a2f;
+    out property <color> blue: #3a6a96;
+    out property <color> muted: #526573;
+}
+
+component PixelButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary: false;
+    callback clicked();
+    min-width: 90px;
+    height: 36px;
+    border-width: focus.has-focus ? 3px : 2px;
+    border-color: Palette.ink;
+    background: !root.enabled ? #dfddcf : touch.pressed ? Palette.ink : root.primary ? Palette.blue : Palette.paper;
+    accessible-role: button;
+    accessible-label: root.text;
+    forward-focus: focus;
+    Text {
+        text: root.text;
+        font-weight: 600;
+        color: !root.enabled ? Palette.muted : root.primary || touch.pressed ? Palette.paper : Palette.ink;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        touch := TouchArea {
+            enabled: root.enabled;
+            clicked => { focus.focus(); root.clicked(); }
+        }
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component VibeWareFooter inherits Rectangle {
+    callback learn();
+    background: #e2e5dc;
+    border-width: 2px;
+    border-color: Palette.ink;
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 8px;
+        VerticalLayout {
+            spacing: 6px;
+            Text { text: "This is VibeWare"; color: Palette.blue; font-weight: 700; }
+            Text { text: "Human intent. AI implementation.\nAccountable human review."; color: Palette.ink; font-size: 12px; wrap: word-wrap; }
+            PixelButton { text: "What is VibeWare?"; clicked => { root.learn(); } }
+        }
+        Image { source: @image-url("../assets/brand/vibeware-logo.png"); width: 90px; image-fit: contain; }
+    }
+}
+
+export component AboutDialog inherits Window {
+    init => { WidgetPalette.color-scheme = ColorScheme.light; }
+    title: "About UlanziDock VibeWare";
+    preferred-width: 460px;
+    preferred-height: 720px;
+    min-width: 420px;
+    min-height: 360px;
+    background: Palette.paper;
+    default-font-family: "Consolas";
+    default-font-size: 14px;
+    in property <string> version;
+    icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
+    in-out property <string> message;
+    callback open-link(string);
+    callback configure();
+    callback dismiss();
+    ScrollView {
+      VerticalLayout {
+        padding: 22px;
+        spacing: 12px;
+        Image {
+            source: @image-url("../assets/brand/ulanzi-dock-logo.png");
+            image-fit: contain;
+            min-height: 125px;
+            max-height: 125px;
+        }
+        Text { text: "Open dock driver · v" + root.version; color: Palette.muted; horizontal-alignment: center; }
+        Text { text: "Lightweight. Free. An alternative to the official Ulanzi app."; color: Palette.ink; horizontal-alignment: center; wrap: word-wrap; }
+        Text {
+            text: "Independent software, provided as-is without warranty. Use at your own risk; the author accepts no liability for damage or data loss.";
+            color: Palette.muted;
+            font-size: 12px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        Text { text: "Created by Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
+        HorizontalLayout {
+            spacing: 8px;
+            PixelButton { text: "GitHub"; clicked => { root.open-link("project"); } }
+            PixelButton { text: "Manifesto"; clicked => { root.open-link("manifesto"); } }
+        }
+        Rectangle {
+            min-height: 130px;
+            max-height: 130px;
+            background: Palette.paper;
+            AboutSlint { }
+        }
+        Text { text: root.message; color: Palette.muted; wrap: word-wrap; visible: root.message != ""; }
+        HorizontalLayout {
+            spacing: 8px;
+            PixelButton { text: "Configure"; primary: true; clicked => { root.configure(); } }
+            PixelButton { text: "Close"; clicked => { root.dismiss(); } }
+        }
+        VibeWareFooter { learn => { root.open-link("manifesto"); } }
+      }
+    }
+}
+
+export struct AppPage {
+    name: string,
+    enabled: bool,
+}
+
+export component MainWindow inherits Window {
+    init => { WidgetPalette.color-scheme = ColorScheme.light; }
+    title: "UlanziDock VibeWare — Configuration";
+    preferred-width: 600px;
+    preferred-height: 740px;
+    min-width: 520px;
+    min-height: 360px;
+    background: Palette.paper;
+    default-font-family: "Consolas";
+    default-font-size: 14px;
+    icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
+    in property <[string]> themes;
+    in property <[AppPage]> app-pages;
+    in-out property <int> theme-index;
+    in-out property <bool> auto-switch;
+    in-out property <bool> detect-applications;
+    in-out property <int> poll-seconds: 1;
+    in-out property <string> message;
+    in-out property <bool> ready: false;
+    in property <bool> resident;
+    callback save(bool);
+    callback page-toggled(int, bool);
+    callback reload();
+    callback open-file(bool);
+    callback learn-vibeware();
+    callback dismiss();
+    VerticalLayout {
+     spacing: 0px;
+     ScrollView {
+      VerticalLayout {
+        padding: 22px;
+        spacing: 14px;
+        Image { source: @image-url("../assets/brand/ulanzi-dock-logo.png"); min-height: 82px; max-height: 82px; image-fit: contain; }
+        Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
+        Text { text: "Dock theme"; color: Palette.ink; }
+        ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; }
+        CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; }
+        if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; }
+        if !root.detect-applications: Text { text: "Enabled pages stay available. Automatic switching is off."; color: Palette.muted; wrap: word-wrap; }
+        HorizontalLayout {
+            spacing: 12px;
+            Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; }
+            SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; }
+        }
+        Rectangle { height: 2px; background: Palette.ink; }
+        Text { text: "Application pages"; color: Palette.ink; font-weight: 700; }
+        VerticalLayout {
+            spacing: 10px;
+            for row in Math.ceil(root.app-pages.length / 2): HorizontalLayout {
+                spacing: 12px;
+                CheckBox {
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    horizontal-stretch: 1;
+                    enabled: root.ready;
+                    text: root.app-pages[row * 2].name;
+                    checked: root.app-pages[row * 2].enabled;
+                    toggled => { root.page-toggled(row * 2, self.checked); }
+                }
+                if row * 2 + 1 < root.app-pages.length: CheckBox {
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    horizontal-stretch: 1;
+                    enabled: root.ready;
+                    text: root.app-pages[row * 2 + 1].name;
+                    checked: root.app-pages[row * 2 + 1].enabled;
+                    toggled => { root.page-toggled(row * 2 + 1, self.checked); }
+                }
+            }
+        }
+        Text { text: "Disabled pages are skipped. Your shortcuts stay saved."; color: Palette.muted; wrap: word-wrap; }
+        Rectangle { height: 2px; background: Palette.ink; }
+        Text { text: "Shortcuts and application mappings"; color: Palette.ink; }
+        HorizontalLayout {
+            spacing: 8px;
+            PixelButton { text: "settings.json"; clicked => { root.open-file(false); } }
+            PixelButton { text: "applications.yaml"; clicked => { root.open-file(true); } }
+        }
+        Text {
+            text: "Saved changes apply when the controller restarts.\nExplicit command-line options still take precedence.";
+            color: Palette.muted;
+            wrap: word-wrap;
+        }
+        VibeWareFooter { learn => { root.learn-vibeware(); } }
+      }
+     }
+     VerticalLayout {
+        padding: 22px;
+        spacing: 8px;
+        Text { text: root.message; color: Palette.blue; wrap: word-wrap; min-height: 42px; }
+        HorizontalLayout {
+            spacing: 8px;
+            PixelButton { text: "Reload"; clicked => { root.reload(); } }
+            PixelButton { text: "Save"; enabled: root.ready; primary: true; clicked => { root.save(false); } }
+            if root.resident: PixelButton { text: "Save + Restart"; enabled: root.ready; clicked => { root.save(true); } }
+            PixelButton { text: "Close"; clicked => { root.dismiss(); } }
+        }
+     }
+    }
+}

@@ -54,6 +54,69 @@ pub fn owns_console() -> bool {
     false
 }
 
+pub struct BackgroundConsole {
+    #[cfg(target_os = "windows")]
+    _input: std::fs::File,
+    #[cfg(target_os = "windows")]
+    _output: std::fs::File,
+}
+
+// Detach only the private console created for an Explorer/sign-in launch.
+// Redirect standard handles to NUL so resident logging cannot fail after detaching.
+// Errors: NUL handle creation, console detachment, or standard-handle redirection failure.
+pub fn detach_if_owned() -> anyhow::Result<Option<BackgroundConsole>> {
+    if owns_console() {
+        detach().map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+// Release this process's console without closing or hiding another process's terminal.
+// Also supply NUL handles for a CreateNoWindow sign-in launch that has no console at all.
+// Errors: NUL handle creation, console detachment, or standard-handle redirection failure.
+pub fn detach() -> anyhow::Result<BackgroundConsole> {
+    #[cfg(target_os = "windows")]
+    {
+        use anyhow::{ensure, Context};
+        use std::{fs::OpenOptions, io, os::windows::io::AsRawHandle};
+        use windows_sys::Win32::System::Console::{
+            FreeConsole, GetConsoleProcessList, SetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE,
+            STD_OUTPUT_HANDLE,
+        };
+        let input = OpenOptions::new()
+            .read(true)
+            .open("NUL")
+            .context("opening background input")?;
+        let output = OpenOptions::new()
+            .write(true)
+            .open("NUL")
+            .context("opening background output")?;
+        let mut attached_process = 0u32;
+        if unsafe { GetConsoleProcessList(&mut attached_process, 1) } != 0
+            && unsafe { FreeConsole() } == 0
+        {
+            return Err(io::Error::last_os_error()).context("detaching the private console");
+        }
+        for (kind, handle) in [
+            (STD_INPUT_HANDLE, input.as_raw_handle()),
+            (STD_OUTPUT_HANDLE, output.as_raw_handle()),
+            (STD_ERROR_HANDLE, output.as_raw_handle()),
+        ] {
+            ensure!(
+                unsafe { SetStdHandle(kind, handle) } != 0,
+                "redirecting a background console handle failed"
+            );
+        }
+        Ok(BackgroundConsole {
+            _input: input,
+            _output: output,
+        })
+    }
+    #[cfg(not(target_os = "windows"))]
+    Ok(BackgroundConsole {})
+}
+
 pub enum MenuKey {
     Up,
     Down,

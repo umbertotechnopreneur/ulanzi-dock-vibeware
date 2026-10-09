@@ -14,7 +14,12 @@
 # VBWR E
 
 # Build in a dedicated temporary directory, publish one stable EXE, then
-# remove this script's temporary output even when compilation fails.
+# remove this script's temporary output unless dependency caching is requested.
+param(
+    [switch] $StopRunning,
+    [switch] $KeepBuildCache
+)
+
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw 'PowerShell 7 or newer is required.'
@@ -23,6 +28,8 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 $project = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspacePrefix = $project.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
+# path: a build or artifact path that must stay inside this workspace.
+# Exceptions: the resolved path leaves the workspace or is a reparse point.
 function Assert-WorkspacePath([string] $path) {
     $full = [System.IO.Path]::GetFullPath($path)
     if (-not $full.StartsWith($workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -41,6 +48,9 @@ $temporaryParent = Assert-WorkspacePath (Join-Path $project 'tmp')
 $artifactDir = Assert-WorkspacePath (Join-Path $project 'artifacts')
 $buildDir = Assert-WorkspacePath (Join-Path $temporaryParent 'local-build')
 $stableExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.exe')
+$stableLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.exe')
+$pendingLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.new.exe')
+$previousLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.previous.exe')
 $pendingExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.new.exe')
 $previousExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.previous.exe')
 
@@ -55,21 +65,59 @@ if (Test-Path -LiteralPath $previousExe) {
         [System.IO.File]::Move($previousExe, $stableExe)
     }
 }
+if (Test-Path -LiteralPath $previousLauncher) {
+    if (Test-Path -LiteralPath $stableLauncher) {
+        Remove-Item -LiteralPath $previousLauncher -Force
+    }
+    else {
+        [System.IO.File]::Move($previousLauncher, $stableLauncher)
+    }
+}
 
-if (Test-Path -LiteralPath $stableExe) {
-    $running = Get-CimInstance Win32_Process -Filter "Name='ulanzi-dock-vibeware.exe'" |
-        Where-Object { $_.ExecutablePath -ieq $stableExe }
-    if ($running) {
-        throw 'The stable EXE is running. Stop UlanziDock before replacing it.'
+$running = Get-CimInstance Win32_Process -Filter "Name='ulanzi-dock-vibeware.exe'" |
+    Where-Object {
+        $_.ExecutablePath -and
+        ([System.IO.Path]::GetFullPath($_.ExecutablePath)).StartsWith(
+            $workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase
+        )
+    }
+if ($running -and -not $StopRunning) {
+    throw 'UlanziDock is running in this workspace. Stop it or pass -StopRunning before building.'
+}
+foreach ($instance in $running) {
+    $process = $null
+    try {
+        $process = [System.Diagnostics.Process]::GetProcessById($instance.ProcessId)
+        # Recheck the live process path before killing, even if the snapshot PID was reused.
+        if (-not $process.HasExited) {
+            $actualPath = [System.IO.Path]::GetFullPath($process.MainModule.FileName)
+            if ($actualPath -ine $instance.ExecutablePath) {
+                throw "PID $($instance.ProcessId) changed executable; refusing to stop it."
+            }
+            Write-Output "Stopping UlanziDock PID $($instance.ProcessId): $actualPath"
+            $process.Kill()
+            if (-not $process.WaitForExit(5000)) {
+                throw "UlanziDock PID $($instance.ProcessId) did not exit within five seconds."
+            }
+        }
+    }
+    catch [System.ArgumentException] {
+        # The selected instance may exit between the snapshot and opening its process handle.
+        Write-Output "UlanziDock PID $($instance.ProcessId) has already exited."
+    }
+    finally {
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
     }
 }
 
 try {
-    if (Test-Path -LiteralPath $buildDir) {
+    if ((Test-Path -LiteralPath $buildDir) -and -not $KeepBuildCache) {
         $buildDir = Assert-WorkspacePath $buildDir
         Remove-Item -LiteralPath $buildDir -Recurse -Force
     }
-    New-Item -ItemType Directory -Path $buildDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
     Push-Location -LiteralPath $project
     try {
@@ -83,10 +131,19 @@ try {
     }
 
     $builtExe = Assert-WorkspacePath (Join-Path $buildDir 'release\ulanzi-dock-vibeware.exe')
+    $builtLauncher = Assert-WorkspacePath (Join-Path $buildDir 'release\ulanzi-dock-launcher.exe')
     if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
         throw "Cargo did not produce $builtExe"
     }
     Copy-Item -LiteralPath $builtExe -Destination $pendingExe -Force
+    Copy-Item -LiteralPath $builtLauncher -Destination $pendingLauncher -Force
+    if (Test-Path -LiteralPath $stableLauncher) {
+        [System.IO.File]::Replace($pendingLauncher, $stableLauncher, $previousLauncher)
+        Remove-Item -LiteralPath $previousLauncher -Force
+    }
+    else {
+        [System.IO.File]::Move($pendingLauncher, $stableLauncher)
+    }
     if (Test-Path -LiteralPath $stableExe) {
         [System.IO.File]::Replace($pendingExe, $stableExe, $previousExe)
         Remove-Item -LiteralPath $previousExe -Force
@@ -101,7 +158,11 @@ finally {
         $pendingExe = Assert-WorkspacePath $pendingExe
         Remove-Item -LiteralPath $pendingExe -Force
     }
-    if (Test-Path -LiteralPath $buildDir) {
+    if (Test-Path -LiteralPath $pendingLauncher) {
+        $pendingLauncher = Assert-WorkspacePath $pendingLauncher
+        Remove-Item -LiteralPath $pendingLauncher -Force
+    }
+    if ((Test-Path -LiteralPath $buildDir) -and -not $KeepBuildCache) {
         $buildDir = Assert-WorkspacePath $buildDir
         Remove-Item -LiteralPath $buildDir -Recurse -Force
         Write-Output "Removed temporary build data: $buildDir"

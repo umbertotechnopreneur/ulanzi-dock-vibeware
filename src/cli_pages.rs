@@ -234,7 +234,7 @@ pub fn print_setup_intro(show_branding: bool) {
         Tone::Accent,
     );
     setup_text(
-        "Your shortcuts, one key away. Give your Ulanzi D200H six pages of themed controls.",
+        "Your shortcuts, one key away. Give your Ulanzi D200H nine pages of themed controls.",
         Tone::Primary,
     );
     setup_text("Two short steps, then you can get started.", Tone::Muted);

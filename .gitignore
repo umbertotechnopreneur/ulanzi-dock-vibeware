@@ -17,8 +17,11 @@
 /artifacts/
 /dist/
 /tmp/
+__pycache__/
 /settings.json
 *.json.bak
+*.gui.bak
+*.gui-*.tmp
 *.log
 *.zip
 !assets/**/*.zip

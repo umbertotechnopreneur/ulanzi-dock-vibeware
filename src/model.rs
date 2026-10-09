@@ -20,7 +20,6 @@ use std::{fs, path::Path};
 pub const KEY_COUNT: usize = 14;
 pub const NEXT_KEY: usize = 4;
 pub const CLOCK_KEY: usize = 13;
-pub const THEME_PAGE_INDEX: usize = 4;
 pub const THEME_KEYS: [usize; 12] = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
@@ -114,6 +113,8 @@ pub struct KeyConfig {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PageConfig {
     pub name: String,
+    #[serde(default = "default_page_enabled")]
+    pub enabled: bool,
     pub keys: Vec<KeyConfig>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub executables: Vec<String>,
@@ -129,11 +130,17 @@ pub struct Config {
     pub runtime: crate::applications::RuntimeSettings,
 }
 
+// Older settings keep every page enabled until the owner changes its checkbox.
+fn default_page_enabled() -> bool {
+    true
+}
+
 // name: user-facing page title.
 // keys: labels and actions in physical key order.
 fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
     PageConfig {
         name: name.into(),
+        enabled: true,
         executables: match name {
             "Codex" => vec!["Codex.exe".into(), "ChatGPT.exe".into()],
             "VS Code" => vec!["Code.exe".into(), "Code - Insiders.exe".into()],
@@ -178,6 +185,7 @@ impl Default for Config {
                         ("CLOCK", "none"),
                     ],
                 ),
+                Self::utility_page(),
                 page(
                     "Codex",
                     [
@@ -216,16 +224,96 @@ impl Default for Config {
                         ("CLOCK", "none"),
                     ],
                 ),
-                Self::utility_page(),
-                Self::theme_selector(Theme::DarkClassic),
                 Self::spotify_page(),
+                Self::office_page("Word"),
+                Self::office_page("PowerPoint"),
+                Self::office_page("Excel"),
+                Self::theme_selector(Theme::DarkClassic),
             ],
         }
     }
 }
 
 impl Config {
-    // Spotify follows the fixed fifth theme selector, preserving existing page positions.
+    // Return the general Windows page, or the first enabled custom page.
+    // Config validation guarantees that at least one page is enabled.
+    pub fn home_page(&self) -> usize {
+        self.pages
+            .iter()
+            .position(|page| page.enabled && page.name == "Windows / media")
+            .or_else(|| self.pages.iter().position(|page| page.enabled))
+            .unwrap_or(0)
+    }
+
+    // current: current page index. Disabled pages retain their actions but are skipped.
+    pub fn next_enabled_page(&self, current: usize) -> usize {
+        (1..=self.pages.len())
+            .map(|offset| (current + offset) % self.pages.len())
+            .find(|&index| self.pages[index].enabled)
+            .unwrap_or(current)
+    }
+
+    // name: one of the three desktop Office applications, each with its own page.
+    // Shortcuts use Windows/English defaults and remain editable in settings.json.
+    pub fn office_page(name: &str) -> PageConfig {
+        let last = match name {
+            "Word" => [
+                ("BOLD", "hotkey:ctrl+b"),
+                ("ITALIC", "hotkey:ctrl+i"),
+                ("UNDERLINE", "hotkey:ctrl+u"),
+                ("SPELLING", "hotkey:f7"),
+                ("SAVE AS", "hotkey:f12"),
+            ],
+            "PowerPoint" => [
+                ("START SHOW", "hotkey:f5"),
+                ("CURRENT SLIDE", "hotkey:shift+f5"),
+                ("NEW SLIDE", "hotkey:ctrl+m"),
+                ("DUP SLIDE", "hotkey:ctrl+shift+d"),
+                ("END SHOW", "hotkey:escape"),
+            ],
+            _ => [
+                ("AUTO SUM", "hotkey:alt+="),
+                ("FORMAT CELLS", "hotkey:ctrl+1"),
+                ("INSERT DATE", "hotkey:ctrl+;"),
+                ("EDIT CELL", "hotkey:f2"),
+                ("FILTER", "hotkey:ctrl+shift+l"),
+            ],
+        };
+        let mut office = page(
+            name,
+            [
+                ("SAVE", "hotkey:ctrl+s"),
+                ("OPEN", "hotkey:ctrl+o"),
+                ("NEW FILE", "hotkey:ctrl+n"),
+                ("PRINT", "hotkey:ctrl+p"),
+                ("NEXT PAGE", "page:next"),
+                ("UNDO", "hotkey:ctrl+z"),
+                ("REDO", "hotkey:ctrl+y"),
+                ("FIND", "hotkey:ctrl+f"),
+                last[0],
+                last[1],
+                last[2],
+                last[3],
+                last[4],
+                ("CLOCK", "none"),
+            ],
+        );
+        office.executables = vec![match name {
+            "Word" => "WINWORD.EXE",
+            "PowerPoint" => "POWERPNT.EXE",
+            _ => "EXCEL.EXE",
+        }
+        .into()];
+        for (index, key) in office.keys.iter_mut().enumerate() {
+            if index != NEXT_KEY && index != CLOCK_KEY {
+                key.asset = format!("{}:{index}", name.to_ascii_lowercase());
+                key.description = format!("{} in the foreground {name} application.", key.label);
+            }
+        }
+        office
+    }
+
+    // Spotify precedes the final Themes selector in the default page order.
     pub fn spotify_page() -> PageConfig {
         page(
             "Spotify",
@@ -311,21 +399,21 @@ impl Config {
         }
         PageConfig {
             name: "Themes".into(),
+            enabled: true,
             keys,
             executables: Vec::new(),
         }
     }
 
-    // current: appearance used to rebuild the fixed fifth page.
+    // current: appearance used to rebuild the final theme selector page.
     // Errors: missing or relocated theme selector page.
     pub fn refresh_theme_selector(&mut self, current: Theme) -> Result<()> {
         anyhow::ensure!(
-            self.pages
-                .get(THEME_PAGE_INDEX)
-                .is_some_and(|page| page.name == "Themes"),
-            "page 5 must be the Themes selector"
+            self.pages.last().is_some_and(|page| page.name == "Themes"),
+            "the final page must be the Themes selector"
         );
-        self.pages[THEME_PAGE_INDEX] = Self::theme_selector(current);
+        let last = self.pages.len() - 1;
+        self.pages[last] = Self::theme_selector(current);
         Ok(())
     }
 
@@ -340,15 +428,15 @@ impl Config {
         } else {
             Self::default()
         };
-        if config.pages.len() == 3 {
+        if !config
+            .pages
+            .iter()
+            .any(|page| page.name.eq_ignore_ascii_case("Utility"))
+        {
             config.pages.push(Self::utility_page());
         }
-        if config.pages.len() == 4 {
-            if config.pages[3].name == "Themes" {
-                config.pages.insert(3, Self::utility_page());
-            } else {
-                config.pages.push(Self::theme_selector(config.theme));
-            }
+        if !config.pages.iter().any(|page| page.name == "Themes") {
+            config.pages.push(Self::theme_selector(config.theme));
         }
         if !config
             .pages
@@ -357,6 +445,24 @@ impl Config {
         {
             config.pages.push(Self::spotify_page());
         }
+        for name in ["Word", "PowerPoint", "Excel"] {
+            if !config.pages.iter().any(|page| page.name == name) {
+                config.pages.push(Self::office_page(name));
+            }
+        }
+        // Reorder whole pages in memory so old settings retain their custom keys/actions.
+        config.pages.sort_by_key(|page| match page.name.as_str() {
+            "Windows / media" => 0,
+            "Utility" => 1,
+            "Codex" => 2,
+            "VS Code" => 3,
+            "Spotify" => 4,
+            "Word" => 5,
+            "PowerPoint" => 6,
+            "Excel" => 7,
+            "Themes" => 9,
+            _ => 8,
+        });
         config.refresh_theme_selector(config.theme)?;
         // Older JSON files have no affinity metadata; keep application actions gated.
         for page in &mut config.pages {
@@ -397,10 +503,12 @@ impl Config {
     // Errors: a missing page, wrong key count, or reassigned navigation/clock key.
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(
-            self.pages
-                .get(THEME_PAGE_INDEX)
-                .is_some_and(|page| page.name == "Themes"),
-            "page 5 must be the Themes selector"
+            self.pages.iter().any(|page| page.enabled),
+            "enable at least one page"
+        );
+        anyhow::ensure!(
+            self.pages.last().is_some_and(|page| page.name == "Themes"),
+            "the final page must be the Themes selector"
         );
         for page in &self.pages {
             anyhow::ensure!(
@@ -455,20 +563,21 @@ mod tests {
             .as_nanos();
         let path = std::env::temp_dir().join(format!("ulanzi-vibeware-config-{unique}.json"));
         let mut old = Config::default();
-        old.pages.truncate(3);
+        old.pages
+            .retain(|page| matches!(page.name.as_str(), "Windows / media" | "Codex" | "VS Code"));
         fs::write(&path, serde_json::to_vec(&old)?)?;
 
         let mut upgraded = Config::load(&path)?;
-        assert_eq!(upgraded.pages.len(), 6);
-        assert_eq!(upgraded.pages[3].name, "Utility");
-        assert_eq!(upgraded.pages[4].name, "Themes");
-        assert_eq!(upgraded.pages[5].name, "Spotify");
+        assert_eq!(upgraded.pages.len(), 9);
+        assert_eq!(upgraded.pages[1].name, "Utility");
+        assert_eq!(upgraded.pages[4].name, "Spotify");
+        assert_eq!(upgraded.pages[8].name, "Themes");
         upgraded.theme = Theme::CyberpunkNeon;
         upgraded.refresh_theme_selector(upgraded.theme)?;
         upgraded.save_selected_theme(&path)?;
         let saved = Config::load(&path)?;
         assert_eq!(saved.theme, Theme::CyberpunkNeon);
-        assert_eq!(saved.pages.len(), 6);
+        assert_eq!(saved.pages.len(), 9);
 
         fs::remove_file(&path)?;
         fs::remove_file(path.with_extension("json.bak"))?;

@@ -20,17 +20,18 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "New tag matching Cargo.toml, e.g. v0.3.0"
+        description: New tag matching Cargo.toml, optionally ending in -stable
         required: true
         type: string
+        default: v0.1.0-stable
       draft:
-        description: "Create a draft for review"
+        description: Create a draft for review
         type: boolean
         default: true
       prerelease:
-        description: "Mark as prerelease"
+        description: Mark as prerelease
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -51,16 +52,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
-            throw 'Use a version tag such as v0.3.0 or v0.3.0-preview.1.'
-          }
           $versionLine = Select-String -LiteralPath Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
           if (-not $versionLine) { throw 'Package version was not found in Cargo.toml.' }
           $version = $versionLine.Matches[0].Groups[1].Value
-          if ($env:RELEASE_TAG -cne "v$version") { throw 'Tag must match the Cargo.toml package version.' }
+          if ($env:RELEASE_TAG -cnotin @("v$version", "v$version-stable")) { throw 'Tag must match Cargo.toml, optionally ending in -stable.' }
           $existing = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { throw 'Could not check existing tags.' }
-          if ($existing) { throw 'This tag already exists. Choose a new package version and tag.' }
+          if ($existing) { throw 'This tag already exists. Existing releases are never overwritten.' }
 
   package:
     needs: prepare
@@ -74,72 +72,44 @@ jobs:
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             label: windows-arm64
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            label: macos-x64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            label: macos-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install build target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Linux development libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev libxdo-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-xcb-dev libxcursor-dev libxkbcommon-x11-dev
+      - name: Add Rust target
         shell: pwsh
         run: |
           rustup target add ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed.' }
-      - name: Build standalone EXE
+      - name: Build release executables
         shell: pwsh
         run: |
           cargo build --locked --release --target ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-      - name: Package launcher, executable, and documentation
+      - name: Package executable, documentation and notices
         shell: pwsh
-        env:
-          PACKAGE_LABEL: ${{ matrix.label }}
-          BUILD_TARGET: ${{ matrix.target }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Path package/docs,package/assets/fonts | Out-Null
-          Copy-Item "target/$env:BUILD_TARGET/release/ulanzi-dock-vibeware.exe" package/
-          Copy-Item README.md,LICENSE package/
-          Copy-Item docs/ARTWORK.md,docs/ulanzi-dock-vibeware-guide-v2.pdf package/docs/
-          Copy-Item assets/fonts/bitstream-vera-license.txt package/assets/fonts/
-          $launcher = @'
-          @echo off
-          REM VBWR B
-          REM Project: UlanziDock VibeWare version
-          REM Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
-          REM Creator: Umberto Giacobbi ^| https://umbertogiacobbi.biz
-          REM VibeWare is Human intent. AI implementation. Accountable human review.
-          REM Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-          REM AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-          REM AI Versions: Tools and models may vary by contributor and execution environment.
-          REM AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
-          REM Copyright (c) 2026 Umberto Giacobbi
-          REM SPDX-License-Identifier: MIT
-          REM License: MIT - see LICENSE
-          REM Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
-          REM VBWR E
-          cd /d "%~dp0"
-          if errorlevel 1 goto failed
-          if exist "settings.json" goto run
-          "%~dp0ulanzi-dock-vibeware.exe" init
-          if errorlevel 1 goto failed
-          :run
-          "%~dp0ulanzi-dock-vibeware.exe" run --status-display
-          if errorlevel 1 goto failed
-          exit /b 0
-          :failed
-          echo UlanziDock could not start. Check the message above and close other dock controllers.
-          pause
-          exit /b 1
-          '@
-          ($launcher -replace '\r?\n', "`r`n") | Set-Content -LiteralPath package/Start-UlanziDock.cmd -Encoding ascii
-          $zip = "ulanzi-dock-vibeware-$env:RELEASE_TAG-$env:PACKAGE_LABEL.zip"
-          Compress-Archive -Path package/* -DestinationPath $zip
-          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $zip" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii
+        run: ./scripts/package-release.ps1 -Target '${{ matrix.target }}' -Label '${{ matrix.label }}' -Tag $env:RELEASE_TAG
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.label }}
           path: |
-            ulanzi-dock-vibeware-*.zip
-            ulanzi-dock-vibeware-*.zip.sha256
+            dist/ulanzi-dock-vibeware-*.zip
+            dist/ulanzi-dock-vibeware-*.tar.gz
+            dist/ulanzi-dock-vibeware-*.sha256
           if-no-files-found: error
 
   release:
@@ -163,14 +133,19 @@ jobs:
           IS_PRERELEASE: ${{ inputs.prerelease }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $zips = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' | Sort-Object Name)
-          $checksums = @(Get-ChildItem -LiteralPath dist -Filter '*.zip.sha256' | Sort-Object Name)
-          if ($zips.Count -ne 2 -or $checksums.Count -ne 2) { throw 'Both architecture packages and checksums are required.' }
-          Get-Content -LiteralPath $checksums.FullName | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
+          $archives = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
+          $checksums = @(Get-ChildItem -LiteralPath dist -Filter '*.sha256')
+          if ($archives.Count -ne 5 -or $checksums.Count -ne 5) { throw 'All five platform archives and checksums are required.' }
+          Push-Location dist
+          try {
+            Get-Content -LiteralPath $checksums.FullName | Set-Content -LiteralPath SHA256SUMS.txt -Encoding ascii
+            & sha256sum --check SHA256SUMS.txt
+            if ($LASTEXITCODE -ne 0) { throw 'Archive checksum validation failed.' }
+          } finally { Pop-Location }
           $cliArgs = @('release', 'create', $env:RELEASE_TAG, '--target', $env:SOURCE_SHA,
-            '--title', "UlanziDock VibeWare version $env:RELEASE_TAG", '--generate-notes',
+            '--title', "UlanziDock VibeWare 0.1.0", '--generate-notes',
             "--draft=$env:IS_DRAFT", "--prerelease=$env:IS_PRERELEASE")
-          $cliArgs += $zips.FullName
+          $cliArgs += $archives.FullName
           $cliArgs += 'dist/SHA256SUMS.txt'
           gh @cliArgs
-          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases are never overwritten.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed.' }
