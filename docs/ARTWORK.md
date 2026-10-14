@@ -29,7 +29,7 @@ Three ImageGen reference sheets remain in `assets/concepts/`, one for each of th
 
 `docs/icon-gradient-concept.png` is the ImageGen comparison sheet approved on 7 October 2026. It repeats one Play glyph across all thirteen themes to show each theme's three-color treatment. The renderer uses those palette directions to interpolate color inside the existing sharp pictogram masks and the native theme swatches; the sheet is a design reference, not a runtime texture or a device photograph. The existing VibeWare logo is not modified.
 
-The 117 current full-color atlases in `assets/production/` are assembled from the exact 196×196 PNGs in `assets/buttons/`. Each sheet covers one of nine pages and one of thirteen themes. `docs/build_production_atlases.py` recreates them after `ulanzi-dock-vibeware render --output assets/buttons`.
+The 130 current full-color atlases in `assets/production/` are assembled from the PNGs in `assets/buttons/`: 196×196 ordinary keys and the 400×200 index status panel. Each sheet covers one of nine regular pages plus the generated index, in one of thirteen themes. `docs/build_production_atlases.py` recreates them after `ulanzi-dock-vibeware render --output assets/buttons`.
 
 Theme variations:
 
@@ -47,14 +47,15 @@ Theme variations:
 - `solarpunk`: sunlit yellow and leaf green rays.
 - `memphis`: coral, lavender, lemon, playful dots, and diagonal marks.
 
-Current page order: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, Themes.
+Regular page order: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, Themes. The generated Page index is appended for artwork exports (page 10) and is accessed from the large bottom key; NEXT PAGE skips it.
 The existing PDF catalogue retains the earlier sequence and omits Office. Page action lists
 (physical key index order):
 
 - **Windows / media:** Play / pause, Previous, Next track, Mute, Next page, Volume down, Volume up, File Explorer, Desktop, Settings, Screenshot, Task view, Browser, Clock.
 - **Codex:** New chat, Projects, Attention, Side chat, Next page, Review, Terminal, Files, Commands, Copy link, Copy, Paste, Find, Clock.
 - **VS Code:** Quick open, Commands, Terminal, Search, Next page, Explorer, Source control, Debug, Extensions, Save, New file, Format, Problems, Clock.
-- **Utility:** Clipboard, Search, Emoji, Screenshot, Next page, Explorer, Desktop, Task view, Settings, Project, Copy, Paste, Undo, Clock.
+- **Utility:** Brightness up, Brightness down, Emoji, Screenshot, Next page, Explorer, Desktop, Task view, Settings, Clipboard, Copy, Paste, Search, Clock. The two native sun icons occupy adjacent top-row keys 0 and 1; plus/minus changes the saved display brightness by 10 percentage points, bounded to 0-100. Project and Undo have been removed from Utility.
+- **Page index:** Windows, Utility, Codex, VS Code, Next page, Spotify, Word, PowerPoint, Excel, Themes, three blank positions, Pages. Native monitor, gear, chat, code, music, document-letter, palette and grid geometry uses the shared renderer in all thirteen themes and both button states. Disabled destination pages and brightness-bound controls reuse the existing runtime UNAVAILABLE ribbon; no disabled sprite families are distributed.
 - **Themes:** Twelve choices showing all themes except the active one, Next page at index 4, and Clock at index 13. Each choice uses the target theme as its own preview and has up/down art.
 - **Spotify:** Play / pause, Previous, Next track, Shuffle, Next page, Repeat, Search, Library, Like, Queue, Now playing, Liked songs, Home, Clock.
 - **Word:** Save, Open, New file, Print, Next page, Undo, Redo, Find, Bold, Italic, Underline, Spelling, Save as, Clock.

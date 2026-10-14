@@ -196,6 +196,8 @@ pub fn print_help(help: &str) {
     println!("  ulanzi-dock-vibeware init");
     println!("  ulanzi-dock-vibeware --about");
     println!("  ulanzi-dock-vibeware run --status-display");
+    println!("  ulanzi-dock-vibeware brightness 50");
+    println!("  ulanzi-dock-vibeware brightness 100 --config settings.json");
     println!("  ulanzi-dock-vibeware run --oobe");
     println!("  ulanzi-dock-vibeware run --focus-poll-seconds 1");
     println!("  ulanzi-dock-vibeware run --no-auto-page");

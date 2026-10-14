@@ -13,7 +13,7 @@
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
  * VBWR E */
 
-use crate::model::{PageConfig, Theme, CLOCK_KEY, NEXT_KEY};
+use crate::model::{PageConfig, Theme, CLOCK_KEY, NEXT_KEY, PAGE_INDEX_NAME};
 use anyhow::{Context, Result};
 use fontdue::{Font, FontSettings};
 use image::{imageops, DynamicImage, GrayImage, ImageFormat, Luma, Rgba, RgbaImage};
@@ -261,6 +261,14 @@ fn configured_icon(page: &PageConfig, index: usize) -> Result<GrayImage> {
         return icon_mask(&page.name, index);
     }
     let (family, source_index) = crate::applications::validate_asset(asset)?;
+    if family == "index" {
+        static SYMBOLS: OnceLock<Vec<GrayImage>> = OnceLock::new();
+        return SYMBOLS
+            .get_or_init(|| (0..10).map(page_index_symbol).collect())
+            .get(source_index)
+            .cloned()
+            .context("missing native page index icon");
+    }
     let source_page = match family {
         "codex" => "Codex",
         "vscode" => "VS Code",
@@ -302,8 +310,100 @@ fn source_geometry(page_name: &str) -> (usize, [u32; 4], [u32; 7], u32, u32) {
     }
 }
 
+// Original category symbols for the generated page index, drawn in the same palette.
+fn page_index_symbol(kind: usize) -> GrayImage {
+    const SCALE: u32 = 4;
+    let mut mask = GrayImage::new(118 * SCALE, 99 * SCALE);
+    for y in 0..mask.height() {
+        for x in 0..mask.width() {
+            let px = x as f32 / SCALE as f32;
+            let py = y as f32 / SCALE as f32;
+            let rect = |left: f32, top: f32, right: f32, bottom: f32| {
+                px >= left && px <= right && py >= top && py <= bottom
+            };
+            let line = |ax: f32, ay: f32, bx: f32, by: f32| {
+                let dx = bx - ax;
+                let dy = by - ay;
+                let t = (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)).clamp(0., 1.);
+                (px - ax - t * dx).powi(2) + (py - ay - t * dy).powi(2) <= 3.0_f32.powi(2)
+            };
+            let radius = ((px - 59.).powi(2) + (py - 49.).powi(2)).sqrt();
+            let filled = match kind {
+                0 => {
+                    (rect(16., 14., 102., 72.) && !rect(22., 20., 96., 66.))
+                        || line(59., 72., 59., 86.)
+                        || line(38., 86., 80., 86.)
+                }
+                1 => {
+                    (radius > 21. && radius < 34.)
+                        || ((px - 59.).abs() < 7. && radius > 27. && radius < 43.)
+                        || ((py - 49.).abs() < 7. && radius > 27. && radius < 43.)
+                        || (((px - 59.).abs() - (py - 49.).abs()).abs() < 8.
+                            && radius > 27.
+                            && radius < 43.)
+                }
+                2 => {
+                    (rect(18., 15., 100., 68.) && !rect(24., 21., 94., 62.))
+                        || line(35., 68., 35., 85.)
+                        || line(35., 85., 56., 68.)
+                        || line(35., 35., 83., 35.)
+                        || line(35., 49., 68., 49.)
+                }
+                3 => {
+                    line(40., 20., 17., 49.)
+                        || line(17., 49., 40., 78.)
+                        || line(78., 20., 101., 49.)
+                        || line(101., 49., 78., 78.)
+                        || line(66., 16., 51., 83.)
+                }
+                4 => {
+                    line(48., 20., 48., 74.)
+                        || line(87., 15., 87., 66.)
+                        || line(48., 20., 87., 15.)
+                        || ((px - 37.).powi(2) / 14.0_f32.powi(2)
+                            + (py - 76.).powi(2) / 10.0_f32.powi(2)
+                            <= 1.)
+                        || ((px - 76.).powi(2) / 14.0_f32.powi(2)
+                            + (py - 68.).powi(2) / 10.0_f32.powi(2)
+                            <= 1.)
+                }
+                5..=7 => rect(24., 10., 94., 88.) && !rect(30., 16., 88., 82.),
+                8 => {
+                    (radius > 32. && radius < 39.)
+                        || [(43., 28.), (70., 27.), (83., 49.), (69., 71.)].iter().any(
+                            |&(cx, cy)| (px - cx).powi(2) + (py - cy).powi(2) <= 7.0_f32.powi(2),
+                        )
+                }
+                _ => (0..3).any(|row| {
+                    (0..3).any(|column| {
+                        let left = 24. + column as f32 * 25.;
+                        let top = 15. + row as f32 * 25.;
+                        rect(left, top, left + 17., top + 17.)
+                    })
+                }),
+            };
+            if filled {
+                mask.put_pixel(x, y, Luma([255]));
+            }
+        }
+    }
+    if matches!(kind, 5..=7) {
+        let mut canvas = DynamicImage::ImageLuma8(mask).to_rgba8();
+        draw_panel_text(
+            &mut canvas,
+            ["W", "P", "X"][kind - 5],
+            39 * SCALE as i32,
+            67 * SCALE as i32,
+            36. * SCALE as f32,
+            [255, 255, 255],
+        );
+        mask = DynamicImage::ImageRgba8(canvas).to_luma8();
+    }
+    imageops::resize(&mask, 118, 99, imageops::FilterType::Lanczos3)
+}
+
 // index: Utility key needing a symbol absent from the generated source sheets.
-// Returns a smooth emoji or undo pictogram at the renderer's icon size.
+// Returns a native sun with plus/minus, or emoji pictogram, at the renderer's icon size.
 fn utility_symbol(index: usize) -> GrayImage {
     const SCALE: u32 = 4;
     let mut large = GrayImage::new(118 * SCALE, 99 * SCALE);
@@ -311,7 +411,20 @@ fn utility_symbol(index: usize) -> GrayImage {
         for x in 0..large.width() {
             let px = x as f32 / SCALE as f32;
             let py = y as f32 / SCALE as f32;
-            let filled = if index == 2 {
+            let filled = if index <= 1 {
+                let distance = ((px - 43.0).powi(2) + (py - 49.0).powi(2)).sqrt();
+                let ring = (14.0..20.0).contains(&distance);
+                let rays = (0..8).any(|ray| {
+                    let angle = ray as f32 * std::f32::consts::FRAC_PI_4;
+                    let (dy, dx) = angle.sin_cos();
+                    let along = (px - 43.0) * dx + (py - 49.0) * dy;
+                    let across = (py - 49.0) * dx - (px - 43.0) * dy;
+                    (26.0..36.0).contains(&along) && across.abs() < 3.0
+                });
+                let minus = (80.0..108.0).contains(&px) && (py - 49.0).abs() < 3.0;
+                let plus = index == 0 && (35.0..63.0).contains(&py) && (px - 94.0).abs() < 3.0;
+                ring || rays || minus || plus
+            } else {
                 let face_radius = ((px - 59.0).powi(2) + (py - 49.0).powi(2)).sqrt();
                 let left_eye = ((px - 45.0).powi(2) + (py - 39.0).powi(2)).sqrt() < 3.5;
                 let right_eye = ((px - 73.0).powi(2) + (py - 39.0).powi(2)).sqrt() < 3.5;
@@ -320,10 +433,6 @@ fn utility_symbol(index: usize) -> GrayImage {
                     || left_eye
                     || right_eye
                     || ((px - 59.0).abs() < 24.0 && (py - smile_y).abs() < 3.0)
-            } else {
-                let shaft = (38.0..85.0).contains(&px) && (42.0..51.0).contains(&py);
-                let arrow = (18.0..48.0).contains(&px) && (py - 46.5).abs() < (48.0 - px) * 0.70;
-                shaft || arrow
             };
             if filled {
                 large.put_pixel(x, y, Luma([255]));
@@ -364,8 +473,11 @@ fn icon_mask(page_name: &str, index: usize) -> Result<GrayImage> {
             _ => icon_mask("Windows / media", index),
         };
     }
-    if page_name == "Utility" && matches!(index, 2 | 12) {
-        return Ok(utility_symbol(index));
+    if page_name == "Utility" && index <= 2 {
+        static SYMBOLS: OnceLock<[GrayImage; 3]> = OnceLock::new();
+        return Ok(SYMBOLS
+            .get_or_init(|| [utility_symbol(0), utility_symbol(1), utility_symbol(2)])[index]
+            .clone());
     }
     let (icon_page, icon_index) = if page_name == "Utility" {
         match index {
@@ -378,9 +490,10 @@ fn icon_mask(page_name: &str, index: usize) -> Result<GrayImage> {
             6 => ("Windows / media", 8),
             7 => ("Windows / media", 11),
             8 => ("Windows / media", 9),
-            9 => ("Windows / media", 12),
+            9 => ("Codex", 11),
             10 => ("Codex", 10),
             11 => ("Codex", 11),
+            12 => ("VS Code", 3),
             _ => ("Windows / media", 1),
         }
     } else if page_name == "Themes" {
@@ -963,7 +1076,7 @@ pub fn render_available(
             .write_to(&mut output, ImageFormat::Png)?;
         return Ok(output.into_inner());
     }
-    let disabled = !enabled && index != NEXT_KEY;
+    let disabled = (!enabled || !page.key_available(index)) && index != NEXT_KEY;
     let pressed = pressed && !disabled;
     let selected = page.keys[index]
         .action
@@ -973,6 +1086,10 @@ pub fn render_available(
     let display_theme = selected.unwrap_or(theme);
     let (top, bottom, icon, label) = colors(display_theme, pressed);
     let mut canvas = background(display_theme, pressed, top, bottom);
+    if page.name == PAGE_INDEX_NAME && page.keys[index].action == "none" {
+        DynamicImage::ImageRgba8(canvas).write_to(&mut output, ImageFormat::Png)?;
+        return Ok(output.into_inner());
+    }
     if selected.is_some() {
         draw_swatch(&mut canvas, display_theme, pressed);
     } else {
@@ -1011,6 +1128,20 @@ pub fn render_status(theme: Theme, page: &PageConfig, enabled: bool) -> Result<V
         imageops::FilterType::CatmullRom,
     );
     draw_panel_text(&mut canvas, "VIBEWARE", 24, 30, 15.0, foreground);
+    draw_panel_text(&mut canvas, "PAGES", 249, 30, 15.0, foreground);
+    for row in 0..3 {
+        for column in 0..3 {
+            for y in 14 + row * 14..24 + row * 14 {
+                for x in 334 + column * 14..344 + column * 14 {
+                    canvas.put_pixel(
+                        x,
+                        y,
+                        Rgba([foreground[0], foreground[1], foreground[2], 255]),
+                    );
+                }
+            }
+        }
+    }
     draw_panel_text(&mut canvas, &page.name, 24, 79, 32.0, foreground);
     draw_panel_text(
         &mut canvas,

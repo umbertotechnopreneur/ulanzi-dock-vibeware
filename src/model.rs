@@ -20,6 +20,7 @@ use std::{fs, path::Path};
 pub const KEY_COUNT: usize = 14;
 pub const NEXT_KEY: usize = 4;
 pub const CLOCK_KEY: usize = 13;
+pub const PAGE_INDEX_NAME: &str = "Page index";
 pub const THEME_KEYS: [usize; 12] = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
@@ -118,11 +119,21 @@ pub struct PageConfig {
     pub keys: Vec<KeyConfig>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub executables: Vec<String>,
+    #[serde(skip)]
+    pub key_availability: Vec<bool>,
+}
+
+impl PageConfig {
+    pub fn key_available(&self, index: usize) -> bool {
+        self.key_availability.get(index).copied().unwrap_or(true)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     pub theme: Theme,
+    #[serde(default = "default_brightness")]
+    pub brightness: u8,
     pub pages: Vec<PageConfig>,
     #[serde(default)]
     pub setup_completed: bool,
@@ -135,11 +146,16 @@ fn default_page_enabled() -> bool {
     true
 }
 
+fn default_brightness() -> u8 {
+    100
+}
+
 // name: user-facing page title.
 // keys: labels and actions in physical key order.
 fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
     PageConfig {
         name: name.into(),
+        key_availability: Vec::new(),
         enabled: true,
         executables: match name {
             "Codex" => vec!["Codex.exe".into(), "ChatGPT.exe".into()],
@@ -161,8 +177,9 @@ fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
 
 impl Default for Config {
     fn default() -> Self {
-        Self {
+        let mut config = Self {
             theme: Theme::DarkClassic,
+            brightness: default_brightness(),
             setup_completed: false,
             runtime: crate::applications::RuntimeSettings::default(),
             pages: vec![
@@ -230,7 +247,10 @@ impl Default for Config {
                 Self::office_page("Excel"),
                 Self::theme_selector(Theme::DarkClassic),
             ],
-        }
+        };
+        config.refresh_page_index();
+        config.refresh_key_availability();
+        config
     }
 }
 
@@ -249,7 +269,7 @@ impl Config {
     pub fn next_enabled_page(&self, current: usize) -> usize {
         (1..=self.pages.len())
             .map(|offset| (current + offset) % self.pages.len())
-            .find(|&index| self.pages[index].enabled)
+            .find(|&index| self.pages[index].enabled && self.pages[index].name != PAGE_INDEX_NAME)
             .unwrap_or(current)
     }
 
@@ -341,8 +361,8 @@ impl Config {
         page(
             "Utility",
             [
-                ("CLIPBOARD", "hotkey:super+v"),
-                ("SEARCH", "hotkey:super+s"),
+                ("BRIGHT +", "brightness:up"),
+                ("BRIGHT -", "brightness:down"),
                 ("EMOJI", "hotkey:super+."),
                 ("SCREENSHOT", "hotkey:super+shift+s"),
                 ("NEXT PAGE", "page:next"),
@@ -350,13 +370,10 @@ impl Config {
                 ("DESKTOP", "hotkey:super+d"),
                 ("TASK VIEW", "hotkey:super+tab"),
                 ("SETTINGS", "hotkey:super+i"),
-                (
-                    "PROJECT",
-                    "open:https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware",
-                ),
+                ("CLIPBOARD", "hotkey:super+v"),
                 ("COPY", "hotkey:ctrl+c"),
                 ("PASTE", "hotkey:ctrl+v"),
-                ("UNDO", "hotkey:ctrl+z"),
+                ("SEARCH", "hotkey:super+s"),
                 ("CLOCK", "none"),
             ],
         )
@@ -399,22 +416,140 @@ impl Config {
         }
         PageConfig {
             name: "Themes".into(),
+            key_availability: Vec::new(),
             enabled: true,
             keys,
             executables: Vec::new(),
         }
     }
 
-    // current: appearance used to rebuild the final theme selector page.
-    // Errors: missing or relocated theme selector page.
+    // The generated index is separate from NEXT PAGE's regular page cycle.
+    pub fn page_index_position(&self) -> usize {
+        self.pages
+            .iter()
+            .position(|page| page.name == PAGE_INDEX_NAME)
+            .expect("configuration includes a generated page index")
+    }
+
+    fn refresh_page_index(&mut self) {
+        let mut keys = vec![
+            KeyConfig {
+                label: String::new(),
+                action: "none".into(),
+                description: String::new(),
+                asset: String::new(),
+            };
+            KEY_COUNT
+        ];
+        keys[NEXT_KEY].label = "NEXT PAGE".into();
+        keys[NEXT_KEY].action = "page:next".into();
+        keys[CLOCK_KEY].label = "PAGES".into();
+        for (slot, target) in THEME_KEYS.into_iter().zip(
+            self.pages
+                .iter()
+                .filter(|page| page.name != PAGE_INDEX_NAME),
+        ) {
+            let (label, icon) = match target.name.as_str() {
+                "Windows / media" => ("WINDOWS", 0),
+                "Utility" => ("UTILITY", 1),
+                "Codex" => ("CODEX", 2),
+                "VS Code" => ("VS CODE", 3),
+                "Spotify" => ("SPOTIFY", 4),
+                "Word" => ("WORD", 5),
+                "PowerPoint" => ("POWERPOINT", 6),
+                "Excel" => ("EXCEL", 7),
+                "Themes" => ("THEMES", 8),
+                _ => (target.name.as_str(), 9),
+            };
+            keys[slot] = KeyConfig {
+                label: label.into(),
+                action: format!("page:go:{}", target.name),
+                description: format!("Open the {} page", target.name),
+                asset: format!("index:{icon}"),
+            };
+        }
+        let index = PageConfig {
+            name: PAGE_INDEX_NAME.into(),
+            enabled: true,
+            keys,
+            executables: Vec::new(),
+            key_availability: Vec::new(),
+        };
+        if let Some(position) = self
+            .pages
+            .iter()
+            .position(|page| page.name == PAGE_INDEX_NAME)
+        {
+            self.pages[position] = index;
+        } else {
+            self.pages.push(index);
+        }
+    }
+
+    // Per-key state is derived in memory; no disabled sprites or runtime flags are saved.
+    pub fn refresh_key_availability(&mut self) {
+        let targets: Vec<_> = self
+            .pages
+            .iter()
+            .map(|page| (page.name.clone(), page.enabled))
+            .collect();
+        for page in &mut self.pages {
+            page.key_availability = page
+                .keys
+                .iter()
+                .map(|key| match key.action.as_str() {
+                    "brightness:up" => self.brightness < 100,
+                    "brightness:down" => self.brightness > 0,
+                    "none" if page.name == PAGE_INDEX_NAME => false,
+                    action => action.strip_prefix("page:go:").map_or(true, |name| {
+                        targets
+                            .iter()
+                            .any(|(target, enabled)| target == name && *enabled)
+                    }),
+                })
+                .collect();
+        }
+    }
+
+    // current: appearance used to rebuild the theme selector and its index entry.
+    // Errors: missing theme selector page.
     pub fn refresh_theme_selector(&mut self, current: Theme) -> Result<()> {
-        anyhow::ensure!(
-            self.pages.last().is_some_and(|page| page.name == "Themes"),
-            "the final page must be the Themes selector"
-        );
-        let last = self.pages.len() - 1;
-        self.pages[last] = Self::theme_selector(current);
+        let position = self
+            .pages
+            .iter()
+            .position(|page| page.name == "Themes")
+            .context("the Themes selector page is missing")?;
+        self.pages[position] = Self::theme_selector(current);
+        self.refresh_page_index();
+        self.refresh_key_availability();
         Ok(())
+    }
+
+    // Upgrade only the original Utility mapping; preserve customized actions.
+    fn upgrade_utility_brightness(&mut self) {
+        let Some(page) = self.pages.iter_mut().find(|page| page.name == "Utility") else {
+            return;
+        };
+        if page.keys.len() != KEY_COUNT
+            || page.keys[0].action != "hotkey:super+v"
+            || page.keys[1].action != "hotkey:super+s"
+            || page.keys[9].action
+                != "open:https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware"
+            || page.keys[12].action != "hotkey:ctrl+z"
+        {
+            return;
+        }
+        page.keys.swap(0, 9);
+        page.keys.swap(1, 12);
+        if page.keys[9].asset == "utility:0" {
+            page.keys[9].asset = "utility:9".into();
+        }
+        if page.keys[12].asset == "utility:1" {
+            page.keys[12].asset = "utility:12".into();
+        }
+        let defaults = Self::utility_page();
+        page.keys[0] = defaults.keys[0].clone();
+        page.keys[1] = defaults.keys[1].clone();
     }
 
     // path: JSON settings file to load, or a missing path for defaults.
@@ -428,6 +563,7 @@ impl Config {
         } else {
             Self::default()
         };
+        config.upgrade_utility_brightness();
         if !config
             .pages
             .iter()
@@ -461,6 +597,7 @@ impl Config {
             "PowerPoint" => 6,
             "Excel" => 7,
             "Themes" => 9,
+            PAGE_INDEX_NAME => 10,
             _ => 8,
         });
         config.refresh_theme_selector(config.theme)?;
@@ -476,20 +613,39 @@ impl Config {
             }
         }
         crate::applications::load(path)?.apply(&mut config)?;
+        config.refresh_key_availability();
         config.validate()?;
         Ok(config)
+    }
+
+    // Read only brightness so a running controller does not reload pages or shortcuts.
+    // Missing settings and older files without this field use maximum brightness.
+    pub fn load_brightness(path: &Path) -> Result<u8> {
+        #[derive(Deserialize)]
+        struct Brightness {
+            #[serde(default = "default_brightness")]
+            brightness: u8,
+        }
+        let level = match fs::read(path) {
+            Ok(bytes) => {
+                serde_json::from_slice::<Brightness>(&bytes)
+                    .with_context(|| format!("reading brightness from {}", path.display()))?
+                    .brightness
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => default_brightness(),
+            Err(error) => return Err(error).context("reading brightness settings"),
+        };
+        anyhow::ensure!(level <= 100, "brightness must be 0-100");
+        Ok(level)
     }
 
     // path: settings file to update or create after a theme selection.
     // Errors: invalid layout, serialization failure, backup failure, or failed write.
     pub fn save_selected_theme(&self, path: &Path) -> Result<()> {
         self.validate()?;
-        if path.exists() {
-            fs::copy(path, path.with_extension("json.bak"))
-                .with_context(|| format!("backing up {}", path.display()))?;
-        }
-        fs::write(path, serde_json::to_vec_pretty(self)?)
-            .with_context(|| format!("writing {}", path.display()))
+        // Patch the current file instead of overwriting a CLI brightness change
+        // or custom metadata with the controller's older in-memory configuration.
+        crate::gui_settings::Settings::load(path)?.save_theme(self.theme)
     }
 
     // path: destination JSON settings file; existing files are preserved.
@@ -502,13 +658,14 @@ impl Config {
 
     // Errors: a missing page, wrong key count, or reassigned navigation/clock key.
     pub fn validate(&self) -> Result<()> {
+        anyhow::ensure!(self.brightness <= 100, "brightness must be 0-100");
         anyhow::ensure!(
             self.pages.iter().any(|page| page.enabled),
             "enable at least one page"
         );
         anyhow::ensure!(
-            self.pages.last().is_some_and(|page| page.name == "Themes"),
-            "the final page must be the Themes selector"
+            self.pages.iter().any(|page| page.name == "Themes"),
+            "the Themes selector page is missing"
         );
         for page in &self.pages {
             anyhow::ensure!(
@@ -568,7 +725,7 @@ mod tests {
         fs::write(&path, serde_json::to_vec(&old)?)?;
 
         let mut upgraded = Config::load(&path)?;
-        assert_eq!(upgraded.pages.len(), 9);
+        assert_eq!(upgraded.pages.len(), 10);
         assert_eq!(upgraded.pages[1].name, "Utility");
         assert_eq!(upgraded.pages[4].name, "Spotify");
         assert_eq!(upgraded.pages[8].name, "Themes");
@@ -577,10 +734,10 @@ mod tests {
         upgraded.save_selected_theme(&path)?;
         let saved = Config::load(&path)?;
         assert_eq!(saved.theme, Theme::CyberpunkNeon);
-        assert_eq!(saved.pages.len(), 9);
+        assert_eq!(saved.pages.len(), 10);
 
         fs::remove_file(&path)?;
-        fs::remove_file(path.with_extension("json.bak"))?;
+        fs::remove_file(path.with_extension("json.gui.bak"))?;
         Ok(())
     }
 }

@@ -64,6 +64,38 @@ impl Settings {
         Ok(())
     }
 
+    // Preserve custom pages, shortcuts, metadata, and applications.yaml.
+    // Stage and back up the JSON before replacing it atomically.
+    fn save_field(&mut self, name: &str, value: serde_json::Value) -> Result<()> {
+        self.check_current()?;
+        let mut json = match &self.json {
+            Some(bytes) => serde_json::from_slice::<serde_json::Value>(bytes)?,
+            None => serde_json::to_value(&self.config)?,
+        };
+        ensure!(json.is_object(), "Settings must be a JSON object.");
+        json[name] = value;
+        // Settings::load already validated the migrated configuration. Do not
+        // reject older JSON layouts here or serialize those migrations over it.
+        let _: Config = serde_json::from_value(json.clone())?;
+        let mut bytes = serde_json::to_vec_pretty(&json)?;
+        bytes.push(b'\n');
+        let change = Change::stage(&self.path, self.json.clone(), bytes)?;
+        change.backup()?;
+        self.check_current()?;
+        change.apply()?;
+        *self = Self::load(&self.path)?;
+        Ok(())
+    }
+
+    pub fn save_brightness(&mut self, level: u8) -> Result<()> {
+        ensure!(level <= 100, "brightness must be 0-100");
+        self.save_field("brightness", level.into())
+    }
+
+    pub fn save_theme(&mut self, theme: Theme) -> Result<()> {
+        self.save_field("theme", serde_json::to_value(theme)?)
+    }
+
     // theme: one of the thirteen existing dock themes.
     // auto_switch: enable automatic foreground application page selection.
     // detect_applications: enable application availability checks and inactive overlays.

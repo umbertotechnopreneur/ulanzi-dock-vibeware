@@ -15,7 +15,7 @@
 
 use crate::{
     art,
-    model::{PageConfig, Theme, CLOCK_KEY, KEY_COUNT, NEXT_KEY},
+    model::{PageConfig, Theme, CLOCK_KEY, KEY_COUNT, NEXT_KEY, PAGE_INDEX_NAME},
 };
 use anyhow::{Context, Result};
 use hidapi::{HidApi, HidDevice};
@@ -37,6 +37,25 @@ pub struct Dock {
 pub struct ButtonEvent {
     pub index: usize,
     pub pressed: bool,
+}
+
+// Missing interfaces and incomplete reports are transport failures, unlike artwork errors.
+#[derive(Debug)]
+struct ConnectionError(String);
+
+impl std::fmt::Display for ConnectionError {
+    // formatter: destination for the transport error message.
+    // Errors: the formatter cannot write the message.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ConnectionError {}
+
+// error: operation failure, including any anyhow context wrappers.
+pub fn is_connection_error(error: &anyhow::Error) -> bool {
+    error.is::<hidapi::HidError>() || error.is::<ConnectionError>()
 }
 
 // Errors: USB enumeration failure or missing D200H consumer interface.
@@ -63,7 +82,11 @@ impl Dock {
                     && d.usage_page() == 0x000c
                     && d.usage() == 0x0001
             })
-            .context("D200H consumer HID interface (usage page 0x0c, usage 1) not found")?;
+            .ok_or_else(|| {
+                ConnectionError(
+                    "D200H consumer HID interface (usage page 0x0c, usage 1) not found".into(),
+                )
+            })?;
         let device = info
             .open_device(api)
             .context("opening D200H consumer HID interface")?;
@@ -82,6 +105,7 @@ impl Dock {
         enabled: bool,
         status_display: bool,
     ) -> Result<()> {
+        let status_display = status_display || page.name == PAGE_INDEX_NAME;
         let archive = make_archive(page, theme, held, enabled, status_display)?;
         if status_display {
             self.background()?;
@@ -117,6 +141,7 @@ impl Dock {
         enabled: bool,
         status_display: bool,
     ) -> Result<()> {
+        let status_display = status_display || page.name == PAGE_INDEX_NAME;
         let mut keys = (0..CLOCK_KEY)
             .filter(|&i| i != NEXT_KEY)
             .collect::<Vec<_>>();
@@ -131,12 +156,42 @@ impl Dock {
         Ok(())
     }
 
+    // Redraw only the brightness keys when a bound is reached or left.
+    pub fn refresh_brightness_keys(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        held: Option<usize>,
+        enabled: bool,
+    ) -> Result<()> {
+        let keys: Vec<_> = page
+            .keys
+            .iter()
+            .enumerate()
+            .filter(|(_, key)| matches!(key.action.as_str(), "brightness:up" | "brightness:down"))
+            .map(|(index, _)| index)
+            .collect();
+        if keys.is_empty() {
+            return Ok(());
+        }
+        let archive = make_archive_for_keys(page, theme, held, &keys, enabled, false)?;
+        self.send_file(0x000d, &archive)
+    }
+
     // Keep the wide panel in custom-background mode without clock overlays.
     // Use the same ASCII field encoding as clock mode. A binary mode byte can
     // leave native statistic overlays visible on the owner's firmware.
     pub fn background(&self) -> Result<()> {
         let payload = b"2|0|0|00:00:00|0";
         self.send_packet(0x0006, payload, payload.len() as u32)
+    }
+
+    // D200 brightness is ASCII decimal, not a binary byte (independent protocol notes).
+    // USB write completion does not confirm visible backlight output.
+    pub fn set_brightness(&self, level: u8) -> Result<()> {
+        anyhow::ensure!(level <= 100, "brightness must be 0-100");
+        let payload = level.to_string();
+        self.send_packet(0x000a, payload.as_bytes(), payload.len() as u32)
     }
 
     // Errors: clock encoding or USB write failure.
@@ -172,6 +227,18 @@ impl Dock {
             }));
         }
         Ok(None)
+    }
+
+    // Errors: USB input failure or a queue that does not drain within 256 reports.
+    pub fn discard_input(&self) -> Result<()> {
+        // Reconnection must never dispatch presses buffered before display initialization.
+        let mut buffer = [0u8; PACKET + 1];
+        for _ in 0..256 {
+            if self.device.read_timeout(&mut buffer, 0)? == 0 {
+                return Ok(());
+            }
+        }
+        Err(ConnectionError("D200H input queue did not drain".into()).into())
     }
 
     // command: full layout (0x0001) or one-key additive update (0x000d).
@@ -216,11 +283,13 @@ impl Dock {
             .device
             .write(report)
             .context("writing D200H HID report")?;
-        anyhow::ensure!(
-            count == report.len(),
-            "short HID write: {count} of {} bytes",
-            report.len()
-        );
+        if count != report.len() {
+            return Err(ConnectionError(format!(
+                "short HID write: {count} of {} bytes",
+                report.len()
+            ))
+            .into());
+        }
         Ok(())
     }
 }

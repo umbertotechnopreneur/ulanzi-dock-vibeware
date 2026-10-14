@@ -38,7 +38,7 @@ THEMES = (
     "solarpunk",
     "memphis",
 )
-PAGES = (("windows", 1), ("utility", 2), ("codex", 3), ("vscode", 4), ("spotify", 5), ("word", 6), ("powerpoint", 7), ("excel", 8), ("themes", 9))
+PAGES = (("windows", 1), ("utility", 2), ("codex", 3), ("vscode", 4), ("spotify", 5), ("word", 6), ("powerpoint", 7), ("excel", 8), ("themes", 9), ("index", 10))
 SIDE = 196
 GAP = 12
 MARGIN = 24
@@ -73,10 +73,12 @@ def build(theme: str, page_name: str, page_number: int) -> Path:
             row = index // 2
             path = SOURCE / theme / f"page-{page_number}" / f"key-{index:02}-{state}.png"
             with Image.open(path) as sprite:
-                assert sprite.size == (SIDE, SIDE), path
+                assert sprite.size == (SIDE, SIDE) or (index == 13 and sprite.size == (400, 200)), path
                 x = MARGIN + col * (SIDE + GAP)
                 y = MARGIN + HEADER + row * (SIDE + GAP)
-                sheet.paste(sprite.convert("RGB"), (x, y))
+                tile = sprite.convert("RGB")
+                tile.thumbnail((SIDE, SIDE), Image.Resampling.LANCZOS)
+                sheet.paste(tile, (x + (SIDE - tile.width) // 2, y + (SIDE - tile.height) // 2))
     OUTPUT.mkdir(parents=True, exist_ok=True)
     path = OUTPUT / f"{page_name}-{theme}.png"
     sheet.save(path, optimize=True)

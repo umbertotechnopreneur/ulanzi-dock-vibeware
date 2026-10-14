@@ -69,6 +69,62 @@ For the large status display, run:
 
 For more commands, run `ulanzi-dock-vibeware help`. To build from source on Windows, use `pwsh -NoProfile -File scripts/build-local.ps1`.
 
+### Display brightness
+
+Brightness defaults to **100%**, including existing settings files without a
+`brightness` field. Set a persistent level from 0 to 100 with:
+
+```powershell
+.\ulanzi-dock-vibeware.exe brightness 50
+.\ulanzi-dock-vibeware.exe brightness 100 --config settings.json
+```
+
+The command updates only `brightness` in the JSON settings, preserving custom
+pages, shortcuts and metadata, and backs up the previous file before atomic
+replacement. It uses the same default settings path as launching the executable
+without arguments. If you use `run --config ...`, pass the same file to
+`brightness --config ...`.
+
+The resident controller reads the saved level every 500 ms and applies changes
+while connected without restarting or reloading artwork. It also applies the
+level on startup and USB reconnection. With no controller running, the command
+saves the value for the next launch; it does not access USB itself. There is no
+network listener or TCP connection.
+
+On the Utility page, the adjacent top-row **BRIGHT +** and **BRIGHT -** keys
+change and save the level by 10 percentage points, bounded to 0-100. They use
+native sun icons with plus/minus in every theme and pressed/released state.
+Clipboard and Search move to the former Project and Undo positions. Original
+Utility mappings in older settings are upgraded in memory; customized mappings
+are preserved. `run --no-actions` also suppresses these brightness buttons.
+
+At 100%, **BRIGHT +** shows the existing **UNAVAILABLE** banner and cannot be
+pressed. At 0%, **BRIGHT -** does the same. Both keys refresh when the saved
+brightness changes, including from the CLI; their disabled faces are generated
+at runtime in the current theme. To export an offline preview, use
+`render --page 2 --brightness 100` (or `--brightness 0`). Normal artwork exports
+use neutral brightness faces, without additional disabled sprite sets.
+
+### Direct page navigation
+
+Press and release the large bottom display key from any page to open **Page
+index**. Its native icons jump directly to Windows, Utility, Codex, VS Code,
+Spotify, Word, PowerPoint, Excel or Themes. Disabled pages show **UNAVAILABLE**
+and cannot be selected; unused index positions are blank. Automatic foreground
+page switching pauses while the index is open so the menu stays available.
+
+**NEXT PAGE** keeps the existing regular-page cycle. The generated index is an
+additional page accessed through the large key, with a grid icon and **PAGES**
+hint on the custom status display. Firmware-clock mode remains usable: the
+large key still opens the index, and selecting a regular page restores its clock
+when that mode is enabled. Index icons and navigation have not yet been
+physically validated on the owner's D200H.
+
+The independently documented [D200 brightness protocol](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md#brightness)
+uses command `0x000A` with ASCII digits (`0` turns the backlight off, `100` is
+maximum). Brightness has not yet been physically validated on the owner's D200H;
+a completed USB write is not confirmation of visible brightness.
+
 ## Compatibility and credits
 
 Button events, clock, navigation and the status display have been checked on Windows x64 hardware. Office pages and automatic switching still need a physical dock check. The tray and app detection are Windows features; ARM64, Linux and macOS device behavior has not been physically verified. See [package notes](docs/RELEASING.md) for platform requirements.

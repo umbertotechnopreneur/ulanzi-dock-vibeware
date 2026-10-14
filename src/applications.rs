@@ -156,6 +156,7 @@ pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
                 | "word"
                 | "powerpoint"
                 | "excel"
+                | "index"
         ),
         "unknown asset family '{family}'"
     );
