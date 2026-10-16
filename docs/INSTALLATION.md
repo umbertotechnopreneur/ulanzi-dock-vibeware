@@ -18,6 +18,12 @@ VBWR E -->
 
 Opening the app can send commands to a connected dock.
 
+After the first launch, the package registers **UlanziDock VibeWare** in Windows
+Startup apps. Windows controls that setting; turn it off there if you do not want
+the hidden tray controller at sign-in. In a terminal, the MSIX also provides the
+`ulanzi-dock-vibeware.exe` app-execution alias, so scripts never need the changing
+`WindowsApps` installation path.
+
 Use packages from [my releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases), when available, or build your own below. A package built on your PC is not a Microsoft Store release.
 
 If Windows rejects a local package's certificate, check who made it before trusting it. Do not disable Windows security to install it.

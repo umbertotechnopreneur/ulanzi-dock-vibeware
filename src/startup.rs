@@ -24,6 +24,17 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
     use std::{env, os::windows::process::CommandExt, path::PathBuf, process::Command};
     use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
+    if crate::paths::is_packaged()? {
+        if disable {
+            println!("MSIX startup is controlled by Windows Startup apps. Disable UlanziDock VibeWare there.");
+        } else if enable {
+            println!("MSIX startup is registered by the package. Enable UlanziDock VibeWare in Windows Startup apps if it is disabled.");
+        } else {
+            println!("Launch at Windows sign-in: managed by the MSIX package and Windows Startup apps.");
+        }
+        return Ok(());
+    }
+
     let executable = env::current_exe().context("finding this executable")?;
     let launcher = executable.with_file_name("ulanzi-dock-launcher.exe");
     let workdir = env::current_dir().context("finding the working directory")?;

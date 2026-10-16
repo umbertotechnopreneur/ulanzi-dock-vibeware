@@ -57,6 +57,11 @@ pub fn package_settings(executable: &Path) -> Result<Option<PathBuf>> {
     Ok(Some(settings))
 }
 
+/// Report whether this process has MSIX package identity without touching settings.
+pub fn is_packaged() -> Result<bool> {
+    Ok(package_local_state()?.is_some())
+}
+
 #[cfg(target_os = "windows")]
 fn package_local_state() -> Result<Option<PathBuf>> {
     use anyhow::ensure;

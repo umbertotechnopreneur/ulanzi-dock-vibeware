@@ -9,8 +9,10 @@ License: MIT - see LICENSE
 VBWR E -->
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-         IgnorableNamespaces="uap rescap">
+         IgnorableNamespaces="uap uap3 desktop rescap">
   <Identity Name="VibeWare.UlanziDock"
             Publisher="__PUBLISHER__"
             Version="__MSIX_VERSION__"
@@ -38,6 +40,22 @@ VBWR E -->
                          Square310x310Logo="Assets\Square310x310Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask"
+                           Executable="ulanzi-dock-launcher.exe"
+                           EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="UlanziDockStartup"
+                               Enabled="true"
+                               DisplayName="UlanziDock VibeWare" />
+        </desktop:Extension>
+        <uap3:Extension Category="windows.appExecutionAlias"
+                        Executable="ulanzi-dock-vibeware.exe"
+                        EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="ulanzi-dock-vibeware.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities>
