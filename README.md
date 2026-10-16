@@ -19,25 +19,24 @@ Your shortcuts, music and favourite apps, one button away.
 
 ## Why I built it
 
-I built this because I can't stand twenty Node.js processes running just to change something once a week. I wanted to choose the pictures, tell each button what to do, and get on with my day.
+I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I made this as a weekend project for my own desk.
 
-I bought a **Ulanzi D200H**, then discovered that changing a few tiny pictures seemed to need almost **800 MB** of vendor software. That is a rather large moving truck for a handful of buttons. So I built a small controller in Rust.
+I bought a **Ulanzi D200H** and wanted to change a few button pictures without running a huge app. So I built a small controller in Rust. Pick a theme, set your shortcuts and get on with your day.
 
-I am [Umberto Giacobbi](https://umbertogiacobbi.biz), and this is my MIT-licensed controller, made as part of VibeWare. Bring your dock, pick a theme, and make the buttons yours.
-
-<img src="docs/photos/setup-triptych-banner.png" alt="Three views of my desk and Ulanzi D200H controller" width="100%">
+<img src="docs/photos/setup-triptych-banner.png" alt="My desk and Ulanzi D200H" width="100%">
 
 *These desk photos were enhanced with AI.*
 
-## What you get
+## What it does
 
-- **Nine pages:** Windows / media, Utility, Codex, VS Code, Spotify, Microsoft Office (Word, PowerPoint and Excel), and Themes. Windows and Utility cover everyday shortcuts, media controls and shell tools.
-- **Automatic app switching on Windows:** enable application detection and automatic switching, and the dock follows the app you're using. Recognised apps get their own page; other apps return you to Windows / media.
-- **Controls that know when they're useful:** with detection on, app-specific buttons are dimmed and inactive when their app isn't in focus. You can also turn individual application pages on or off without losing your shortcuts.
-- **13 themes:** choose one on the dock or in the configuration window.
-- **A big status display:** optionally replace the clock with the current application page, theme and active/inactive status.
-- **A lightweight native Rust app:** designed to keep memory and CPU use low, with no Node.js or browser runtime. No vendor software or custom driver required.
-- **Free and open source:** use it, change it, share it, or build your own version under the MIT license. Just keep the license notice.
+- Nine pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel and Themes.
+- Thirteen themes, with different colors and button styles.
+- On Windows, optional page switching to follow the app you are using.
+- Optional dimming of buttons when their app is not active. Turn pages off without losing their shortcuts.
+- A clock or a large page-and-theme status display.
+- No Node.js or browser runtime. No vendor app or custom driver required.
+
+The code is free to use, change and share under the [MIT License](LICENSE).
 
 <table>
   <tr><th>Windows / media</th><th>Spotify</th></tr>
@@ -47,106 +46,96 @@ I am [Umberto Giacobbi](https://umbertogiacobbi.biz), and this is my MIT-license
   </tr>
 </table>
 
-*Button artwork previews in the MATRIX theme.*
+*Button artwork in the MATRIX theme.*
 
-## Download
+## Get it running
 
-Look for **Releases** on the right and choose the package for your computer. Extract the whole archive into a writable folder.
+Download the right package from [Releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases). Extract the whole archive into a writable folder. On Windows, open `ulanzi-dock-vibeware.exe`. Keep the launcher beside it if you want startup at sign-in.
 
-On Windows, double-click `ulanzi-dock-vibeware.exe` and follow the welcome screens. Keep `ulanzi-dock-launcher.exe` beside it if you want automatic startup at sign-in. Linux and macOS packages run from a terminal with `./ulanzi-dock-vibeware run`.
+Linux and macOS use `./ulanzi-dock-vibeware run`. See [package notes](docs/RELEASING.md) for requirements.
 
-## Make it yours
+Want an installer and a Start-menu entry? See [MSIX installation](docs/INSTALLATION.md). Want to build or change the app? See [the source and Codex guide](docs/DEVELOPMENT.md).
 
-On Windows, right-click the tray icon, choose **About**, then **Configure**. Pick a theme, enable the application pages you want, and choose whether the dock should follow the active app. **Save + Restart** applies your changes.
+## Change your setup
 
-Edit shortcuts through the `settings.json` and `applications.yaml` buttons. Office shortcuts default to a US English keyboard layout; adjust them for your language if needed.
+On Windows, right-click the tray icon and choose **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the active app. Click **Save + Restart**.
 
-For the large status display, run:
+The settings buttons open `settings.json` and `applications.yaml` to edit shortcuts and app names. Office shortcuts start with US English defaults; change them for your keyboard if needed.
+
+App detection, automatic switching and their interval are in `settings.json`, under `runtime`. The YAML only lists applications.
+
+Old settings are not converted. Keep a backup, run `init --config new-settings.json` and copy across the shortcuts you want. Use the current `applications.yaml` too; it no longer has a `runtime` section.
+
+To show the page and theme instead of the clock:
 
 ```powershell
 .\ulanzi-dock-vibeware.exe run --status-display
 ```
 
-For more commands, run `ulanzi-dock-vibeware help`. To build from source on Windows, use `pwsh -NoProfile -File scripts/build-local.ps1`.
+Run `ulanzi-dock-vibeware help` for more commands.
 
-### Display brightness
+### Brightness
 
-Brightness defaults to **100%**, including existing settings files without a
-`brightness` field. Set a persistent level from 0 to 100 with:
+Use **BRIGHT +** and **BRIGHT -** on the Utility page, or save a level from 0 to 100:
 
 ```powershell
 .\ulanzi-dock-vibeware.exe brightness 50
-.\ulanzi-dock-vibeware.exe brightness 100 --config settings.json
 ```
 
-The command updates only `brightness` in the JSON settings, preserving custom
-pages, shortcuts and metadata, and backs up the previous file before atomic
-replacement. It uses the same default settings path as launching the executable
-without arguments. If you use `run --config ...`, pass the same file to
-`brightness --config ...`.
+The controller picks up the saved level while running. If it is closed, the level is used next time. The default is 100%. If you run with a custom settings file, pass the same `--config` path to this command.
 
-The resident controller reads the saved level every 500 ms and applies changes
-while connected without restarting or reloading artwork. It also applies the
-level on startup and USB reconnection. With no controller running, the command
-saves the value for the next launch; it does not access USB itself. There is no
-network listener or TCP connection.
+At the minimum or maximum, the matching button shows UNAVAILABLE. I have not yet checked brightness on my physical dock.
 
-On the Utility page, the adjacent top-row **BRIGHT +** and **BRIGHT -** keys
-change and save the level by 10 percentage points, bounded to 0-100. They use
-native sun icons with plus/minus in every theme and pressed/released state.
-Clipboard and Search move to the former Project and Undo positions. Original
-Utility mappings in older settings are upgraded in memory; customized mappings
-are preserved. `run --no-actions` also suppresses these brightness buttons.
+### Jump to a page
 
-At 100%, **BRIGHT +** shows the existing **UNAVAILABLE** banner and cannot be
-pressed. At 0%, **BRIGHT -** does the same. Both keys refresh when the saved
-brightness changes, including from the CLI; their disabled faces are generated
-at runtime in the current theme. To export an offline preview, use
-`render --page 2 --brightness 100` (or `--brightness 0`). Normal artwork exports
-use neutral brightness faces, without additional disabled sprite sets.
+Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 
-### Direct page navigation
+I have not yet checked the new page-index buttons on my physical dock.
 
-Press and release the large bottom display key from any page to open **Page
-index**. Its native icons jump directly to Windows, Utility, Codex, VS Code,
-Spotify, Word, PowerPoint, Excel or Themes. Disabled pages show **UNAVAILABLE**
-and cannot be selected; unused index positions are blank. Automatic foreground
-page switching pauses while the index is open so the menu stays available.
+### OBS recording page
 
-**NEXT PAGE** keeps the existing regular-page cycle. The generated index is an
-additional page accessed through the large key, with a grid icon and **PAGES**
-hint on the custom status display. Firmware-clock mode remains usable: the
-large key still opens the index, and selecting a regular page restores its clock
-when that mode is enabled. Index icons and navigation have not yet been
-physically validated on the owner's D200H.
+The optional [OBS Creator preset](presets/obs-creator/README.md) adds recording, scene and audio shortcuts in all thirteen themes. It needs a current build and matching hotkeys in OBS. There is also a [quick-start PDF](docs/obs-creator-quick-start.pdf).
 
-The independently documented [D200 brightness protocol](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md#brightness)
-uses command `0x000A` with ASCII digits (`0` turns the backlight off, `100` is
-maximum). Brightness has not yet been physically validated on the owner's D200H;
-a completed USB write is not confirmation of visible brightness.
+<img src="presets/obs-creator/preview.png" alt="OBS Creator button layout in the Blade Runner theme" width="700">
 
-## Compatibility and credits
+*Artwork preview, not a dock photo. Buttons do not show live OBS status. I have not yet tried this page with the dock and OBS.*
 
-Button events, clock, navigation and the status display have been checked on Windows x64 hardware. Office pages and automatic switching still need a physical dock check. The tray and app detection are Windows features; ARM64, Linux and macOS device behavior has not been physically verified. See [package notes](docs/RELEASING.md) for platform requirements.
+## A future Windows editor
 
-Protocol references: [OpenActionMirrors D200](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200) and [independent D200 research](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md). This is an independent MIT implementation. See [artwork credits](docs/ARTWORK.md) and [third-party notices](docs/THIRD-PARTY.md).
+I am planning a WinUI 3 app for editing keys, pages, apps, themes, presets and device settings. It includes simple Hue and Saturation sliders.
 
-Copyright © 2026 Umberto Giacobbi. MIT licensed; see [LICENSE](LICENSE).
+[See the twelve dark/light mockups](docs/design/README.md). They are pictures of an idea, not a working interface. The current dialogs use Slint.
+
+## Which hardware works?
+
+I have tested only my **Ulanzi D200H**. It is the only model I own.
+
+Have another model? [Build the source](docs/DEVELOPMENT.md), try it and [tell me what works or fails](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues). Include your model and operating system. It might work, but I cannot promise it: the code currently detects the D200H specifically.
+
+On Windows x64, button events, the clock, regular page navigation and the status display have been checked. Office pages and automatic switching still need a dock check. ARM64, Linux and macOS device behavior is unverified.
+
+## Credits
+
+Protocol references: [OpenActionMirrors D200](https://github.com/OpenActionMirrors/com.glmagalhaes.ulanzi.d200) and [independent D200 research](https://github.com/marcelobrake/ulanzi-linux/blob/main/docs/protocol.md). I wrote this as an independent MIT project. See [artwork notes](docs/ARTWORK.md) and [third-party licenses](docs/THIRD-PARTY.md).
+
+Copyright © 2026 Umberto Giacobbi. [MIT License](LICENSE).
 
 ---
 
 <p align="right">
   <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
-    <img src="https://raw.githubusercontent.com/umbertotechnopreneur/VibeWare/main/Branding/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
+    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
   </a><br>
   <strong>VibeWare</strong><br>
   <em>Human intent, AI execution, and plenty of tokens</em>
 </p>
 
-### What is VibeWare?
+### This is VibeWare · [Manifesto](https://umbertogiacobbi.biz/vibeware/manifesto)
 
-I coined the term [VibeWare](https://umbertogiacobbi.biz) and started an open initiative for developers who build with AI and care about the craft. I challenge the assumption that vibe coding is synonymous with low-quality code, while openly acknowledging the weaknesses and risks of AI-generated software: experienced developers must guide the process, test carefully, check security and take responsibility for the result. With this footer, I acknowledge that I developed this software with AI and ask you to judge the quality of the work.
+I built UlanziDock with AI help. I guide the work and am responsible for the result.
 
-[**Read the VibeWare manifesto**](https://umbertogiacobbi.biz/vibeware/manifesto)
+I started VibeWare for people making useful software with AI. Want to know more? [Read my manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).
 
-*You are welcome to explore, adapt and reuse the open-source VibeWare materials under the project license — my contribution to the developer community.*
+[UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
+
+[Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)

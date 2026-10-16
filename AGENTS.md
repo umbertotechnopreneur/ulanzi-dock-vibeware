@@ -2,7 +2,7 @@
 Project: UlanziDock VibeWare version
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-VibeWare is Human intent. AI implementation. Accountable human review.
+VibeWare is Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
 AI Versions: Tools and models may vary by contributor and execution environment.
@@ -13,16 +13,34 @@ License: MIT - see LICENSE
 Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
 VBWR E -->
 
-# Agent guidelines
+# Working on this project
 
-- Keep user discussion in Italian and repository documentation in English.
-- Preserve Umberto Giacobbi's VibeWare identity, original logo bytes, and the MIT source header on source/configuration files that support comments.
-- Do not copy code or artwork from the AGPL upstream D200 project. Record protocol observations and credit references in documentation.
-- Distinguish USB write completion, device acceptance, visible display output, and input events.
-- Do not automatically launch software tests, hardware trials, or diagnostic test sessions. Run them only when the owner explicitly requests the specific test or authorizes the proposed run. Ask for authorization before any otherwise unrequested test; approval for an earlier test is not blanket approval for later tests.
-- Prepare or publish a GitHub release only on the owner's explicit request for that release. Commits, pushes, and tags do not authorize release publication. Keep the release workflow manual and default to a draft for review.
-- Never read global keyboard input. The CLI may inject only the configured shortcuts after a D200H consumer-interface button release.
-- Do not automatically launch vendor processes, alter drivers, flash firmware, or run hardware tests without coordinating the physical observation with the owner.
-- Keep all nine regular pages, the generated page index, thirteen themes, and released/pressed artwork in sync. The owner's requested regular page order is Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, Themes. NEXT PAGE stays on physical key 4 and skips the index. Physical key 13 retains its clock/status display and opens the page index on release from every page, including inactive application pages. Index entries navigate directly to enabled pages; foreground switching pauses while the index is open. The final regular Themes page selects among the twelve themes other than the active one. Brightness controls show the existing UNAVAILABLE overlay and suppress presses at their corresponding 0/100 limit.
-- Derive inactive application faces from the existing renderer at runtime; do not distribute additional disabled icon sets. When application detection is enabled on Windows, Codex, VS Code, Spotify, Word, PowerPoint, and Excel pages use foreground process metadata and suppress inactive actions. Disabling detection leaves enabled pages usable, without inactive overlays or automatic switching. Application-page checkboxes persist each page's enabled flag; navigation and automatic switching skip disabled pages without deleting their shortcuts. NEXT PAGE remains usable. Keep global keyboard input and window titles out of foreground detection.
-- Windows x64 and ARM64 are the initial distribution targets. Keep source portable and state what platforms were actually built and physically tested.
+## Keep it simple
+
+- Talk to me in Italian. Write repository docs in English.
+- Use short sentences and normal words. Explain what someone needs to do. Skip repeated warnings, formal labels and image hashes in everyday docs.
+- Support only the current settings and startup formats. Do not add migrations or fallback behavior for older versions. Keep backups, atomic writes and device safety checks.
+- Write public copy as me: Umberto Giacobbi. Use "I", not "we". This is my weekend project. VibeWare is my initiative, not the app's author or publisher.
+- Keep my name, the original logo and MIT notices. See [branding](docs/BRANDING.md).
+- Do not copy code or art from the AGPL D200 project. Credit protocol references.
+
+## Ask before tests and releases
+
+- Do not run software tests, diagnostics or dock trials unless I explicitly authorize that specific check. Earlier permission is not permission for a new run.
+- Do not start vendor software, change drivers or flash firmware without asking and arranging for me to watch the device.
+- Publish a GitHub release only when I ask for that release. A commit, push or tag is not permission. Keep release runs manual and drafts for my review.
+- Say what was actually checked. A build is not a device test; a USB write is not proof that the screen changed.
+- I own and have tested only a D200H. Other models are unverified. Invite their owners to try the source and report the result. Some features remain untested even on my D200H.
+
+## Keep the controls working
+
+- Keep nine pages in this order: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, Themes. Keep thirteen themes and both pressed/released images.
+- NEXT PAGE stays at physical index 4. It skips disabled pages and the page index.
+- The wide display at index 13 opens the page index from every page, even an inactive one. Pause automatic page switching while the index is open. Index choices open enabled pages directly.
+- Themes stays last and offers the twelve themes other than the active one.
+- At brightness 0/100, disable the corresponding minus/plus key and show UNAVAILABLE.
+- Build inactive images with the existing renderer. Do not add separate disabled PNG sets.
+- With app detection on, use foreground executable names to select pages and disable inactive actions. Do not read window titles or global keyboard input.
+- Page checkboxes save each page's enabled flag without deleting shortcuts. With detection off, enabled pages work without inactive overlays or automatic switching.
+- Inject only configured shortcuts, after a D200H consumer-interface button release. Never capture global keyboard input.
+- Keep the Rust controller portable. Windows x64 and ARM64 are the first distribution targets; report builds and physical checks separately.
