@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
@@ -55,8 +55,59 @@ component PixelButton inherits Rectangle {
     }
 }
 
+component VibeWareLink inherits Rectangle {
+    callback clicked();
+    width: 64px;
+    height: 64px;
+    clip: true;
+    background: transparent;
+    border-width: focus.has-focus ? 2px : 0px;
+    border-color: Palette.blue;
+    accessible-role: button;
+    accessible-label: "Participates in VibeWare. Read the manifesto";
+    forward-focus: focus;
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/brand/vibeware-logo.png");
+        image-fit: contain;
+    }
+    focus := FocusScope {
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { focus.focus(); root.clicked(); }
+        }
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// Bound the image to its allocated box instead of exposing its native pixel
+// dimensions as layout constraints inside the scrollable dialogs.
+component ProductWordmark inherits Rectangle {
+    min-width: 0px;
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    min-height: 88px;
+    max-height: 88px;
+    clip: true;
+    background: transparent;
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/brand/ulanzi-dock-logo.png");
+        image-fit: contain;
+    }
+}
+
 component VibeWareFooter inherits Rectangle {
     callback learn();
+    in property <string> disclosure: "I created this software with AI assistance.";
     background: #e2e5dc;
     border-width: 2px;
     border-color: Palette.ink;
@@ -66,18 +117,18 @@ component VibeWareFooter inherits Rectangle {
         VerticalLayout {
             spacing: 6px;
             Text { text: "This is VibeWare"; color: Palette.blue; font-weight: 700; }
-            Text { text: "Human intent. AI implementation.\nAccountable human review."; color: Palette.ink; font-size: 12px; wrap: word-wrap; }
+            Text { text: root.disclosure; color: Palette.ink; font-size: 12px; wrap: word-wrap; }
             PixelButton { text: "What is VibeWare?"; clicked => { root.learn(); } }
         }
-        Image { source: @image-url("../assets/brand/vibeware-logo.png"); width: 90px; image-fit: contain; }
+        VibeWareLink { clicked => { root.learn(); } }
     }
 }
 
 export component AboutDialog inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
     title: "About UlanziDock VibeWare";
-    preferred-width: 460px;
-    preferred-height: 720px;
+    preferred-width: 560px;
+    preferred-height: 660px;
     min-width: 420px;
     min-height: 360px;
     background: Palette.paper;
@@ -89,45 +140,93 @@ export component AboutDialog inherits Window {
     callback open-link(string);
     callback configure();
     callback dismiss();
-    ScrollView {
+    VerticalLayout {
+     spacing: 0px;
+     ScrollView {
+      horizontal-scrollbar-policy: always-off;
+      viewport-width: self.visible-width;
       VerticalLayout {
         padding: 22px;
         spacing: 12px;
-        Image {
-            source: @image-url("../assets/brand/ulanzi-dock-logo.png");
-            image-fit: contain;
-            min-height: 125px;
-            max-height: 125px;
+        HorizontalLayout {
+            spacing: 12px;
+            ProductWordmark { }
+            VibeWareLink { clicked => { root.open-link("manifesto"); } }
         }
         Text { text: "Open dock driver · v" + root.version; color: Palette.muted; horizontal-alignment: center; }
         Text { text: "Lightweight. Free. An alternative to the official Ulanzi app."; color: Palette.ink; horizontal-alignment: center; wrap: word-wrap; }
         Text {
-            text: "Independent software, provided as-is without warranty. Use at your own risk; the author accepts no liability for damage or data loss.";
+            text: "I provide this software independently and as-is, without warranty. Use it at your own risk.";
             color: Palette.muted;
             font-size: 12px;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
-        Text { text: "Created by Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
+        Text { text: "I'm Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
         HorizontalLayout {
             spacing: 8px;
-            PixelButton { text: "GitHub"; clicked => { root.open-link("project"); } }
-            PixelButton { text: "Manifesto"; clicked => { root.open-link("manifesto"); } }
+            PixelButton { text: "UlanziDock"; clicked => { root.open-link("project"); } }
+            PixelButton { text: "VibeWare"; clicked => { root.open-link("vibeware"); } }
+            PixelButton { text: "My website"; clicked => { root.open-link("website"); } }
         }
         Rectangle {
             min-height: 130px;
             max-height: 130px;
             background: Palette.paper;
-            AboutSlint { }
+            clip: true;
+            AboutSlint { width: parent.width; height: parent.height; }
         }
         Text { text: root.message; color: Palette.muted; wrap: word-wrap; visible: root.message != ""; }
+        VibeWareFooter {
+            disclosure: "I created this software with AI assistance. I define its purpose, guide the implementation, and take responsibility for checking functionality, performance and security. I share this weekend project as a participant in my VibeWare initiative.";
+            learn => { root.open-link("manifesto"); }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            PixelButton { text: "Terms"; clicked => { root.open-link("terms"); } }
+            PixelButton { text: "Privacy"; clicked => { root.open-link("privacy"); } }
+        }
+      }
+     }
+     VerticalLayout {
+        padding-left: 22px;
+        padding-right: 22px;
+        padding-top: 12px;
+        padding-bottom: 22px;
         HorizontalLayout {
             spacing: 8px;
             PixelButton { text: "Configure"; primary: true; clicked => { root.configure(); } }
             PixelButton { text: "Close"; clicked => { root.dismiss(); } }
         }
-        VibeWareFooter { learn => { root.open-link("manifesto"); } }
-      }
+     }
+    }
+}
+
+export component RecoveryDialog inherits Window {
+    title: "UlanziDock VibeWare - Dock disconnected";
+    preferred-width: 480px;
+    preferred-height: 250px;
+    min-width: 420px;
+    min-height: 230px;
+    background: Palette.paper;
+    default-font-family: "Consolas";
+    default-font-size: 14px;
+    icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
+    callback dismiss();
+    VerticalLayout {
+        padding: 22px;
+        spacing: 16px;
+        Text { text: "Dock disconnected"; color: Palette.blue; font-weight: 700; font-size: 20px; }
+        Text {
+            text: "Check the USB cable and power. UlanziDock is waiting for your dock and will resume automatically when it is ready.";
+            color: Palette.ink;
+            wrap: word-wrap;
+        }
+        Text { text: "You can close this message. Reconnection continues in the background."; color: Palette.muted; wrap: word-wrap; }
+        HorizontalLayout {
+            alignment: end;
+            PixelButton { text: "Close"; clicked => { root.dismiss(); } }
+        }
     }
 }
 
@@ -165,10 +264,16 @@ export component MainWindow inherits Window {
     VerticalLayout {
      spacing: 0px;
      ScrollView {
+      horizontal-scrollbar-policy: always-off;
+      viewport-width: self.visible-width;
       VerticalLayout {
         padding: 22px;
         spacing: 14px;
-        Image { source: @image-url("../assets/brand/ulanzi-dock-logo.png"); min-height: 82px; max-height: 82px; image-fit: contain; }
+        HorizontalLayout {
+            spacing: 12px;
+            ProductWordmark { }
+            VibeWareLink { clicked => { root.learn-vibeware(); } }
+        }
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
         Text { text: "Dock theme"; color: Palette.ink; }
         ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; }

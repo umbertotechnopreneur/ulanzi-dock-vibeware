@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -17,8 +17,8 @@ use anyhow::Result;
 
 #[cfg(windows)]
 // enable: install or repair this user's hidden sign-in shortcut.
-// disable: remove owned shortcut and legacy command-file entries.
-// Errors: missing settings, unsafe paths, or shortcut migration failure.
+// disable: remove the owned sign-in shortcut.
+// Errors: missing settings, unsafe paths, or shortcut setup failure.
 pub fn manage(enable: bool, disable: bool) -> Result<()> {
     use anyhow::{ensure, Context};
     use std::{env, os::windows::process::CommandExt, path::PathBuf, process::Command};

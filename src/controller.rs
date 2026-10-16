@@ -1,0 +1,492 @@
+/* VBWR B
+ * Project: UlanziDock VibeWare version
+ * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+ * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+ * VibeWare is Human intent, AI execution, and plenty of tokens
+ * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ * Copyright (c) 2026 Umberto Giacobbi
+ * SPDX-License-Identifier: MIT
+ * License: MIT - see LICENSE
+ * VBWR E */
+
+use crate::{
+    actions::{self, ForegroundProcess},
+    dock::{self, ButtonEvent, Dock},
+    model::{Config, PageConfig, Theme, CLOCK_KEY, NEXT_KEY, PAGE_INDEX_NAME},
+    settings::SettingsStore,
+    tray::{ConnectionState, Control},
+};
+use anyhow::{Context, Result};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+/// Named options keep command-line switches out of the device event loop.
+pub struct RunOptions {
+    pub config_path: PathBuf,
+    pub theme: Theme,
+    pub seconds: Option<u64>,
+    pub no_actions: bool,
+    pub clock: bool,
+    pub status_display: bool,
+    pub focus_poll_seconds: u64,
+    pub auto_page: bool,
+    pub detect_applications: bool,
+}
+
+/// State that survives USB disconnections. A held key never survives reconnection.
+struct Controller {
+    config: Config,
+    options: RunOptions,
+    control: Arc<Control>,
+    theme: Theme,
+    current_page: usize,
+    held_key: Option<usize>,
+    page_is_active: bool,
+    last_known_process: Option<ForegroundProcess>,
+    started: Instant,
+}
+
+pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result<()> {
+    let foreground = foreground_process(options.detect_applications);
+    let current_page = if options.auto_page {
+        actions::matching_page(&config, &foreground).unwrap_or_else(|| config.home_page())
+    } else {
+        config.home_page()
+    };
+
+    let page_is_active = actions::page_available(&config.pages[current_page], &foreground);
+    let last_known_process =
+        matches!(foreground, ForegroundProcess::Known(_)).then(|| foreground.clone());
+
+    Controller {
+        theme: options.theme,
+        config,
+        options,
+        control,
+        current_page,
+        held_key: None,
+        page_is_active,
+        last_known_process,
+        started: Instant::now(),
+    }
+    .run()
+}
+
+fn foreground_process(detect_applications: bool) -> ForegroundProcess {
+    if detect_applications {
+        actions::foreground_process()
+    } else {
+        ForegroundProcess::Unsupported
+    }
+}
+
+/// Disabled application pages must still allow NEXT PAGE.
+fn can_press_key(page: &PageConfig, index: usize, page_is_active: bool) -> bool {
+    let is_next_page = index == NEXT_KEY;
+    let page_allows_press = page_is_active || is_next_page;
+    let key_is_available = page.key_available(index);
+
+    page_allows_press && key_is_available
+}
+
+impl Controller {
+    fn page(&self) -> &PageConfig {
+        &self.config.pages[self.current_page]
+    }
+
+    fn is_running(&self) -> bool {
+        let within_deadline = self
+            .options
+            .seconds
+            .is_none_or(|limit| self.started.elapsed() < Duration::from_secs(limit));
+
+        self.control.is_running() && within_deadline
+    }
+
+    fn uses_status_display(&self) -> bool {
+        self.options.status_display || self.page().name == PAGE_INDEX_NAME
+    }
+
+    fn foreground(&self) -> ForegroundProcess {
+        foreground_process(self.options.detect_applications)
+    }
+
+    fn run(mut self) -> Result<()> {
+        self.config.refresh_theme_selector(self.theme)?;
+        let stop = Arc::clone(&self.control);
+        ctrlc::set_handler(move || stop.stop())?;
+
+        while self.is_running() {
+            let Some(dock) = self.connect()? else {
+                break;
+            };
+            let session = self.session(&dock);
+
+            // Release the failed handle before discovery opens the next USB session.
+            drop(dock);
+            if let Err(error) = session {
+                if !dock::is_connection_error(&error) {
+                    return Err(error);
+                }
+                #[cfg(not(target_os = "windows"))]
+                return Err(error);
+                #[cfg(target_os = "windows")]
+                {
+                    self.held_key = None;
+                    self.control.set_connection(ConnectionState::Disconnected);
+                    eprintln!("D200H disconnected; waiting to reconnect: {error:#}");
+                    self.wait_for_connection_retry();
+                }
+            }
+        }
+
+        println!("Stopped. The dock may clear its display when the program exits.");
+        Ok(())
+    }
+
+    fn connect(&mut self) -> Result<Option<Dock>> {
+        #[cfg(target_os = "windows")]
+        let mut last_error = String::new();
+
+        while self.is_running() {
+            match self.connect_once() {
+                Ok(dock) => {
+                    self.control.set_connection(ConnectionState::Connected);
+                    return Ok(Some(dock));
+                }
+                Err(error) => {
+                    if !dock::is_connection_error(&error) {
+                        return Err(error);
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    return Err(error);
+                    #[cfg(target_os = "windows")]
+                    {
+                        let message = format!("{error:#}");
+                        if message != last_error {
+                            eprintln!("Waiting for D200H: {message}");
+                            last_error = message;
+                        }
+                        self.wait_for_connection_retry();
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn connect_once(&mut self) -> Result<Dock> {
+        let (api, _) = dock::discover()?;
+        let dock = Dock::open(&api)?;
+        self.config.brightness = Config::load_brightness(&self.options.config_path)?;
+        self.config.refresh_key_availability();
+
+        let foreground = self.foreground();
+        if matches!(foreground, ForegroundProcess::Known(_)) {
+            self.follow_foreground(&foreground);
+            self.last_known_process = Some(foreground.clone());
+        }
+        self.page_is_active = actions::page_available(self.page(), &foreground);
+
+        self.show_page(&dock)?;
+        dock.set_brightness(self.config.brightness)?;
+        // Never replay input buffered before the page was ready.
+        dock.discard_input()?;
+        Ok(dock)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn wait_for_connection_retry(&self) {
+        for _ in 0..20 {
+            if !self.is_running() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    fn show_page(&self, dock: &Dock) -> Result<()> {
+        dock.show(
+            self.page(),
+            self.theme,
+            None,
+            self.page_is_active,
+            self.options.status_display,
+        )?;
+        if self.options.clock && !self.uses_status_display() {
+            dock.clock()?;
+        }
+        Ok(())
+    }
+
+    fn session(&mut self, dock: &Dock) -> Result<()> {
+        let mut last_clock = Instant::now();
+        let mut last_focus = Instant::now();
+        let mut last_brightness = Instant::now();
+        let mut brightness_error = String::new();
+
+        println!(
+            "D200H active | page: {} | theme: {} | Ctrl+C to stop",
+            self.page().name,
+            self.theme.slug()
+        );
+        println!(
+            "Foreground polling: {}s | automatic pages: {}",
+            self.options.focus_poll_seconds,
+            if self.options.auto_page { "on" } else { "off" }
+        );
+
+        while self.is_running() {
+            if last_brightness.elapsed() >= Duration::from_millis(500) {
+                match Config::load_brightness(&self.options.config_path) {
+                    Ok(level) => {
+                        brightness_error.clear();
+                        if level != self.config.brightness {
+                            dock.set_brightness(level)?;
+                            self.apply_brightness(dock, level)?;
+                        }
+                    }
+                    Err(error) => {
+                        let message = format!("{error:#}");
+                        if message != brightness_error {
+                            eprintln!("Keeping current brightness: {message}");
+                            brightness_error = message;
+                        }
+                    }
+                }
+                last_brightness = Instant::now();
+            }
+
+            let focus_check_due =
+                last_focus.elapsed() >= Duration::from_secs(self.options.focus_poll_seconds);
+            if self.options.detect_applications && focus_check_due {
+                self.refresh_focus(dock)?;
+                last_focus = Instant::now();
+            }
+
+            if (self.options.clock || self.uses_status_display())
+                && last_clock.elapsed() >= Duration::from_secs(1)
+            {
+                if self.uses_status_display() {
+                    dock.background()?;
+                } else {
+                    dock.clock()?;
+                }
+                last_clock = Instant::now();
+            }
+
+            if let Some(event) = dock.read_button(Duration::from_millis(100))? {
+                let page_changed = self.handle_button(dock, event)?;
+                if page_changed {
+                    last_focus = Instant::now();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn follow_foreground(&mut self, foreground: &ForegroundProcess) -> bool {
+        if !self.options.auto_page || self.page().name == PAGE_INDEX_NAME {
+            return false;
+        }
+        let next_page = actions::matching_page(&self.config, foreground)
+            .unwrap_or_else(|| self.config.home_page());
+        if next_page == self.current_page {
+            return false;
+        }
+
+        // A release from the old page must not execute an action from the new page.
+        self.held_key = None;
+        self.current_page = next_page;
+        self.page_is_active = actions::page_available(self.page(), foreground);
+        true
+    }
+
+    fn refresh_focus(&mut self, dock: &Dock) -> Result<()> {
+        let foreground = self.foreground();
+        let known_process_changed = matches!(foreground, ForegroundProcess::Known(_))
+            && self.last_known_process.as_ref() != Some(&foreground);
+
+        if known_process_changed {
+            if self.follow_foreground(&foreground) {
+                self.show_page(dock)?;
+                println!("Automatic page: {}", self.page().name);
+            }
+            // Unknown focus never resets a manual page choice.
+            self.last_known_process = Some(foreground.clone());
+        }
+        self.refresh_availability(dock, &foreground)
+    }
+
+    fn refresh_availability(&mut self, dock: &Dock, foreground: &ForegroundProcess) -> Result<()> {
+        let active = actions::page_available(self.page(), foreground);
+        if active == self.page_is_active {
+            return Ok(());
+        }
+
+        let navigation_is_held = matches!(self.held_key, Some(NEXT_KEY) | Some(CLOCK_KEY));
+        if !active && !navigation_is_held {
+            self.held_key = None;
+        }
+        dock.refresh_availability(
+            self.page(),
+            self.theme,
+            self.held_key,
+            active,
+            self.options.status_display,
+        )?;
+        self.page_is_active = active;
+        println!(
+            "Page availability: {} | {}",
+            self.page().name,
+            if active { "active" } else { "inactive" }
+        );
+        Ok(())
+    }
+
+    fn apply_brightness(&mut self, dock: &Dock, level: u8) -> Result<()> {
+        self.config.brightness = level;
+        self.config.refresh_key_availability();
+        if self
+            .held_key
+            .is_some_and(|index| !self.page().key_available(index))
+        {
+            self.held_key = None;
+        }
+        dock.refresh_brightness_keys(self.page(), self.theme, self.held_key, self.page_is_active)?;
+        println!("Brightness USB write completed: {level}%");
+        Ok(())
+    }
+
+    fn adjust_brightness(&mut self, dock: &Dock, increase: bool) -> Result<()> {
+        let saved = (|| -> Result<u8> {
+            let _lock = self.control.lock_settings()?;
+            let mut settings = SettingsStore::load(&self.options.config_path)?;
+            let current = settings.config.brightness;
+            let level = if increase {
+                current.saturating_add(10).min(100)
+            } else {
+                current.saturating_sub(10)
+            };
+            if level != current {
+                settings.save_brightness(level)?;
+            }
+            dock.set_brightness(level)?;
+            Ok(level)
+        })();
+
+        match saved {
+            Ok(level) => self.apply_brightness(dock, level),
+            Err(error) if dock::is_connection_error(&error) => Err(error),
+            Err(error) => {
+                eprintln!("Could not change brightness: {error:#}");
+                Ok(())
+            }
+        }
+    }
+
+    /// Execute only a release matching an accepted press on the current page.
+    fn handle_button(&mut self, dock: &Dock, event: ButtonEvent) -> Result<bool> {
+        if event.index == CLOCK_KEY {
+            if event.pressed {
+                self.held_key = Some(CLOCK_KEY);
+            } else if self.held_key == Some(CLOCK_KEY) {
+                self.held_key = None;
+                self.current_page = self.config.page_index_position();
+                self.page_is_active = true;
+                self.show_page(dock)?;
+                println!("Page: {}", self.page().name);
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+
+        self.refresh_availability(dock, &self.foreground())?;
+        if event.pressed {
+            if can_press_key(self.page(), event.index, self.page_is_active)
+                && self.held_key != Some(event.index)
+            {
+                self.held_key = Some(event.index);
+                dock.show_key(
+                    self.page(),
+                    self.theme,
+                    event.index,
+                    true,
+                    self.page_is_active,
+                )?;
+            }
+            return Ok(false);
+        }
+
+        if self.held_key != Some(event.index) {
+            return Ok(false);
+        }
+        self.held_key = None;
+        if !self.page().key_available(event.index) {
+            return Ok(false);
+        }
+
+        let action = self.page().keys[event.index].action.clone();
+        let mut page_changed = false;
+        if event.index == NEXT_KEY {
+            self.current_page = self.config.next_enabled_page(self.current_page);
+            page_changed = true;
+        } else if let Some(target) = action.strip_prefix("page:go:") {
+            if let Some(destination) = self
+                .config
+                .pages
+                .iter()
+                .position(|page| page.enabled && page.name == target)
+            {
+                self.current_page = destination;
+                page_changed = true;
+            }
+        } else if let Some(slug) = action.strip_prefix("theme:") {
+            let selected = Theme::from_slug(slug)
+                .with_context(|| format!("unknown selected theme '{slug}'"))?;
+            self.theme = selected;
+            self.config.theme = selected;
+            self.config.refresh_theme_selector(selected)?;
+            self.current_page = self.config.home_page();
+            page_changed = true;
+            println!("Theme: {}", selected.slug());
+
+            if let Err(error) = self.control.lock_settings().and_then(|_lock| {
+                SettingsStore::load(&self.options.config_path)?.save_theme(selected)
+            }) {
+                eprintln!("Could not save theme selection: {error:#}");
+            }
+        } else if !self.options.no_actions && self.page_is_active {
+            if matches!(action.as_str(), "brightness:up" | "brightness:down") {
+                self.adjust_brightness(dock, action == "brightness:up")?;
+            } else if actions::page_available(self.page(), &self.foreground()) {
+                if let Err(error) = actions::execute(&action) {
+                    eprintln!(
+                        "Action '{}' failed: {error:#}",
+                        self.page().keys[event.index].label
+                    );
+                }
+            }
+        }
+
+        if page_changed {
+            self.page_is_active = actions::page_available(self.page(), &self.foreground());
+            self.show_page(dock)?;
+            println!("Page: {}", self.page().name);
+        } else {
+            dock.show_key(
+                self.page(),
+                self.theme,
+                event.index,
+                false,
+                self.page_is_active,
+            )?;
+        }
+        Ok(page_changed)
+    }
+}

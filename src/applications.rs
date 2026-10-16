@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -16,32 +16,12 @@
 use crate::model::{Config, CLOCK_KEY, NEXT_KEY};
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{collections::HashSet, fs, path::Path};
-
-#[derive(Clone, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct RuntimeSettings {
-    pub detect_applications: bool,
-    pub auto_switch: bool,
-    pub focus_poll_seconds: u64,
-}
-
-impl Default for RuntimeSettings {
-    fn default() -> Self {
-        Self {
-            detect_applications: true,
-            auto_switch: true,
-            focus_poll_seconds: 1,
-        }
-    }
-}
+use std::{collections::HashSet, fs, io::Write, path::Path};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
     pub version: u32,
-    #[serde(default)]
-    pub runtime: RuntimeSettings,
     pub applications: Vec<Application>,
 }
 
@@ -69,11 +49,6 @@ pub struct Command {
 impl Catalog {
     pub fn apply(self, config: &mut Config) -> Result<()> {
         anyhow::ensure!(self.version == 1, "unsupported applications.yaml version");
-        anyhow::ensure!(
-            (1..=60).contains(&self.runtime.focus_poll_seconds),
-            "YAML focus_poll_seconds must be 1-60"
-        );
-        config.runtime = self.runtime;
         let mut assigned_pages = HashSet::new();
         let mut assigned_processes = HashSet::new();
         for application in self.applications {
@@ -156,6 +131,7 @@ pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
                 | "word"
                 | "powerpoint"
                 | "excel"
+                | "obs"
                 | "index"
         ),
         "unknown asset family '{family}'"
@@ -163,6 +139,17 @@ pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
     let index: usize = index.parse().context("asset key must be a number")?;
     anyhow::ensure!(index < CLOCK_KEY, "asset key must be 0-12");
     Ok((family, index))
+}
+
+/// An explicit editor request can create the current catalogue, never replace one.
+pub fn create_default(path: &Path) -> Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    file.write_all(include_bytes!("../applications.yaml"))
+        .context("writing the application catalogue")
 }
 
 pub fn load(settings: &Path) -> Result<Catalog> {

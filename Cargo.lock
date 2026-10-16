@@ -4026,6 +4026,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "pin-weak",
+ "raw-window-handle",
  "slint-macros",
  "unicode-segmentation",
  "vtable",
@@ -4618,7 +4619,7 @@ dependencies = [
 
 [[package]]
 name = "ulanzi-dock-vibeware"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4628,6 +4629,7 @@ dependencies = [
  "fontdue",
  "hidapi",
  "image",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "serde_yaml_ng",

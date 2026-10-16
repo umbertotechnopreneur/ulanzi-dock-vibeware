@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -30,6 +30,108 @@ static UNAVAILABLE_OVERLAY: OnceLock<RgbaImage> = OnceLock::new();
 static LABEL_FONT: OnceLock<Font> = OnceLock::new();
 static SPOTIFY_SYMBOLS: OnceLock<HashMap<usize, GrayImage>> = OnceLock::new();
 static OFFICE_SYMBOLS: OnceLock<HashMap<(String, usize), GrayImage>> = OnceLock::new();
+static OBS_SYMBOLS: OnceLock<HashMap<usize, GrayImage>> = OnceLock::new();
+
+// Original OBS Creator controls. The shared renderer supplies every theme and state;
+// these neutral masks do not claim to reflect OBS recording or audio status.
+fn obs_symbols() -> &'static HashMap<usize, GrayImage> {
+    OBS_SYMBOLS.get_or_init(|| {
+        let mut symbols = HashMap::new();
+        const SCALE: u32 = 4;
+        for index in (0..CLOCK_KEY).filter(|&key| key != NEXT_KEY) {
+            let mut mask = GrayImage::new(118 * SCALE, 99 * SCALE);
+            for y in 0..mask.height() {
+                for x in 0..mask.width() {
+                    let px = x as f32 / SCALE as f32;
+                    let py = y as f32 / SCALE as f32;
+                    let rect = |left: f32, top: f32, right: f32, bottom: f32| {
+                        px >= left && px <= right && py >= top && py <= bottom
+                    };
+                    let line = |ax: f32, ay: f32, bx: f32, by: f32, width: f32| {
+                        let dx = bx - ax;
+                        let dy = by - ay;
+                        let t =
+                            (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)).clamp(0., 1.);
+                        (px - ax - t * dx).powi(2) + (py - ay - t * dy).powi(2)
+                            <= (width / 2.).powi(2)
+                    };
+                    let ring = |cx: f32, cy: f32, radius: f32, width: f32| {
+                        (((px - cx).powi(2) + (py - cy).powi(2)).sqrt() - radius).abs()
+                            <= width / 2.
+                    };
+                    let monitor = (rect(13., 17., 105., 72.) && !rect(19., 23., 99., 66.))
+                        || line(59., 72., 59., 86., 6.)
+                        || line(40., 87., 78., 87., 6.);
+                    let filled = match index {
+                        0 => (px - 59.).powi(2) + (py - 49.).powi(2) <= 30_f32.powi(2),
+                        1 => rect(31., 21., 87., 77.),
+                        2 => rect(30., 19., 48., 79.) || rect(70., 19., 88., 79.),
+                        3 => px >= 37. && px <= 90. && (py - 49.).abs() <= (90. - px) * 0.65,
+                        5 => {
+                            (rect(17., 26., 76., 75.) && !rect(23., 32., 70., 69.))
+                                || (px >= 76.
+                                    && px <= 103.
+                                    && (py - 50.5).abs() <= (px - 60.) * 0.56)
+                        }
+                        6 => monitor,
+                        7 => {
+                            let inset = rect(67., 48., 108., 82.);
+                            (monitor && !rect(62., 43., 113., 87.))
+                                || (inset && !rect(72., 53., 103., 77.))
+                                || (px - 87.5).powi(2) + (py - 60.).powi(2) <= 4.5_f32.powi(2)
+                                || (py >= 68. && py <= 75. && (px - 87.5).abs() <= 10.)
+                        }
+                        8 => {
+                            (rect(28., 36., 79., 74.) && !rect(34., 36., 73., 68.))
+                                || (ring(82., 52., 14., 6.) && px >= 79.)
+                                || line(23., 82., 86., 82., 6.)
+                                || line(42., 24., 46., 13., 5.)
+                                || line(60., 24., 64., 13., 5.)
+                        }
+                        9 | 10 => {
+                            let capsule = rect(46., 27., 72., 50.)
+                                || (px - 59.).powi(2) + (py - 27.).powi(2) <= 13_f32.powi(2)
+                                || (px - 59.).powi(2) + (py - 50.).powi(2) <= 13_f32.powi(2);
+                            let mic = capsule
+                                || (ring(59., 49., 25., 6.) && py >= 49.)
+                                || line(34., 39., 34., 49., 6.)
+                                || line(84., 39., 84., 49., 6.)
+                                || line(59., 74., 59., 85., 6.)
+                                || line(45., 86., 73., 86., 6.);
+                            if index == 10 {
+                                (mic && !line(23., 15., 95., 87., 14.))
+                                    || line(23., 15., 95., 87., 6.)
+                            } else {
+                                mic
+                            }
+                        }
+                        11 | 12 => {
+                            let speaker = rect(20., 38., 38., 62.)
+                                || (px >= 38. && px <= 62. && (py - 50.).abs() <= px - 24.)
+                                || (px >= 75.
+                                    && (ring(57., 50., 25., 6.) || ring(57., 50., 39., 6.)));
+                            if index == 12 {
+                                (speaker && !line(23., 15., 97., 87., 14.))
+                                    || line(23., 15., 97., 87., 6.)
+                            } else {
+                                speaker
+                            }
+                        }
+                        _ => false,
+                    };
+                    if filled {
+                        mask.put_pixel(x, y, Luma([255]));
+                    }
+                }
+            }
+            symbols.insert(
+                index,
+                imageops::resize(&mask, 118, 99, imageops::FilterType::Lanczos3),
+            );
+        }
+        symbols
+    })
+}
 
 // page_name: Word, PowerPoint, or Excel; used for application-specific command symbols.
 // index: physical command key, excluding navigation and the clock.
@@ -277,6 +379,7 @@ fn configured_icon(page: &PageConfig, index: usize) -> Result<GrayImage> {
         "word" => "Word",
         "powerpoint" => "PowerPoint",
         "excel" => "Excel",
+        "obs" => "OBS Creator",
         _ => "Windows / media",
     };
     icon_mask(source_page, source_index)
@@ -446,6 +549,15 @@ fn utility_symbol(index: usize) -> GrayImage {
 // index: physical key index from 0 through 12.
 // Errors: a missing icon in the bundled source atlas.
 fn icon_mask(page_name: &str, index: usize) -> Result<GrayImage> {
+    if page_name == "OBS Creator" {
+        if index == NEXT_KEY {
+            return icon_mask("Windows / media", NEXT_KEY);
+        }
+        return obs_symbols()
+            .get(&index)
+            .cloned()
+            .context("missing native OBS Creator icon");
+    }
     if matches!(page_name, "Word" | "PowerPoint" | "Excel") {
         if index == NEXT_KEY {
             return icon_mask("Windows / media", NEXT_KEY);
@@ -481,9 +593,6 @@ fn icon_mask(page_name: &str, index: usize) -> Result<GrayImage> {
     }
     let (icon_page, icon_index) = if page_name == "Utility" {
         match index {
-            0 => ("Codex", 11),
-            1 => ("VS Code", 3),
-            2 => ("Codex", 2),
             3 => ("Windows / media", 10),
             4 => ("Windows / media", 4),
             5 => ("Windows / media", 7),
@@ -652,11 +761,16 @@ fn icon_gradient(theme: Theme, pressed: bool, base: [u8; 3], fx: f32, fy: f32) -
     mix(tint, base, if pressed { 0.18 } else { 0.04 })
 }
 
-// theme: visual family selected by the user.
-// pressed: whether the physical key is down.
-// Returns full-bleed gradient colors and icon/text colors, with no card border.
-fn colors(theme: Theme, pressed: bool) -> ([u8; 3], [u8; 3], [u8; 3], [u8; 3]) {
-    match (theme, pressed) {
+/// Colors for a button face before the inactive overlay is applied.
+struct KeyPalette {
+    background_top: [u8; 3],
+    background_bottom: [u8; 3],
+    icon: [u8; 3],
+    label: [u8; 3],
+}
+
+fn colors(theme: Theme, pressed: bool) -> KeyPalette {
+    let (background_top, background_bottom, icon, label) = match (theme, pressed) {
         (Theme::DarkClassic, false) => ([3, 32, 19], [0, 9, 10], [122, 255, 160], [209, 255, 215]),
         (Theme::DarkClassic, true) => ([0, 92, 47], [1, 31, 32], [218, 255, 235], [236, 255, 240]),
         (Theme::DarkAbstract, false) => {
@@ -735,6 +849,13 @@ fn colors(theme: Theme, pressed: bool) -> ([u8; 3], [u8; 3], [u8; 3], [u8; 3]) {
         (Theme::Solarpunk, true) => ([255, 219, 133], [145, 208, 151], [18, 76, 57], [28, 67, 52]),
         (Theme::Memphis, false) => ([255, 194, 163], [239, 176, 211], [27, 46, 89], [28, 43, 74]),
         (Theme::Memphis, true) => ([255, 174, 124], [178, 184, 243], [25, 40, 89], [25, 39, 74]),
+    };
+
+    KeyPalette {
+        background_top,
+        background_bottom,
+        icon,
+        label,
     }
 }
 
@@ -964,12 +1085,22 @@ fn draw_icon(
 // theme: appearance represented by the color sample.
 // pressed: moves the sample slightly down with the physical key.
 fn draw_swatch(canvas: &mut RgbaImage, theme: Theme, pressed: bool) {
-    let (top, bottom, icon, label) = colors(theme, pressed);
+    let palette = colors(theme, pressed);
     let shift: i32 = if pressed { 3 } else { 0 };
     let discs: [(i32, i32, i32, [u8; 3]); 3] = [
-        (76, 78 + shift, 37, icon),
-        (116, 72 + shift, 29, mix(top, label, 0.55)),
-        (105, 101 + shift, 22, mix(bottom, icon, 0.46)),
+        (76, 78 + shift, 37, palette.icon),
+        (
+            116,
+            72 + shift,
+            29,
+            mix(palette.background_top, palette.label, 0.55),
+        ),
+        (
+            105,
+            101 + shift,
+            22,
+            mix(palette.background_bottom, palette.icon, 0.46),
+        ),
     ];
     for (cx, cy, radius, tint) in discs {
         for y in (cy - radius - 2)..=(cy + radius + 2) {
@@ -1005,17 +1136,21 @@ fn wrap(label: &str) -> Vec<String> {
     lines
 }
 
-// canvas: destination image.
-// label: key title from the page configuration.
-// color: readable foreground RGB color.
-fn draw_label(canvas: &mut RgbaImage, label: &str, color: [u8; 3]) {
-    let font = LABEL_FONT.get_or_init(|| {
+fn label_font() -> &'static Font {
+    LABEL_FONT.get_or_init(|| {
         Font::from_bytes(
             include_bytes!("../assets/fonts/VeraBd.ttf").as_slice(),
             FontSettings::default(),
         )
         .expect("bundled Bitstream Vera Bold font")
-    });
+    })
+}
+
+// canvas: destination image.
+// label: key title from the page configuration.
+// color: readable foreground RGB color.
+fn draw_label(canvas: &mut RgbaImage, label: &str, color: [u8; 3]) {
+    let font = label_font();
     let lines = wrap(label);
     for (line_number, line) in lines.iter().enumerate() {
         let size = if line.len() > 11 {
@@ -1084,8 +1219,13 @@ pub fn render_available(
         .map(|slug| Theme::from_slug(slug).with_context(|| format!("unknown theme '{slug}'")))
         .transpose()?;
     let display_theme = selected.unwrap_or(theme);
-    let (top, bottom, icon, label) = colors(display_theme, pressed);
-    let mut canvas = background(display_theme, pressed, top, bottom);
+    let palette = colors(display_theme, pressed);
+    let mut canvas = background(
+        display_theme,
+        pressed,
+        palette.background_top,
+        palette.background_bottom,
+    );
     if page.name == PAGE_INDEX_NAME && page.keys[index].action == "none" {
         DynamicImage::ImageRgba8(canvas).write_to(&mut output, ImageFormat::Png)?;
         return Ok(output.into_inner());
@@ -1096,12 +1236,12 @@ pub fn render_available(
         draw_icon(
             &mut canvas,
             &configured_icon(page, index)?,
-            icon,
+            palette.icon,
             display_theme,
             pressed,
         );
     }
-    draw_label(&mut canvas, &page.keys[index].label, label);
+    draw_label(&mut canvas, &page.keys[index].label, palette.label);
     if disabled {
         for pixel in canvas.pixels_mut() {
             // Integer luminance preserves layout, contrast, and alpha.
@@ -1120,9 +1260,15 @@ pub fn render_available(
 // Render the optional wide information panel from the same theme palette.
 // Its 400x200 geometry follows the observed vendor double-key artwork format.
 pub fn render_status(theme: Theme, page: &PageConfig, enabled: bool) -> Result<Vec<u8>> {
-    let (top, bottom, _, foreground) = colors(theme, false);
+    let palette = colors(theme, false);
+    let foreground = palette.label;
     let mut canvas = imageops::resize(
-        &background(theme, false, top, bottom),
+        &background(
+            theme,
+            false,
+            palette.background_top,
+            palette.background_bottom,
+        ),
         400,
         200,
         imageops::FilterType::CatmullRom,
@@ -1184,13 +1330,7 @@ fn draw_panel_text(
     mut size: f32,
     color: [u8; 3],
 ) {
-    let font = LABEL_FONT.get_or_init(|| {
-        Font::from_bytes(
-            include_bytes!("../assets/fonts/VeraBd.ttf").as_slice(),
-            FontSettings::default(),
-        )
-        .expect("bundled Bitstream Vera Bold font")
-    });
+    let font = label_font();
     let text = if text.chars().count() > 48 {
         format!("{}...", text.chars().take(45).collect::<String>())
     } else {
