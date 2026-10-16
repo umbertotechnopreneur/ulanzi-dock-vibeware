@@ -1,0 +1,116 @@
+{
+  "title": "UlanziDock WinUI 3 concept suite",
+  "tool": "built-in image_gen",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 Umberto Giacobbi",
+  "screens": [
+    {
+      "id": "01-key-editor-dark",
+      "title": "Key editor",
+      "theme": "dark",
+      "file": "01-key-editor-dark.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "1febd799a82f952cf515c04f550f11f12a63a4d1a2636c6d0f9f0ebaa31853ee"
+    },
+    {
+      "id": "02-key-editor-light",
+      "title": "Key editor",
+      "theme": "light",
+      "file": "02-key-editor-light.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "6f0f01dc08c740b542da2f3fc05fc6a7342ed97c4bfd3b8821678bb60a8ac835"
+    },
+    {
+      "id": "03-pages-dark",
+      "title": "Pages",
+      "theme": "dark",
+      "file": "03-pages-dark.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "d9356cd8bc0f55807f9d8158b327ba72d9203bfc074b8b5fae367c1acf139060"
+    },
+    {
+      "id": "04-pages-light",
+      "title": "Pages",
+      "theme": "light",
+      "file": "04-pages-light.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "6f362c0e6492c68fc779be20ec60c5b11139710b407a59da25ab4f35ebe4a577"
+    },
+    {
+      "id": "05-applications-dark",
+      "title": "Applications",
+      "theme": "dark",
+      "file": "05-applications-dark.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "163f3a68438c03dfb9653f33d1f6b3f0de24a2067c6d27b6df6ea30a3060d76f"
+    },
+    {
+      "id": "06-applications-light",
+      "title": "Applications",
+      "theme": "light",
+      "file": "06-applications-light.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "4add4a73b6a2d6dcdd8d66b219913fa0d2e0cd4bfdfa7ff3228ef141d23dfae4"
+    },
+    {
+      "id": "07-themes-dark",
+      "title": "Themes",
+      "theme": "dark",
+      "file": "07-themes-dark.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "3860627fe2baee7e0f3e92269faca1815723d185468a8b1cf4a72691baf4fddf"
+    },
+    {
+      "id": "08-themes-light",
+      "title": "Themes",
+      "theme": "light",
+      "file": "08-themes-light.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "29fc26f5f93b74b213ca2f6ad36c0c70dbe4901fa481f6d3f3091135613afc1d"
+    },
+    {
+      "id": "09-presets-dark",
+      "title": "Presets",
+      "theme": "dark",
+      "file": "09-presets-dark.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "a9de149813af4dbdc6040edb0717a85518f5863a14ee7f70a275f89185af23d0"
+    },
+    {
+      "id": "10-presets-light",
+      "title": "Presets",
+      "theme": "light",
+      "file": "10-presets-light.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "80a61b6d67b10c3deee3cc90eb7a730e2bf13624f1e733fa7b6e06f806cc345c"
+    },
+    {
+      "id": "11-device-dark",
+      "title": "Device",
+      "theme": "dark",
+      "file": "11-device-dark.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "7beae88fed75d68556ed2358209fd4e874f1a7e34a9b1100e052b27a5b43f37f"
+    },
+    {
+      "id": "12-device-light",
+      "title": "Device",
+      "theme": "light",
+      "file": "12-device-light.png",
+      "width": 1586,
+      "height": 992,
+      "sha256": "5afe5acb3f501d9e21b41173314fc0f81071af353d366e1d3ca18ac21057b40c"
+    }
+  ]
+}
