@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -15,7 +15,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
 
 pub const KEY_COUNT: usize = 14;
 pub const NEXT_KEY: usize = 4;
@@ -101,6 +101,7 @@ impl Theme {
     }
 }
 
+/// Label, action and optional pictogram for one physical key.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KeyConfig {
     pub label: String,
@@ -111,10 +112,10 @@ pub struct KeyConfig {
     pub asset: String,
 }
 
+/// Saved page contents with availability calculated only for the running controller.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PageConfig {
     pub name: String,
-    #[serde(default = "default_page_enabled")]
     pub enabled: bool,
     pub keys: Vec<KeyConfig>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -129,21 +130,43 @@ impl PageConfig {
     }
 }
 
+/// Preferences saved in settings.json, separate from application shortcuts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeSettings {
+    pub detect_applications: bool,
+    pub auto_switch: bool,
+    pub focus_poll_seconds: u64,
+}
+
+impl Default for RuntimeSettings {
+    fn default() -> Self {
+        Self {
+            detect_applications: true,
+            auto_switch: true,
+            focus_poll_seconds: 1,
+        }
+    }
+}
+
+impl RuntimeSettings {
+    pub fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            (1..=60).contains(&self.focus_poll_seconds),
+            "focus_poll_seconds must be 1-60"
+        );
+        Ok(())
+    }
+}
+
+/// Saved dock settings plus availability calculated for the running controller.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     pub theme: Theme,
-    #[serde(default = "default_brightness")]
     pub brightness: u8,
     pub pages: Vec<PageConfig>,
-    #[serde(default)]
     pub setup_completed: bool,
-    #[serde(skip)]
-    pub runtime: crate::applications::RuntimeSettings,
-}
-
-// Older settings keep every page enabled until the owner changes its checkbox.
-fn default_page_enabled() -> bool {
-    true
+    pub runtime: RuntimeSettings,
 }
 
 fn default_brightness() -> u8 {
@@ -181,7 +204,7 @@ impl Default for Config {
             theme: Theme::DarkClassic,
             brightness: default_brightness(),
             setup_completed: false,
-            runtime: crate::applications::RuntimeSettings::default(),
+            runtime: RuntimeSettings::default(),
             pages: vec![
                 page(
                     "Windows / media",
@@ -486,7 +509,7 @@ impl Config {
         }
     }
 
-    // Per-key state is derived in memory; no disabled sprites or runtime flags are saved.
+    // Per-key availability is derived in memory; no disabled images or flags are saved.
     pub fn refresh_key_availability(&mut self) {
         let targets: Vec<_> = self
             .pages
@@ -525,105 +548,36 @@ impl Config {
         Ok(())
     }
 
-    // Upgrade only the original Utility mapping; preserve customized actions.
-    fn upgrade_utility_brightness(&mut self) {
-        let Some(page) = self.pages.iter_mut().find(|page| page.name == "Utility") else {
-            return;
-        };
-        if page.keys.len() != KEY_COUNT
-            || page.keys[0].action != "hotkey:super+v"
-            || page.keys[1].action != "hotkey:super+s"
-            || page.keys[9].action
-                != "open:https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware"
-            || page.keys[12].action != "hotkey:ctrl+z"
-        {
-            return;
-        }
-        page.keys.swap(0, 9);
-        page.keys.swap(1, 12);
-        if page.keys[9].asset == "utility:0" {
-            page.keys[9].asset = "utility:9".into();
-        }
-        if page.keys[12].asset == "utility:1" {
-            page.keys[12].asset = "utility:12".into();
-        }
-        let defaults = Self::utility_page();
-        page.keys[0] = defaults.keys[0].clone();
-        page.keys[1] = defaults.keys[1].clone();
-    }
-
-    // path: JSON settings file to load, or a missing path for defaults.
-    // Errors: malformed JSON, failed file access, or invalid layout.
+    /// Read the current settings format. Missing files use the initial defaults.
+    /// Old or incomplete settings are rejected rather than silently rewritten.
     pub fn load(path: &Path) -> Result<Self> {
-        let mut config = if path.exists() {
-            serde_json::from_slice(
-                &fs::read(path).with_context(|| format!("reading {}", path.display()))?,
-            )
-            .with_context(|| format!("parsing {}", path.display()))?
-        } else {
-            Self::default()
+        let mut config: Self = match fs::read(path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).with_context(|| {
+                format!(
+                    "parsing {}: use the current settings format",
+                    path.display()
+                )
+            })?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(error) => {
+                return Err(error).with_context(|| format!("reading {}", path.display()));
+            }
         };
-        config.upgrade_utility_brightness();
-        if !config
-            .pages
-            .iter()
-            .any(|page| page.name.eq_ignore_ascii_case("Utility"))
-        {
-            config.pages.push(Self::utility_page());
-        }
-        if !config.pages.iter().any(|page| page.name == "Themes") {
-            config.pages.push(Self::theme_selector(config.theme));
-        }
-        if !config
-            .pages
-            .iter()
-            .any(|page| page.name.eq_ignore_ascii_case("Spotify"))
-        {
-            config.pages.push(Self::spotify_page());
-        }
-        for name in ["Word", "PowerPoint", "Excel"] {
-            if !config.pages.iter().any(|page| page.name == name) {
-                config.pages.push(Self::office_page(name));
-            }
-        }
-        // Reorder whole pages in memory so old settings retain their custom keys/actions.
-        config.pages.sort_by_key(|page| match page.name.as_str() {
-            "Windows / media" => 0,
-            "Utility" => 1,
-            "Codex" => 2,
-            "VS Code" => 3,
-            "Spotify" => 4,
-            "Word" => 5,
-            "PowerPoint" => 6,
-            "Excel" => 7,
-            "Themes" => 9,
-            PAGE_INDEX_NAME => 10,
-            _ => 8,
-        });
+
+        config.validate()?;
         config.refresh_theme_selector(config.theme)?;
-        // Older JSON files have no affinity metadata; keep application actions gated.
-        for page in &mut config.pages {
-            if page.executables.is_empty() {
-                page.executables = match page.name.as_str() {
-                    "Codex" => vec!["Codex.exe".into(), "ChatGPT.exe".into()],
-                    "VS Code" => vec!["Code.exe".into(), "Code - Insiders.exe".into()],
-                    "Spotify" => vec!["Spotify.exe".into()],
-                    _ => Vec::new(),
-                };
-            }
-        }
         crate::applications::load(path)?.apply(&mut config)?;
         config.refresh_key_availability();
         config.validate()?;
+
         Ok(config)
     }
 
     // Read only brightness so a running controller does not reload pages or shortcuts.
-    // Missing settings and older files without this field use maximum brightness.
+    // A missing file uses the initial default; an existing file must contain brightness.
     pub fn load_brightness(path: &Path) -> Result<u8> {
         #[derive(Deserialize)]
         struct Brightness {
-            #[serde(default = "default_brightness")]
             brightness: u8,
         }
         let level = match fs::read(path) {
@@ -639,34 +593,60 @@ impl Config {
         Ok(level)
     }
 
-    // path: settings file to update or create after a theme selection.
-    // Errors: invalid layout, serialization failure, backup failure, or failed write.
-    pub fn save_selected_theme(&self, path: &Path) -> Result<()> {
-        self.validate()?;
-        // Patch the current file instead of overwriting a CLI brightness change
-        // or custom metadata with the controller's older in-memory configuration.
-        crate::gui_settings::Settings::load(path)?.save_theme(self.theme)
-    }
-
     // path: destination JSON settings file; existing files are preserved.
     // Errors: invalid layout, serialization failure, or failed file write.
     pub fn save_new(&self, path: &Path) -> Result<()> {
         self.validate()?;
         let json = serde_json::to_vec_pretty(self)?;
-        fs::write(path, json).with_context(|| format!("writing {}", path.display()))
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .with_context(|| format!("creating {} without overwriting it", path.display()))?;
+        file.write_all(&json)
+            .with_context(|| format!("writing {}", path.display()))
     }
 
     // Errors: a missing page, wrong key count, or reassigned navigation/clock key.
     pub fn validate(&self) -> Result<()> {
+        self.runtime.validate()?;
         anyhow::ensure!(self.brightness <= 100, "brightness must be 0-100");
         anyhow::ensure!(
-            self.pages.iter().any(|page| page.enabled),
+            self.pages
+                .iter()
+                .any(|page| page.enabled && page.name != PAGE_INDEX_NAME),
             "enable at least one page"
         );
         anyhow::ensure!(
             self.pages.iter().any(|page| page.name == "Themes"),
             "the Themes selector page is missing"
         );
+        let mut names = std::collections::HashSet::new();
+        for page in &self.pages {
+            anyhow::ensure!(
+                names.insert(page.name.as_str()),
+                "duplicate page name '{}'",
+                page.name
+            );
+        }
+
+        for name in [
+            "Windows / media",
+            "Utility",
+            "Codex",
+            "VS Code",
+            "Spotify",
+            "Word",
+            "PowerPoint",
+            "Excel",
+            "Themes",
+        ] {
+            anyhow::ensure!(
+                names.contains(name),
+                "page '{name}' is missing; use the current settings format"
+            );
+        }
+
         for page in &self.pages {
             anyhow::ensure!(
                 page.keys.len() == KEY_COUNT,
@@ -714,30 +694,11 @@ mod tests {
     }
 
     #[test]
-    fn older_three_page_settings_gain_utility_and_persistent_theme_selection() -> Result<()> {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("ulanzi-vibeware-config-{unique}.json"));
-        let mut old = Config::default();
-        old.pages
-            .retain(|page| matches!(page.name.as_str(), "Windows / media" | "Codex" | "VS Code"));
-        fs::write(&path, serde_json::to_vec(&old)?)?;
+    fn incomplete_settings_are_rejected_without_adding_pages() {
+        let mut config = Config::default();
+        config.pages.retain(|page| page.name != "Utility");
 
-        let mut upgraded = Config::load(&path)?;
-        assert_eq!(upgraded.pages.len(), 10);
-        assert_eq!(upgraded.pages[1].name, "Utility");
-        assert_eq!(upgraded.pages[4].name, "Spotify");
-        assert_eq!(upgraded.pages[8].name, "Themes");
-        upgraded.theme = Theme::CyberpunkNeon;
-        upgraded.refresh_theme_selector(upgraded.theme)?;
-        upgraded.save_selected_theme(&path)?;
-        let saved = Config::load(&path)?;
-        assert_eq!(saved.theme, Theme::CyberpunkNeon);
-        assert_eq!(saved.pages.len(), 10);
-
-        fs::remove_file(&path)?;
-        fs::remove_file(path.with_extension("json.gui.bak"))?;
-        Ok(())
+        assert!(config.validate().is_err());
+        assert!(!config.pages.iter().any(|page| page.name == "Utility"));
     }
 }

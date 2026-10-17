@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -255,10 +255,10 @@ pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<boo
         }
     }
     if !config.setup_completed {
-        config.setup_completed = true;
-        config
-            .save_selected_theme(path)
+        crate::settings::SettingsStore::load(path)?
+            .save_setup_completed()
             .with_context(|| format!("saving first-run setup in {}", path.display()))?;
+        config.setup_completed = true;
     }
     cli_pages::setup_section(
         "🎉",

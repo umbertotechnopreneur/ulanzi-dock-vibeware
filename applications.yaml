@@ -2,7 +2,7 @@
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent. AI implementation. Accountable human review.
+# VibeWare is Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 # AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
 # AI Versions: Tools and models may vary by contributor and execution environment.
@@ -16,10 +16,6 @@
 # Restart the controller after edits. Omit action to retain settings.json shortcuts.
 # Asset IDs select a bundled pictogram; the active theme supplies its gradient.
 version: 1
-runtime:
-  detect_applications: true
-  auto_switch: true
-  focus_poll_seconds: 1
 applications:
   - name: "Codex"
     page: "Codex"

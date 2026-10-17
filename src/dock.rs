@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -29,11 +29,15 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 const VENDOR_ID: u16 = 0x2207;
 const PRODUCT_ID: u16 = 0x0019;
 const PACKET: usize = 1024;
+const COMMAND_HEADER_BYTES: usize = 8;
+const FIRST_PACKET_PAYLOAD: usize = PACKET - COMMAND_HEADER_BYTES;
 
+/// Owns the D200H HID handle for one connection session.
 pub struct Dock {
     device: HidDevice,
 }
 
+/// A press or release reported by the dock, never global keyboard input.
 pub struct ButtonEvent {
     pub index: usize,
     pub pressed: bool,
@@ -61,13 +65,15 @@ pub fn is_connection_error(error: &anyhow::Error) -> bool {
 // Errors: USB enumeration failure or missing D200H consumer interface.
 pub fn discover() -> Result<(HidApi, bool)> {
     let api = HidApi::new().context("enumerating HID devices")?;
-    let found = api.device_list().any(|d| {
-        d.vendor_id() == VENDOR_ID
-            && d.product_id() == PRODUCT_ID
-            && d.usage_page() == 0x000c
-            && d.usage() == 0x0001
-    });
+    let found = api.device_list().any(is_dock_interface);
     Ok((api, found))
+}
+
+fn is_dock_interface(device: &hidapi::DeviceInfo) -> bool {
+    device.vendor_id() == VENDOR_ID
+        && device.product_id() == PRODUCT_ID
+        && device.usage_page() == 0x000c
+        && device.usage() == 0x0001
 }
 
 impl Dock {
@@ -76,12 +82,7 @@ impl Dock {
     pub fn open(api: &HidApi) -> Result<Self> {
         let info = api
             .device_list()
-            .find(|d| {
-                d.vendor_id() == VENDOR_ID
-                    && d.product_id() == PRODUCT_ID
-                    && d.usage_page() == 0x000c
-                    && d.usage() == 0x0001
-            })
+            .find(|device| is_dock_interface(device))
             .ok_or_else(|| {
                 ConnectionError(
                     "D200H consumer HID interface (usage page 0x0c, usage 1) not found".into(),
@@ -251,10 +252,10 @@ impl Dock {
         );
         self.send_packet(
             command,
-            &archive[..archive.len().min(1016)],
+            &archive[..archive.len().min(FIRST_PACKET_PAYLOAD)],
             archive.len() as u32,
         )?;
-        for chunk in archive[archive.len().min(1016)..].chunks(PACKET) {
+        for chunk in archive[archive.len().min(FIRST_PACKET_PAYLOAD)..].chunks(PACKET) {
             let mut report = [0u8; PACKET + 1];
             report[1..1 + chunk.len()].copy_from_slice(chunk);
             self.write(&report)?;
@@ -267,7 +268,10 @@ impl Dock {
     // length: declared total payload length.
     // Errors: oversized payload or USB write failure.
     fn send_packet(&self, command: u16, payload: &[u8], length: u32) -> Result<()> {
-        anyhow::ensure!(payload.len() <= 1016, "command payload exceeds one packet");
+        anyhow::ensure!(
+            payload.len() <= FIRST_PACKET_PAYLOAD,
+            "command payload exceeds one packet"
+        );
         let mut report = [0u8; PACKET + 1];
         report[1..3].copy_from_slice(&[0x7c, 0x7c]);
         report[3..5].copy_from_slice(&command.to_be_bytes());
@@ -383,6 +387,12 @@ fn make_archive_for_keys(
     base.write_all(&serde_json::to_vec(&Value::Object(manifest))?)?;
     base.start_file("sentinel.txt", options)?;
     let base_bytes = base.finish()?.into_inner();
+    align_archive_for_transfer(base_bytes)
+}
+
+/// Shift continuation boundaries without changing any image or manifest entry.
+/// A continuation must not start with 0x00 or the protocol marker 0x7c.
+fn align_archive_for_transfer(base_bytes: Vec<u8>) -> Result<Vec<u8>> {
     let mut source = zip::ZipArchive::new(Cursor::new(base_bytes))?;
     let dummy_options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     for attempt in 0..1024u32 {
@@ -395,10 +405,10 @@ fn make_archive_for_keys(
             zip.raw_copy_file(source.by_index(index)?)?;
         }
         let data = zip.finish()?.into_inner();
-        if (1016..data.len())
+        let safe_boundaries = (FIRST_PACKET_PAYLOAD..data.len())
             .step_by(PACKET)
-            .all(|offset| data[offset] != 0 && data[offset] != 0x7c)
-        {
+            .all(|offset| !matches!(data[offset], 0x00 | 0x7c));
+        if safe_boundaries {
             return Ok(data);
         }
     }

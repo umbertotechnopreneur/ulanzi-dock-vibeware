@@ -1,0 +1,89 @@
+{
+  "name": "OBS Creator",
+  "enabled": true,
+  "executables": [],
+  "keys": [
+    {
+      "label": "START REC",
+      "action": "hotkey:ctrl+shift+alt+1",
+      "description": "OBS: Start Recording. Assign this hotkey manually in OBS. This button does not show recording state.",
+      "asset": "obs:0"
+    },
+    {
+      "label": "STOP REC",
+      "action": "hotkey:ctrl+shift+alt+2",
+      "description": "OBS: Stop Recording. Assign this hotkey manually in OBS and check the saved recording there.",
+      "asset": "obs:1"
+    },
+    {
+      "label": "PAUSE",
+      "action": "hotkey:ctrl+shift+alt+3",
+      "description": "OBS: Pause Recording. Assign this hotkey manually in OBS; recording needs a separate recording encoder. No live status is displayed.",
+      "asset": "obs:2"
+    },
+    {
+      "label": "RESUME",
+      "action": "hotkey:ctrl+shift+alt+4",
+      "description": "OBS: Unpause Recording. Assign this hotkey manually in OBS. Check OBS to confirm recording has resumed.",
+      "asset": "obs:3"
+    },
+    {
+      "label": "NEXT PAGE",
+      "action": "page:next",
+      "description": "Go to the next enabled UlanziDock page."
+    },
+    {
+      "label": "CAMERA",
+      "action": "hotkey:ctrl+shift+alt+5",
+      "description": "OBS: Switch to scene 01 CAMERA. Create the scene and assign this hotkey manually. Keep Studio Mode off.",
+      "asset": "obs:5"
+    },
+    {
+      "label": "SCREEN",
+      "action": "hotkey:ctrl+shift+alt+6",
+      "description": "OBS: Switch to scene 02 SCREEN. Create the scene and assign this hotkey manually. Keep Studio Mode off.",
+      "asset": "obs:6"
+    },
+    {
+      "label": "CAM+SCREEN",
+      "action": "hotkey:ctrl+shift+alt+7",
+      "description": "OBS: Switch to scene 03 CAM+SCREEN. Create the scene and assign this hotkey manually. Keep Studio Mode off.",
+      "asset": "obs:7"
+    },
+    {
+      "label": "BREAK",
+      "action": "hotkey:ctrl+shift+alt+8",
+      "description": "OBS: Switch to scene 04 BREAK. Create the scene and assign this hotkey manually. This does not pause recording or mute audio.",
+      "asset": "obs:8"
+    },
+    {
+      "label": "MIC ON",
+      "action": "hotkey:ctrl+shift+alt+9",
+      "description": "OBS: Unmute your microphone source. Assign this hotkey manually under that source. This button does not show microphone state.",
+      "asset": "obs:9"
+    },
+    {
+      "label": "MIC OFF",
+      "action": "hotkey:ctrl+shift+alt+0",
+      "description": "OBS: Mute your microphone source. Assign this hotkey manually under that source. Confirm the mute icon in OBS.",
+      "asset": "obs:10"
+    },
+    {
+      "label": "DESKTOP ON",
+      "action": "hotkey:ctrl+shift+alt+f5",
+      "description": "OBS: Unmute your desktop audio source. Assign this hotkey manually under that source. This does not change Windows master volume.",
+      "asset": "obs:11"
+    },
+    {
+      "label": "DESKTOP OFF",
+      "action": "hotkey:ctrl+shift+alt+f7",
+      "description": "OBS: Mute your desktop audio source. Assign this hotkey manually under that source. This does not change Windows master volume.",
+      "asset": "obs:12"
+    },
+    {
+      "label": "CLOCK",
+      "action": "none",
+      "description": "Firmware clock or configured UlanziDock status panel; no physical-press action."
+    }
+  ]
+}

@@ -1,17 +1,9 @@
-# Desktop UI dependency notices
+# Third-party licenses
 
-The application's original source remains MIT licensed. Dependency licenses
-continue to apply to their respective components.
+My code uses the [MIT License](../LICENSE). Other components keep their own licenses.
 
-Slint 1.13.1 is used under the **Slint Royalty-free Desktop, Mobile, and Web
-Applications License, version 2.0**. The application runs on a general-purpose
-desktop computer; the dock is controlled over HID and does not run Slint.
-The standard `AboutSlint` widget appears in the About dialog accessible from the
-Windows tray menu. The license text is included in
-[slint-royalty-free-2.0.md](licenses/slint-royalty-free-2.0.md).
-See the [Slint project](https://github.com/slint-ui/slint/tree/v1.13.1) for source
-and the licenses of its supporting components.
+- **Slint 1.13.1:** used under the Slint Royalty-free Desktop, Mobile, and Web Applications License, version 2.0. Read the [full license](licenses/slint-royalty-free-2.0.md). The standard AboutSlint notice is in the app's About window. Slint runs on the PC, not on the dock.
+- **Bitstream Vera font:** keep the [font license](../assets/fonts/bitstream-vera-license.txt).
+- **Other dependencies:** packaged downloads include their notices. See [Slint's source](https://github.com/slint-ui/slint/tree/v1.13.1) for its supporting components.
 
-The GUI uses Winit and the software renderer. Qt, a WebView, Node.js, and a
-JavaScript runtime are not selected. The existing bundled Bitstream Vera font
-notice remains in [bitstream-vera-license.txt](../assets/fonts/bitstream-vera-license.txt).
+The GUI uses Winit and Slint's software renderer, not Qt, a WebView or Node.js.

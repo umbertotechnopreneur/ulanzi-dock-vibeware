@@ -1,6 +1,6 @@
 # UlanziDock WinUI 3 concept prompts
 
-Generated with the built-in image_gen tool. These are proposed interfaces, not screenshots of a running WinUI implementation. Twelve screens: six functions in dark and light appearance. Hue and saturation affect dock artwork independently of app appearance. The reference is existing project artwork, not a live device capture.
+Original prompts used to make the twelve PNGs. I keep them here to reuse later. The pictures show a planned app, not working software.
 
 ## Shared design specification
 

@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -15,6 +15,8 @@
 
 #[cfg(not(target_os = "windows"))]
 use anyhow::Result;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 #[cfg(not(target_os = "windows"))]
 use std::sync::Arc;
@@ -23,11 +25,22 @@ use std::sync::Arc;
 const EXIT: u8 = 1;
 const RESTART: u8 = 2;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ConnectionState {
+    Waiting = 0,
+    Connected = 1,
+    Disconnected = 2,
+}
+
 pub struct Control {
     running: AtomicBool,
     action: AtomicU8,
     background: AtomicBool,
     settings: std::sync::Mutex<()>,
+    connection: AtomicU8,
+    #[cfg(target_os = "windows")]
+    tray_window: AtomicUsize,
 }
 
 impl Control {
@@ -37,11 +50,37 @@ impl Control {
             action: AtomicU8::new(0),
             background: AtomicBool::new(false),
             settings: std::sync::Mutex::new(()),
+            connection: AtomicU8::new(ConnectionState::Waiting as u8),
+            #[cfg(target_os = "windows")]
+            tray_window: AtomicUsize::new(0),
         }
     }
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    // connection: USB lifecycle transition, published once to the tray and recovery dialog.
+    pub fn set_connection(&self, connection: ConnectionState) {
+        if self.connection.swap(connection as u8, Ordering::SeqCst) == connection as u8 {
+            return;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            windows::notify_connection(self);
+            if let Err(error) = crate::gui::connection_changed(connection) {
+                eprintln!("Could not update the dock connection dialog: {error:#}");
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn connection(&self) -> ConnectionState {
+        match self.connection.load(Ordering::SeqCst) {
+            1 => ConnectionState::Connected,
+            2 => ConnectionState::Disconnected,
+            _ => ConnectionState::Waiting,
+        }
     }
 
     pub fn stop(&self) {
@@ -89,7 +128,7 @@ impl Control {
 
 #[cfg(target_os = "windows")]
 mod windows {
-    use super::{Control, EXIT, RESTART};
+    use super::{ConnectionState, Control, EXIT, RESTART};
     use anyhow::{ensure, Context, Result};
     use image::imageops::FilterType;
     use std::{
@@ -119,9 +158,9 @@ mod windows {
             HiDpi::{SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2},
             Shell::{
                 ShellExecuteW, Shell_NotifyIconGetRect, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE,
-                NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_SETFOCUS, NIM_SETVERSION,
-                NIN_SELECT, NOTIFYICONDATAW, NOTIFYICONDATAW_0, NOTIFYICONIDENTIFIER,
-                NOTIFYICON_VERSION_4,
+                NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETFOCUS,
+                NIM_SETVERSION, NIN_SELECT, NOTIFYICONDATAW, NOTIFYICONDATAW_0,
+                NOTIFYICONIDENTIFIER, NOTIFYICON_VERSION_4,
             },
             WindowsAndMessaging::{
                 AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
@@ -140,6 +179,7 @@ mod windows {
     };
 
     const CALLBACK: u32 = WM_APP + 1;
+    const CONNECTION_CHANGED: u32 = WM_APP + 2;
     const OPEN_CLI: i32 = 10;
     const RESTART_APP: i32 = 11;
     const GITHUB: i32 = 12;
@@ -267,6 +307,36 @@ mod windows {
                 uVersion: NOTIFYICON_VERSION_4,
             },
             ..Default::default()
+        }
+    }
+
+    // control: shared connection state and the tray's currently registered window.
+    pub(super) fn notify_connection(control: &Control) {
+        let window = control.tray_window.load(super::Ordering::SeqCst);
+        if window != 0 {
+            unsafe { PostMessageW(window as HWND, CONNECTION_CHANGED, 0, 0) };
+        }
+    }
+
+    // window: owner of notification icon ID 1.
+    // state: current connection status and icon handle, owned by the tray thread.
+    fn update_connection_tip(window: HWND, state: &State) {
+        let status = match state.control.connection() {
+            ConnectionState::Waiting => "Waiting for dock",
+            ConnectionState::Connected => "Dock connected",
+            ConnectionState::Disconnected => "Dock disconnected - reconnecting",
+        };
+        let mut data = notification(window, state.icon.0);
+        data.uFlags = NIF_TIP | NIF_SHOWTIP;
+        data.szTip.fill(0);
+        let label = wide(&format!(
+            "UlanziDock VibeWare v{}\n{status}",
+            env!("CARGO_PKG_VERSION")
+        ));
+        let length = label.len().min(data.szTip.len() - 1);
+        data.szTip[..length].copy_from_slice(&label[..length]);
+        if unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) } == 0 {
+            eprintln!("Could not update the dock connection tray tooltip");
         }
     }
 
@@ -473,6 +543,11 @@ mod windows {
                 Err(_) => thread::sleep(std::time::Duration::from_millis(250)),
             }
         }
+        state
+            .control
+            .tray_window
+            .store(window.0 as usize, super::Ordering::SeqCst);
+        update_connection_tip(window.0, &state);
         ready
             .send(Ok(window.0 as usize))
             .context("reporting tray startup")?;
@@ -511,6 +586,11 @@ mod windows {
                 if let Err(error) = add_icon(window, state.icon.0) {
                     show_error(&format!("Could not restore the tray icon:\n{error:#}"));
                 }
+                update_connection_tip(window, state);
+                return 0;
+            }
+            if message == CONNECTION_CHANGED {
+                update_connection_tip(window, state);
                 return 0;
             }
             if message == CALLBACK {
@@ -545,6 +625,9 @@ mod windows {
                 0
             }
             WM_NCDESTROY => {
+                if let Some(state) = state.as_ref() {
+                    state.control.tray_window.store(0, super::Ordering::SeqCst);
+                }
                 SetWindowLongPtrW(window, GWLP_USERDATA, 0);
                 DefWindowProcW(window, message, wparam, lparam)
             }
@@ -631,7 +714,11 @@ mod windows {
                 ptr::null(),
             );
             PostMessageW(window, WM_NULL, 0, 0);
-            Shell_NotifyIconW(NIM_SETFOCUS, &notification(window, state.icon.0));
+            // About hands focus to the Slint UI thread. Returning focus to the
+            // notification area here can race that user-requested activation.
+            if selected != ABOUT {
+                Shell_NotifyIconW(NIM_SETFOCUS, &notification(window, state.icon.0));
+            }
             selected
         };
         let result = match selected {
