@@ -1,7 +1,7 @@
 {
   "name": "OBS Creator",
   "enabled": true,
-  "executables": [],
+  "executables": ["obs64.exe"],
   "keys": [
     {
       "label": "START REC",
