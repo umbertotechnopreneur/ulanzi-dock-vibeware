@@ -88,6 +88,10 @@ At the minimum or maximum, the matching button shows UNAVAILABLE. I have not yet
 
 ### Jump to a page
 
+At startup and on page changes, the dock starts with a black screen and reveals buttons from left to right, top to bottom. Each button uses three fade steps over a nominal 120 ms, with starts spaced 20 ms apart. The full reveal targets 360 ms, plus USB and device processing time. The wide panel returns after the buttons. Presses received during the transition are discarded.
+
+I have not yet checked the animation or its timing on my physical D200H.
+
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 
 I have not yet checked the new page-index buttons on my physical dock.

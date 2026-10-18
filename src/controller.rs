@@ -210,14 +210,14 @@ impl Controller {
     }
 
     fn show_page(&self, dock: &Dock) -> Result<()> {
-        dock.show(
+        dock.show_transition(
             self.page(),
             self.theme,
-            None,
             self.page_is_active,
             self.options.status_display,
+            || self.is_running(),
         )?;
-        if self.options.clock && !self.uses_status_display() {
+        if self.is_running() && self.options.clock && !self.uses_status_display() {
             dock.clock()?;
         }
         Ok(())
