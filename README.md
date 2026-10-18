@@ -29,7 +29,7 @@ I bought a **Ulanzi D200H** and wanted to change a few button pictures without r
 
 ## What it does
 
-- Nine pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel and Themes.
+- Ten pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, OBS Creator and Themes.
 - Thirteen themes, with different colors and button styles.
 - On Windows, optional page switching to follow the app you are using.
 - Optional dimming of buttons when their app is not active. Turn pages off without losing their shortcuts.
@@ -94,7 +94,7 @@ I have not yet checked the new page-index buttons on my physical dock.
 
 ### OBS recording page
 
-The optional [OBS Creator preset](presets/obs-creator/README.md) adds recording, scene and audio shortcuts in all thirteen themes. It needs a current build and matching hotkeys in OBS. There is also a [quick-start PDF](docs/obs-creator-quick-start.pdf).
+New settings include OBS Creator before Themes. The [OBS Creator guide](presets/obs-creator/README.md) explains how to add it to existing settings and how to configure the matching OBS hotkeys. Its recording, scene and audio buttons use all thirteen themes. There is also a [quick-start PDF](docs/obs-creator-quick-start.pdf).
 
 <img src="presets/obs-creator/preview.png" alt="OBS Creator button layout in the Blade Runner theme" width="700">
 

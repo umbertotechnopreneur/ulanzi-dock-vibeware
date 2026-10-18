@@ -2,7 +2,7 @@
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent. AI implementation. Accountable human review.
+# VibeWare is Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 # AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
 # AI Versions: Tools and models may vary by contributor and execution environment.
@@ -19,6 +19,7 @@
 /tmp/
 __pycache__/
 /settings.json
+/settings.json.obs-creator-backup-*.json
 *.json.bak
 *.gui.bak
 *.gui-*.tmp

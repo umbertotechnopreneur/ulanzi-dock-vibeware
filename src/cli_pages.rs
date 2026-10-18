@@ -2,7 +2,7 @@
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent. AI implementation. Accountable human review.
+ * VibeWare is Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
  * AI Versions: Tools and models may vary by contributor and execution environment.
@@ -98,7 +98,7 @@ fn banner_rows() -> Vec<(String, usize)> {
             banner_width,
         ));
     }
-    let tagline = "VibeWare  ·  Human intent. AI implementation. Accountable human review.";
+    let tagline = "Participates in VibeWare  ·  Human intent, AI execution, and plenty of tokens";
     rows.push((
         format!("\x1b[38;2;135;171;199m{tagline}\x1b[0m"),
         tagline.chars().count(),
@@ -188,6 +188,7 @@ fn print_identity() {
     }
 }
 
+// help: Clap-generated usage text printed after the project's own identity.
 pub fn print_help(help: &str) {
     print_banner();
     println!("\nControl your Ulanzi D200H from the terminal.\n");
@@ -203,6 +204,8 @@ pub fn print_help(help: &str) {
     println!("  ulanzi-dock-vibeware run --no-auto-page");
     println!("  ulanzi-dock-vibeware startup --enable");
     println!("  ulanzi-dock-vibeware startup --disable");
+    println!("\nParticipates in the VibeWare initiative.");
+    println!("Manifesto https://umbertogiacobbi.biz/vibeware/manifesto");
 }
 
 pub fn print_version() {
@@ -222,6 +225,7 @@ pub fn print_about() {
     println!("\nCreator      Umberto Giacobbi");
     println!("Version      {}", env!("CARGO_PKG_VERSION"));
     println!("License      MIT");
+    println!("Initiative   Participates in VibeWare; created by Umberto Giacobbi");
     println!("Source       https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware");
     println!("Manifesto    https://umbertogiacobbi.biz/vibeware/manifesto");
 }

@@ -1,3 +1,20 @@
+@REM VBWR B
+@REM
+@REM Project: UlanziDock VibeWare version
+@REM Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+@REM Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+@REM
+@REM VibeWare: Human intent, AI execution, and plenty of tokens
+@REM Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+@REM
+@REM Modified with AI: OpenAI Codex; added this header on 2026-10-10.
+@REM Human guidance: Umberto Giacobbi; requested VibeWare branding.
+@REM
+@REM Copyright (c) 2026 Umberto Giacobbi
+@REM License: Existing AGPL notice retained below.
+@REM
+@REM VBWR E
+
 REM YAi!
 REM
 REM Copyright © 2019-2026 UmbertoGiacobbiDotBiz. All rights reserved.

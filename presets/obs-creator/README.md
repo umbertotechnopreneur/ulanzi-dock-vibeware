@@ -15,7 +15,7 @@ VBWR E -->
 
 # OBS Creator
 
-An optional page for recording with OBS: start, stop, pause, resume, four scenes, and microphone/desktop audio buttons. It works with all thirteen themes.
+A page for recording with OBS: start, stop, pause, resume, four scenes, and microphone/desktop audio buttons. New settings include it by default. It works with all thirteen themes.
 
 [Quick-start PDF](../../docs/obs-creator-quick-start.pdf)
 
@@ -27,7 +27,7 @@ Use a current build with OBS icon support. Older releases may not draw these but
 
 ## Add the page
 
-1. Close UlanziDock and find the `settings.json` it uses. Start the app once first if the file does not exist.
+Existing settings need the page added once. Close UlanziDock and find the `settings.json` it uses. Start the app once first if the file does not exist.
 2. From the repository folder, run this in PowerShell 7 with your actual settings path:
 
    ```powershell
