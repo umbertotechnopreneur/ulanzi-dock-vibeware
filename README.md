@@ -139,3 +139,20 @@ I started VibeWare for people making useful software with AI. Want to know more?
 [UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
 
 [Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
+
+## External binary security policy
+
+Before including any third-party prebuilt binary or compiled library in this
+repository or its deliverables, including files supplied without source code,
+run an explicit targeted Microsoft Windows Defender scan of the downloaded
+package/archive and all extracted files and required dependencies that will be
+used. Keep them staged until the scan finishes; real-time protection alone is
+not enough.
+
+Proceed only after the scan completes without detections. Record the official
+source, version or SHA-256, scan command and result. An unavailable, disabled,
+failed or unfinished scan, or any detection, blocks import. Do not bypass a
+detection with exclusions, allowlisting, restored quarantine items or disabled
+protection without separate explicit owner approval.
+
+This rule applies to future imports; it does not certify existing dependencies.
