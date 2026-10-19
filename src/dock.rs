@@ -32,8 +32,8 @@ const PRODUCT_ID: u16 = 0x0019;
 const PACKET: usize = 1024;
 const COMMAND_HEADER_BYTES: usize = 8;
 const FIRST_PACKET_PAYLOAD: usize = PACKET - COMMAND_HEADER_BYTES;
-const REVEAL_STAGGER_MS: u64 = 20;
-const FADE_STEP_MS: u64 = 40;
+const REVEAL_DURATION_MS: u64 = 150;
+const FADE_STEP_INTERVALS: u64 = 2;
 const FADE_STEPS: u64 = 3;
 
 /// Owns the D200H HID handle for one connection session.
@@ -123,7 +123,7 @@ impl Dock {
     }
 
     // Prepare artwork before clearing the screen. USB transfer time can exceed
-    // the nominal 120 ms fade; never add a full delay after a late transfer.
+    // the nominal 50 ms fade; never add a full delay after a late transfer.
     pub fn show_transition(
         &self,
         page: &PageConfig,
@@ -139,6 +139,8 @@ impl Dock {
         blanks[CLOCK_KEY] = black_picture(400, 200)?;
         let blank_archive = archive_from_pictures(&keys, &blanks, true)?;
         let mut frames = BTreeMap::<u64, Vec<(usize, Vec<u8>)>>::new();
+        // Keep overlapping fade steps grouped in one USB update as timing shrinks.
+        let reveal_intervals = (CLOCK_KEY - 1) as u64 + FADE_STEPS * FADE_STEP_INTERVALS;
         // Physical indices are row-major: five columns, then the next row.
         for index in 0..CLOCK_KEY {
             if !running() {
@@ -158,8 +160,9 @@ impl Dock {
                     }
                     encode_picture(faded)?
                 };
+                let interval = index as u64 + step * FADE_STEP_INTERVALS;
                 frames
-                    .entry(index as u64 * REVEAL_STAGGER_MS + step * FADE_STEP_MS)
+                    .entry(interval * REVEAL_DURATION_MS / reveal_intervals)
                     .or_default()
                     .push((index, faded));
             }

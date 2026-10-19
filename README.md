@@ -88,7 +88,7 @@ At the minimum or maximum, the matching button shows UNAVAILABLE. I have not yet
 
 ### Jump to a page
 
-At startup and on page changes, the dock starts with a black screen and reveals buttons from left to right, top to bottom. Each button uses three fade steps over a nominal 120 ms, with starts spaced 20 ms apart. The full reveal targets 360 ms, plus USB and device processing time. The wide panel returns after the buttons. Presses received during the transition are discarded.
+At startup and on page changes, the dock starts with a black screen and reveals buttons from left to right, top to bottom. Each button uses three fade steps over a nominal 50 ms, with starts spaced about 8.3 ms apart. The full reveal targets 150 ms, plus USB and device processing time. The wide panel returns after the buttons. Presses received during the transition are discarded.
 
 I have not yet checked the animation or its timing on my physical D200H.
 
@@ -144,9 +144,9 @@ I started VibeWare for people making useful software with AI. Want to know more?
 
 [Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
 
-## External binary security policy
+## External dependency security policy
 
-Before including any third-party prebuilt binary or compiled library in this
+Before importing any third-party library or prebuilt binary into this
 repository or its deliverables, including files supplied without source code,
 run an explicit targeted Microsoft Windows Defender scan of the downloaded
 package/archive and all extracted files and required dependencies that will be
