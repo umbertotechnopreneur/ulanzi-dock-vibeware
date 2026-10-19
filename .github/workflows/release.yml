@@ -2,7 +2,7 @@
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent. AI implementation. Accountable human review.
+# VibeWare is Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 # AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
 # AI Versions: Tools and models may vary by contributor and execution environment.
@@ -14,16 +14,15 @@
 # VBWR E
 
 name: Release
-run-name: Release ${{ inputs.tag }} (draft=${{ inputs.draft }})
+run-name: Release ${{ inputs.tag || 'next version' }} (draft=${{ inputs.draft }})
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: New tag matching Cargo.toml, optionally ending in -stable
-        required: true
+        description: Optional tag; defaults to v<version>-stable from Cargo.toml
+        required: false
         type: string
-        default: v0.1.0-stable
       draft:
         description: Create a draft for review
         type: boolean
@@ -46,22 +45,41 @@ env:
 jobs:
   prepare:
     runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Require a new tag matching the package version
+      - name: Require the next minor release and a new matching tag
+        id: version
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           $ErrorActionPreference = 'Stop'
           $versionLine = Select-String -LiteralPath Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
           if (-not $versionLine) { throw 'Package version was not found in Cargo.toml.' }
           $version = $versionLine.Matches[0].Groups[1].Value
+          $latestTag = gh api "repos/$env:GH_REPO/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the latest published release.' }
+          if ($latestTag -cnotmatch '^v(?<major>[0-9]+)\.(?<minor>[0-9]+)\.[0-9]+(?:-stable)?$') {
+            throw 'The latest published release must use v<major>.<minor>.<patch>, optionally ending in -stable.'
+          }
+          $nextVersion = '{0}.{1}.0' -f [int]$Matches.major, ([int]$Matches.minor + 1)
+          if ($version -cne $nextVersion) { throw "The next public release must be $nextVersion. Update Cargo.toml and Cargo.lock first." }
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) { $env:RELEASE_TAG = "v$version-stable" }
           if ($env:RELEASE_TAG -cnotin @("v$version", "v$version-stable")) { throw 'Tag must match Cargo.toml, optionally ending in -stable.' }
           $existing = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { throw 'Could not check existing tags.' }
           if ($existing) { throw 'This tag already exists. Existing releases are never overwritten.' }
+          "tag=$env:RELEASE_TAG" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+          "version=$version" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
 
   package:
     needs: prepare
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -113,7 +131,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: package
+    needs: [prepare, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -131,6 +149,8 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
           IS_DRAFT: ${{ inputs.draft }}
           IS_PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $archives = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
@@ -143,7 +163,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Archive checksum validation failed.' }
           } finally { Pop-Location }
           $cliArgs = @('release', 'create', $env:RELEASE_TAG, '--target', $env:SOURCE_SHA,
-            '--title', "UlanziDock VibeWare 0.1.0", '--generate-notes',
+            '--title', "UlanziDock VibeWare $env:RELEASE_VERSION", '--generate-notes',
             "--draft=$env:IS_DRAFT", "--prerelease=$env:IS_PRERELEASE")
           $cliArgs += $archives.FullName
           $cliArgs += 'dist/SHA256SUMS.txt'

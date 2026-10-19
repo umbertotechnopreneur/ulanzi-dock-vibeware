@@ -2,7 +2,7 @@
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent. AI implementation. Accountable human review.
+# VibeWare is Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 # AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
 # AI Versions: Tools and models may vary by contributor and execution environment.
@@ -65,7 +65,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
       - name: Package executable, documentation and notices
         shell: pwsh
-        run: ./scripts/package-release.ps1 -Target '${{ matrix.target }}' -Label '${{ matrix.label }}' -Tag 'v0.1.0-stable'
+        run: |
+          $versionLine = Select-String -LiteralPath Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          if (-not $versionLine) { throw 'Package version was not found in Cargo.toml.' }
+          $version = $versionLine.Matches[0].Groups[1].Value
+          ./scripts/package-release.ps1 -Target '${{ matrix.target }}' -Label '${{ matrix.label }}' -Tag "v$version-stable"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.label }}

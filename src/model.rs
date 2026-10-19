@@ -268,6 +268,7 @@ impl Default for Config {
                 Self::office_page("Word"),
                 Self::office_page("PowerPoint"),
                 Self::office_page("Excel"),
+                Self::obs_page(),
                 Self::theme_selector(Theme::DarkClassic),
             ],
         };
@@ -278,6 +279,11 @@ impl Default for Config {
 }
 
 impl Config {
+    fn obs_page() -> PageConfig {
+        serde_json::from_str(include_str!("../presets/obs-creator/page.json"))
+            .expect("bundled OBS Creator page must be valid")
+    }
+
     // Return the general Windows page, or the first enabled custom page.
     // Config validation guarantees that at least one page is enabled.
     pub fn home_page(&self) -> usize {

@@ -59,6 +59,8 @@ fn launch() -> anyhow::Result<()> {
         .args(["run", "--config"])
         .arg(settings)
         .arg("--status-display")
+        // Keep interactive setup while showing errors hidden by CREATE_NO_WINDOW.
+        .env("ULANZI_DOCK_ERROR_DIALOG", "1")
         .current_dir(working_directory)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -78,7 +80,7 @@ fn main() -> std::process::ExitCode {
     {
         if let Err(error) = launch() {
             use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-            let message: Vec<u16> = format!("UlanziDock could not start:\n{error}")
+            let message: Vec<u16> = format!("UlanziDock could not start:\n{error:#}")
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();

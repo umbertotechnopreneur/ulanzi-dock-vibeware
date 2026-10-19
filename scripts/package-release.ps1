@@ -2,7 +2,7 @@
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare: Human intent. AI implementation. Accountable human review.
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 # Created with AI: OpenAI Codex; cross-platform release packaging, 2026-10-09.
 # Human guidance: Umberto Giacobbi requested Windows, macOS and Linux packages.
@@ -17,8 +17,9 @@ param(
     [Parameter(Mandatory)]
     [ValidateSet('windows-x64', 'windows-arm64', 'linux-x64', 'macos-x64', 'macos-arm64')]
     [string]$Label,
+    [Parameter(Mandatory)]
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Tag = 'v0.1.0-stable'
+    [string]$Tag
 )
 
 $ErrorActionPreference = 'Stop'

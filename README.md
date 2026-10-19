@@ -29,7 +29,7 @@ I bought a **Ulanzi D200H** and wanted to change a few button pictures without r
 
 ## What it does
 
-- Nine pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel and Themes.
+- Ten pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, OBS Creator and Themes.
 - Thirteen themes, with different colors and button styles.
 - On Windows, optional page switching to follow the app you are using.
 - Optional dimming of buttons when their app is not active. Turn pages off without losing their shortcuts.
@@ -88,13 +88,17 @@ At the minimum or maximum, the matching button shows UNAVAILABLE. I have not yet
 
 ### Jump to a page
 
+At startup and on page changes, the dock starts with a black screen and reveals buttons from left to right, top to bottom. Each button uses three fade steps over a nominal 50 ms, with starts spaced about 8.3 ms apart. The full reveal targets 150 ms, plus USB and device processing time. The wide panel returns after the buttons. Presses received during the transition are discarded.
+
+I have not yet checked the animation or its timing on my physical D200H.
+
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 
 I have not yet checked the new page-index buttons on my physical dock.
 
 ### OBS recording page
 
-The optional [OBS Creator preset](presets/obs-creator/README.md) adds recording, scene and audio shortcuts in all thirteen themes. It needs a current build and matching hotkeys in OBS. There is also a [quick-start PDF](docs/obs-creator-quick-start.pdf).
+New settings include OBS Creator before Themes. The [OBS Creator guide](presets/obs-creator/README.md) explains how to add it to existing settings and how to configure the matching OBS hotkeys. Its recording, scene and audio buttons use all thirteen themes. There is also a [quick-start PDF](docs/obs-creator-quick-start.pdf).
 
 <img src="presets/obs-creator/preview.png" alt="OBS Creator button layout in the Blade Runner theme" width="700">
 
@@ -139,3 +143,20 @@ I started VibeWare for people making useful software with AI. Want to know more?
 [UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
 
 [Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
+
+## External dependency security policy
+
+Before importing any third-party library or prebuilt binary into this
+repository or its deliverables, including files supplied without source code,
+run an explicit targeted Microsoft Windows Defender scan of the downloaded
+package/archive and all extracted files and required dependencies that will be
+used. Keep them staged until the scan finishes; real-time protection alone is
+not enough.
+
+Proceed only after the scan completes without detections. Record the official
+source, version or SHA-256, scan command and result. An unavailable, disabled,
+failed or unfinished scan, or any detection, blocks import. Do not bypass a
+detection with exclusions, allowlisting, restored quarantine items or disabled
+protection without separate explicit owner approval.
+
+This rule applies to future imports; it does not certify existing dependencies.

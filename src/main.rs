@@ -205,6 +205,8 @@ fn export_art(
 // Commands invoked from an existing terminal retain their normal exit behavior.
 fn main() -> ExitCode {
     let standalone = console::owns_console();
+    let launcher_error_dialog = cfg!(windows)
+        && std::env::var_os("ULANZI_DOCK_ERROR_DIALOG").is_some_and(|value| value == "1");
     let control = Arc::new(tray::Control::new());
     let result = execute(Arc::clone(&control)).and_then(|()| {
         if control.restart_requested() {
@@ -216,11 +218,15 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             if let Some(error) = error.downcast_ref::<clap::Error>() {
-                let _ = error.print();
+                if launcher_error_dialog && error.use_stderr() {
+                    tray::show_error(&error.to_string());
+                } else {
+                    let _ = error.print();
+                }
                 ExitCode::from(error.exit_code() as u8)
             } else {
                 let message = format!("UlanziDock could not complete this operation:\n{error:#}");
-                if control.is_background() {
+                if launcher_error_dialog || control.is_background() {
                     tray::show_error(&message);
                 } else {
                     eprintln!("\n{message}");

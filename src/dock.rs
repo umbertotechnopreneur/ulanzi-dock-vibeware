@@ -21,8 +21,9 @@ use anyhow::{Context, Result};
 use hidapi::{HidApi, HidDevice};
 use serde_json::{json, Map, Value};
 use std::{
+    collections::BTreeMap,
     io::{Cursor, Write},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
@@ -31,6 +32,9 @@ const PRODUCT_ID: u16 = 0x0019;
 const PACKET: usize = 1024;
 const COMMAND_HEADER_BYTES: usize = 8;
 const FIRST_PACKET_PAYLOAD: usize = PACKET - COMMAND_HEADER_BYTES;
+const REVEAL_DURATION_MS: u64 = 150;
+const FADE_STEP_INTERVALS: u64 = 2;
+const FADE_STEPS: u64 = 3;
 
 /// Owns the D200H HID handle for one connection session.
 pub struct Dock {
@@ -118,7 +122,84 @@ impl Dock {
         Ok(())
     }
 
-    // Update only the pressed or released display key. Page changes still use show().
+    // Prepare artwork before clearing the screen. USB transfer time can exceed
+    // the nominal 50 ms fade; never add a full delay after a late transfer.
+    pub fn show_transition(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        enabled: bool,
+        status_display: bool,
+        running: impl Fn() -> bool,
+    ) -> Result<()> {
+        let status_display = status_display || page.name == PAGE_INDEX_NAME;
+        let keys = (0..KEY_COUNT).collect::<Vec<_>>();
+        let black = black_picture(196, 196)?;
+        let mut blanks = vec![black; KEY_COUNT];
+        blanks[CLOCK_KEY] = black_picture(400, 200)?;
+        let blank_archive = archive_from_pictures(&keys, &blanks, true)?;
+        let mut frames = BTreeMap::<u64, Vec<(usize, Vec<u8>)>>::new();
+        // Keep overlapping fade steps grouped in one USB update as timing shrinks.
+        let reveal_intervals = (CLOCK_KEY - 1) as u64 + FADE_STEPS * FADE_STEP_INTERVALS;
+        // Physical indices are row-major: five columns, then the next row.
+        for index in 0..CLOCK_KEY {
+            if !running() {
+                return Ok(());
+            }
+            let picture = art::render_available(theme, page, index, false, enabled)?;
+            let image = image::load_from_memory(&picture)?.to_rgba8();
+            for step in 1..=FADE_STEPS {
+                let faded = if step == FADE_STEPS {
+                    picture.clone()
+                } else {
+                    let mut faded = image.clone();
+                    for pixel in faded.pixels_mut() {
+                        for channel in &mut pixel.0[..3] {
+                            *channel = (*channel as u16 * step as u16 / FADE_STEPS as u16) as u8;
+                        }
+                    }
+                    encode_picture(faded)?
+                };
+                let interval = index as u64 + step * FADE_STEP_INTERVALS;
+                frames
+                    .entry(interval * REVEAL_DURATION_MS / reveal_intervals)
+                    .or_default()
+                    .push((index, faded));
+            }
+        }
+        let frames = frames
+            .into_iter()
+            .map(|(time, pictures)| {
+                let (keys, pictures): (Vec<_>, Vec<_>) = pictures.into_iter().unzip();
+                Ok((time, archive_from_pictures(&keys, &pictures, false)?))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let panel =
+            make_archive_for_keys(page, theme, None, &[CLOCK_KEY], enabled, status_display)?;
+        if !running() {
+            return Ok(());
+        }
+        self.background()?;
+        self.send_file(0x0001, &blank_archive)?;
+        let started = Instant::now();
+        for (time, archive) in frames {
+            if !running() {
+                return Ok(());
+            }
+            if let Some(delay) = Duration::from_millis(time).checked_sub(started.elapsed()) {
+                std::thread::sleep(delay);
+            }
+            self.send_file(0x000d, &archive)?;
+        }
+        self.send_file(0x000d, &panel)?;
+        if status_display {
+            self.background()?;
+        }
+        // A press made during the transition must not act on the new page.
+        self.discard_input()
+    }
+
+    // Update only the pressed or released display key, without a page transition.
     // Errors: invalid key, image/archive generation, or USB write failure.
     pub fn show_key(
         &self,
@@ -349,9 +430,6 @@ fn make_archive_for_keys(
     enabled: bool,
     status_display: bool,
 ) -> Result<Vec<u8>> {
-    let archive_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_nanos();
     let pictures = keys
         .iter()
         .copied()
@@ -363,6 +441,31 @@ fn make_archive_for_keys(
             }
         })
         .collect::<Result<Vec<_>>>()?;
+    archive_from_pictures(keys, &pictures, status_display)
+}
+
+fn encode_picture(picture: image::RgbaImage) -> Result<Vec<u8>> {
+    let mut output = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(picture).write_to(&mut output, image::ImageFormat::Png)?;
+    Ok(output.into_inner())
+}
+
+fn black_picture(width: u32, height: u32) -> Result<Vec<u8>> {
+    encode_picture(image::RgbaImage::from_pixel(
+        width,
+        height,
+        image::Rgba([0, 0, 0, 255]),
+    ))
+}
+
+fn archive_from_pictures(
+    keys: &[usize],
+    pictures: &[Vec<u8>],
+    status_display: bool,
+) -> Result<Vec<u8>> {
+    let archive_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut base = ZipWriter::new(Cursor::new(Vec::new()));
     let mut manifest = Map::new();
