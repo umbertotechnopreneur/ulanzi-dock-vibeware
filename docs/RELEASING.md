@@ -2,6 +2,14 @@
 
 Only publish a release when I ask. Use a pull request for source changes, then let me review the release draft. Do not overwrite existing releases or move tags, including `v0.1.0-stable` and the earlier preview tags.
 
+## Version numbers
+
+I number public releases by increasing the minor version: **0.1.0, 0.2.0, 0.3.0**, and so on. Before each release, update the package version in `Cargo.toml` and its matching entry in `Cargo.lock`.
+
+The manual Release workflow checks that this is the next minor version after the latest published release. It uses `v<version>-stable` as the tag unless an explicit matching tag is supplied. Titles and archive names use the same package version. Earlier preview tags stay unchanged.
+
+Pushing source changes does not publish a release or create a tag. Builds on `main` and pull requests save packages as GitHub Actions artifacts.
+
 ## Packages
 
 The Build and manual Release workflows target:
@@ -22,12 +30,12 @@ See [MSIX installation and building](INSTALLATION.md). Use **Umberto Giacobbi** 
 
 ## Create the draft
 
-Run the manual Release workflow with the intended tag, `draft=true` and `prerelease=false`. It needs all five archives and their checksums. Publish only after my review.
+Run the manual Release workflow with `draft=true` and `prerelease=false`. Leave the tag empty to use the package version automatically. It needs all five archives and their checksums. Publish only after my review.
 
 To package an already built Windows x64 target locally:
 
 ```powershell
-pwsh -NoProfile -File scripts/package-release.ps1 -Target x86_64-pc-windows-msvc -Label windows-x64 -Tag v0.1.0-stable
+pwsh -NoProfile -File scripts/package-release.ps1 -Target x86_64-pc-windows-msvc -Label windows-x64 -Tag v0.2.0-stable
 ```
 
 Use the intended tag. The executable must be in `target/<target>/release/`. The script will not overwrite an archive or reuse its staging folder. Building and packaging do not run the app or test the dock.
