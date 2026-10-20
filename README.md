@@ -112,9 +112,14 @@ I am planning a WinUI 3 app for editing keys, pages, apps, themes, presets and d
 
 ## Which hardware works?
 
-I have tested only my **Ulanzi D200H**. It is the only model I own.
-
-Have another model? [Build the source](docs/DEVELOPMENT.md), try it and [tell me what works or fails](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues). Include your model and operating system. It might work, but I cannot promise it: the code currently detects the D200H specifically.
+> [!IMPORTANT]
+> **Windows on ARM testers wanted — volunteer guinea pigs welcome! 🐹**
+>
+> This is my hobby project, and my hands-on checks are limited to my own **Ulanzi D200H on Windows x64**. If you can try the **Windows ARM64**, **Linux x64** or **macOS Apple Silicon** build, I'd love your help checking USB connection, button images and presses, page switching, brightness and shortcuts. I'll give you all the support I can.
+>
+> Own another Ulanzi model? You're welcome too. The controller currently detects the D200H specifically, so other models may need code changes before they can connect. You can [build the source](docs/DEVELOPMENT.md) and help me find out what needs changing.
+>
+> [Open an issue](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues) and tell me your dock model, operating system, CPU architecture, and what worked or failed. Building a package doesn't prove it works on real hardware — that's where you come in.
 
 On Windows x64, button events, the clock, regular page navigation and the status display have been checked. Office pages and automatic switching still need a dock check. ARM64, Linux and macOS device behavior is unverified.
 
