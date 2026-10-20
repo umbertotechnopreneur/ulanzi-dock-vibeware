@@ -16,7 +16,7 @@ The Build and manual Release workflows target:
 
 - Windows x64 and ARM64: ZIP, with the controller and sign-in launcher.
 - Linux x64: tar.gz, for Ubuntu 24.04 or a compatible glibc system.
-- macOS Intel and Apple Silicon: tar.gz, for macOS 15 or later.
+- macOS Apple Silicon: tar.gz, for macOS 15 or later. macOS Intel is not supported.
 
 Include the README, MIT license, artwork credits, Slint and font licenses, and dependency notices. The bundled older PDF is not a guide to the newer Office pages.
 
@@ -30,7 +30,7 @@ See [MSIX installation and building](INSTALLATION.md). Use **Umberto Giacobbi** 
 
 ## Create the draft
 
-Run the manual Release workflow with `draft=true` and `prerelease=false`. Leave the tag empty to use the package version automatically. It needs all five archives and their checksums. Publish only after my review.
+Run the manual Release workflow with `draft=true` and `prerelease=false`. Leave the tag empty to use the package version automatically. It needs all four supported platform archives and their checksums. Publish only after my review.
 
 To package an already built Windows x64 target locally:
 

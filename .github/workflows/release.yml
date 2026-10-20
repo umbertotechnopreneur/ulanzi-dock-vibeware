@@ -93,9 +93,6 @@ jobs:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             label: linux-x64
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            label: macos-x64
           - runner: macos-15
             target: aarch64-apple-darwin
             label: macos-arm64
@@ -155,7 +152,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $archives = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
           $checksums = @(Get-ChildItem -LiteralPath dist -Filter '*.sha256')
-          if ($archives.Count -ne 5 -or $checksums.Count -ne 5) { throw 'All five platform archives and checksums are required.' }
+          if ($archives.Count -ne 4 -or $checksums.Count -ne 4) { throw 'All four supported platform archives and checksums are required.' }
           Push-Location dist
           try {
             Get-Content -LiteralPath $checksums.FullName | Set-Content -LiteralPath SHA256SUMS.txt -Encoding ascii

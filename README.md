@@ -52,7 +52,7 @@ The code is free to use, change and share under the [MIT License](LICENSE).
 
 Download the right package from [Releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases). Extract the whole archive into a writable folder. On Windows, open `ulanzi-dock-vibeware.exe`. Keep the launcher beside it if you want startup at sign-in.
 
-Linux and macOS use `./ulanzi-dock-vibeware run`. See [package notes](docs/RELEASING.md) for requirements.
+Linux and macOS Apple Silicon use `./ulanzi-dock-vibeware run`. macOS Intel is not supported. See [package notes](docs/RELEASING.md) for requirements.
 
 Want an installer and a Start-menu entry? See [MSIX installation](docs/INSTALLATION.md). Want to build or change the app? See [the source and Codex guide](docs/DEVELOPMENT.md).
 

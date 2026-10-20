@@ -15,7 +15,7 @@
 param(
     [Parameter(Mandatory)] [string]$Target,
     [Parameter(Mandatory)]
-    [ValidateSet('windows-x64', 'windows-arm64', 'linux-x64', 'macos-x64', 'macos-arm64')]
+    [ValidateSet('windows-x64', 'windows-arm64', 'linux-x64', 'macos-arm64')]
     [string]$Label,
     [Parameter(Mandatory)]
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
