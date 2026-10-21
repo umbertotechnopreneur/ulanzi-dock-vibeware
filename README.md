@@ -123,14 +123,19 @@ Protocol references: [OpenActionMirrors D200](https://github.com/OpenActionMirro
 
 Copyright © 2026 Umberto Giacobbi. [MIT License](LICENSE).
 
+## A note on security
+
+I care about what goes into this project. Before I add a third-party library or prebuilt binary, including files supplied without source code, I scan the downloaded package, its extracted files and any dependencies with Microsoft Windows Defender. I keep new imports aside until the scan finishes without detections.
+
+I keep a record of where each new import came from and the scan result. If a scan cannot finish or flags something, I leave it out.
+
 ---
 
 <p align="right">
   <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
     <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
   </a><br>
-  <strong>VibeWare</strong><br>
-  <em>Human intent, AI execution, and plenty of tokens</em>
+  <em>Human Intent, AI Execution, Plenty of Token</em>
 </p>
 
 ### This is VibeWare · [Manifesto](https://umbertogiacobbi.biz/vibeware/manifesto)
@@ -142,9 +147,3 @@ I started VibeWare for people making useful software with AI. Want to know more?
 [UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
 
 [Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
-
-## A note on security
-
-I care about what goes into this project. Before I add a third-party library or prebuilt binary, including files supplied without source code, I scan the downloaded package, its extracted files and any dependencies with Microsoft Windows Defender. I keep new imports aside until the scan finishes without detections.
-
-I keep a record of where each new import came from and the scan result. If a scan cannot finish or flags something, I leave it out.
