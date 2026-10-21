@@ -50,6 +50,8 @@ pwsh -NoProfile -File .\scripts\build-msix.ps1 -PublisherSubject 'CN=Your Local 
 
 The signed x64 package is saved in `artifacts/msix/`, with its license, notices and icon sizes. It gets fresh settings, not your personal file. Its version comes from `Cargo.toml`.
 
+For a local Debug build, add `-Configuration Debug`. The script builds both programs from the current source with the locked dependencies. The default configuration is Release.
+
 Add `-Install` to install it too. This can close a running copy of the app.
 
 ## Settings and updates
@@ -57,5 +59,11 @@ Add `-Install` to install it too. This can close a running copy of the app.
 The MSIX keeps settings in `%LOCALAPPDATA%\Packages\<package-family>\LocalState\`. Do not edit files in `WindowsApps`. Back up your settings before uninstalling or resetting.
 
 Old settings are not converted. Create a current file with `init --config new-settings.json` and copy the shortcuts you want to keep. Use the current `applications.yaml`; app preferences now belong in the JSON file.
+
+### OBS Creator is missing
+
+Updating the app keeps your existing settings. It does not add the OBS Creator page to them. The installed MSIX uses its own `LocalState/settings.json`; editing the repository's settings does not change that file.
+
+Close UlanziDock and follow [Add the page](../presets/obs-creator/README.md#add-the-page), passing the installed app's settings path. Keep app detection and automatic switching on if you want the dock to switch when OBS Studio is in front. An OBS window open in the background does not select its page.
 
 I have tested only my D200H on Windows x64. Building or installing the app does not prove that every feature works on a dock. The WinUI 3 pictures show a [planned interface](design/README.md), not the current app.

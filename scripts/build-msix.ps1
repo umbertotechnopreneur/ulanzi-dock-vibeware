@@ -13,6 +13,8 @@
 param(
     [switch] $Install,
     [switch] $KeepStaging,
+    [ValidateSet('Debug', 'Release')]
+    [string] $Configuration = 'Release',
     [string] $PublisherSubject = 'CN=umber'
 )
 
@@ -104,23 +106,25 @@ New-Item -ItemType Directory -Force -Path $stage, $outputDir | Out-Null
 try {
     Push-Location -LiteralPath $root
     try {
-        & $cargo.Source build --release --bins
+        $buildArguments = @('build', '--locked', '--bins')
+        if ($Configuration -eq 'Release') { $buildArguments += '--release' }
+        & $cargo.Source @buildArguments
         if ($LASTEXITCODE -ne 0) { throw "Cargo build failed with exit code $LASTEXITCODE." }
     }
     finally {
         Pop-Location
     }
 
-    $release = Join-Path $root 'target/release'
+    $buildOutput = Join-Path $root ('target/' + $Configuration.ToLowerInvariant())
     foreach ($binary in 'ulanzi-dock-vibeware.exe', 'ulanzi-dock-launcher.exe') {
-        $source = Join-Path $release $binary
+        $source = Join-Path $buildOutput $binary
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "Cargo did not produce $source"
         }
         Copy-Item -LiteralPath $source -Destination (Join-Path $stage $binary) -Force
     }
     # Ship clean defaults, never the developer's personal settings or completed setup.
-    & (Join-Path $release 'ulanzi-dock-vibeware.exe') init --config (Join-Path $stage 'settings.json')
+    & (Join-Path $buildOutput 'ulanzi-dock-vibeware.exe') init --config (Join-Path $stage 'settings.json')
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the initial package settings.' }
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $stage 'LICENSE') -Force
     Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination (Join-Path $stage 'README.md') -Force
