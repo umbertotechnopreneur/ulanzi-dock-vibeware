@@ -84,17 +84,13 @@ Use **BRIGHT +** and **BRIGHT -** on the Utility page, or save a level from 0 to
 
 The controller picks up the saved level while running. If it is closed, the level is used next time. The default is 100%. If you run with a custom settings file, pass the same `--config` path to this command.
 
-At the minimum or maximum, the matching button shows UNAVAILABLE. I have not yet checked brightness on my physical dock.
+At the minimum or maximum, the matching button shows UNAVAILABLE.
 
 ### Jump to a page
 
 At startup and on page changes, the dock starts with a black screen and reveals buttons from left to right, top to bottom. Each button uses three fade steps over a nominal 50 ms, with starts spaced about 8.3 ms apart. The full reveal targets 150 ms, plus USB and device processing time. The wide panel returns after the buttons. Presses received during the transition are discarded.
 
-I have not yet checked the animation or its timing on my physical D200H.
-
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
-
-I have not yet checked the new page-index buttons on my physical dock.
 
 ### OBS recording page
 
@@ -102,7 +98,7 @@ New settings include OBS Creator before Themes. The [OBS Creator guide](presets/
 
 <img src="presets/obs-creator/preview.png" alt="OBS Creator button layout in the Blade Runner theme" width="700">
 
-*Artwork preview, not a dock photo. Buttons do not show live OBS status. I have not yet tried this page with the dock and OBS.*
+*Artwork preview, not a dock photo. Buttons do not show live OBS status.*
 
 ## A future Windows editor
 
@@ -115,13 +111,11 @@ I am planning a WinUI 3 app for editing keys, pages, apps, themes, presets and d
 > [!IMPORTANT]
 > **Windows on ARM testers wanted — volunteer guinea pigs welcome! 🐹**
 >
-> This is my hobby project, and my hands-on checks are limited to my own **Ulanzi D200H on Windows x64**. If you can try the **Windows ARM64**, **Linux x64** or **macOS Apple Silicon** build, I'd love your help checking USB connection, button images and presses, page switching, brightness and shortcuts. I'll give you all the support I can.
+> This is my hobby project, built for my own **Ulanzi D200H on Windows x64**. If you can try the **Windows ARM64**, **Linux x64** or **macOS Apple Silicon** build, I'd love your help checking USB connection, button images and presses, page switching, brightness and shortcuts. I'll give you all the support I can.
 >
 > Own another Ulanzi model? You're welcome too. The controller currently detects the D200H specifically, so other models may need code changes before they can connect. You can [build the source](docs/DEVELOPMENT.md) and help me find out what needs changing.
 >
-> [Open an issue](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues) and tell me your dock model, operating system, CPU architecture, and what worked or failed. Building a package doesn't prove it works on real hardware — that's where you come in.
-
-On Windows x64, button events, the clock, regular page navigation and the status display have been checked. Office pages and automatic switching still need a dock check. ARM64, Linux and macOS device behavior is unverified.
+> [Open an issue](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues) and tell me your dock model, operating system, CPU architecture, and what worked or failed.
 
 ## Credits
 
@@ -149,19 +143,8 @@ I started VibeWare for people making useful software with AI. Want to know more?
 
 [Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
 
-## External dependency security policy
+## A note on security
 
-Before importing any third-party library or prebuilt binary into this
-repository or its deliverables, including files supplied without source code,
-run an explicit targeted Microsoft Windows Defender scan of the downloaded
-package/archive and all extracted files and required dependencies that will be
-used. Keep them staged until the scan finishes; real-time protection alone is
-not enough.
+I care about what goes into this project. Before I add a third-party library or prebuilt binary, including files supplied without source code, I scan the downloaded package, its extracted files and any dependencies with Microsoft Windows Defender. I keep new imports aside until the scan finishes without detections.
 
-Proceed only after the scan completes without detections. Record the official
-source, version or SHA-256, scan command and result. An unavailable, disabled,
-failed or unfinished scan, or any detection, blocks import. Do not bypass a
-detection with exclusions, allowlisting, restored quarantine items or disabled
-protection without separate explicit owner approval.
-
-This rule applies to future imports; it does not certify existing dependencies.
+I keep a record of where each new import came from and the scan result. If a scan cannot finish or flags something, I leave it out.
