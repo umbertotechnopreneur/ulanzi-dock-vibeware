@@ -131,13 +131,6 @@ I keep a record of where each new import came from and the scan result. If a sca
 
 ---
 
-<p align="right">
-  <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
-    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
-  </a><br>
-  <em>Human Intent, AI Execution, Plenty of Token</em>
-</p>
-
 ### This is VibeWare · [Manifesto](https://umbertogiacobbi.biz/vibeware/manifesto)
 
 I built UlanziDock with AI help. I guide the work and am responsible for the result.
@@ -147,3 +140,10 @@ I started VibeWare for people making useful software with AI. Want to know more?
 [UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
 
 [Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
+
+<p align="right">
+  <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
+    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
+  </a><br>
+  <em>Human Intent, AI Execution, Plenty of Token</em>
+</p>
