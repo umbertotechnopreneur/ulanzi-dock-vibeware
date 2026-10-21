@@ -23,6 +23,8 @@ I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I made this as a weekend p
 
 I bought a **Ulanzi D200H** and wanted to change a few button pictures without running a huge app. So I built a small controller in Rust. Pick a theme, set your shortcuts and get on with your day.
 
+This is an independent, unofficial project. I do not work for Ulanzi, and I am not affiliated with or sponsored by Ulanzi. Ulanzi does not endorse this project. All trademarks and registered trademarks belong to their respective owners.
+
 <img src="docs/photos/setup-triptych-banner.png" alt="My desk and Ulanzi D200H" width="100%">
 
 *These desk photos were enhanced with AI.*
