@@ -145,7 +145,7 @@ I started VibeWare for people making useful software with AI. Want to know more?
 
 <p align="right">
   <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
-    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
+    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="200">
   </a><br>
   <em>Human Intent, AI Execution, Plenty of Token</em>
 </p>
