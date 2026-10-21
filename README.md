@@ -15,6 +15,10 @@ VBWR E -->
 
 # UlanziDock VibeWare version
 
+[![Build status](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/actions/workflows/build.yml)
+![Platform: Windows, Linux and macOS](https://img.shields.io/badge/platform-Windows_%C2%B7_Linux_%C2%B7_macOS-0078D4)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2EA44F)](LICENSE)
+
 Your shortcuts, music and favourite apps, one button away.
 
 ## Why I built it
