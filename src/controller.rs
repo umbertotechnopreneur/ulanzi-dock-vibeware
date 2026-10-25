@@ -13,7 +13,7 @@ use crate::{
     actions::{self, ForegroundProcess},
     dock::{self, ButtonEvent, Dock},
     model::{Config, PageConfig, Theme, CLOCK_KEY, NEXT_KEY, PAGE_INDEX_NAME},
-    settings::SettingsStore,
+    settings::{self, SettingsStore},
     tray::{ConnectionState, Control},
 };
 use anyhow::{Context, Result};
@@ -47,15 +47,16 @@ struct Controller {
     page_is_active: bool,
     last_known_process: Option<ForegroundProcess>,
     started: Instant,
+    boot_shown: bool,
+    last_saved_page: Option<String>,
+    pending_page: Option<String>,
+    page_changed_at: Instant,
 }
 
 pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result<()> {
     let foreground = foreground_process(options.detect_applications);
-    let current_page = if options.auto_page {
-        actions::matching_page(&config, &foreground).unwrap_or_else(|| config.home_page())
-    } else {
-        config.home_page()
-    };
+    let last_saved_page = settings::load_last_page(&options.config_path)?;
+    let current_page = restored_page(&config, last_saved_page.as_deref());
 
     let page_is_active = actions::page_available(&config.pages[current_page], &foreground);
     let last_known_process =
@@ -71,8 +72,29 @@ pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result
         page_is_active,
         last_known_process,
         started: Instant::now(),
+        boot_shown: false,
+        last_saved_page,
+        pending_page: None,
+        page_changed_at: Instant::now(),
     }
     .run()
+}
+
+// The page index is temporary. A disabled or removed saved page cannot be opened.
+fn restored_page(config: &Config, name: Option<&str>) -> usize {
+    config
+        .pages
+        .iter()
+        .position(|page| {
+            page.enabled && page.name != PAGE_INDEX_NAME && Some(page.name.as_str()) == name
+        })
+        .unwrap_or_else(|| config.home_page())
+}
+
+impl Drop for Controller {
+    fn drop(&mut self) {
+        self.save_pending_page(true);
+    }
 }
 
 fn foreground_process(detect_applications: bool) -> ForegroundProcess {
@@ -187,13 +209,36 @@ impl Controller {
 
         let foreground = self.foreground();
         if matches!(foreground, ForegroundProcess::Known(_)) {
-            self.follow_foreground(&foreground);
+            // The first connection restores the previous page. App following
+            // resumes on subsequent foreground changes, not over the restored view.
+            if self.boot_shown {
+                self.follow_foreground(&foreground);
+            }
             self.last_known_process = Some(foreground.clone());
         }
         self.page_is_active = actions::page_available(self.page(), &foreground);
 
-        self.show_page(&dock)?;
-        dock.set_brightness(self.config.brightness)?;
+        if !self.boot_shown {
+            dock.show_boot(
+                self.config.brightness,
+                || self.is_running(),
+                || {
+                    dock.prepare_transition(
+                        self.page(),
+                        self.theme,
+                        self.page_is_active,
+                        self.options.status_display,
+                        || self.is_running(),
+                    )
+                },
+            )?;
+            self.boot_shown = true;
+        } else {
+            dock.set_brightness(self.config.brightness)?;
+        }
+        if self.is_running() {
+            self.show_page(&dock)?;
+        }
         // Never replay input buffered before the page was ready.
         dock.discard_input()?;
         Ok(dock)
@@ -209,7 +254,7 @@ impl Controller {
         }
     }
 
-    fn show_page(&self, dock: &Dock) -> Result<()> {
+    fn show_page(&mut self, dock: &Dock) -> Result<()> {
         dock.show_transition(
             self.page(),
             self.theme,
@@ -220,7 +265,30 @@ impl Controller {
         if self.is_running() && self.options.clock && !self.uses_status_display() {
             dock.clock()?;
         }
+        if self.is_running() && self.page().name != PAGE_INDEX_NAME {
+            let name = self.page().name.clone();
+            self.pending_page =
+                (self.last_saved_page.as_deref() != Some(name.as_str())).then_some(name);
+            self.page_changed_at = Instant::now();
+        }
         Ok(())
+    }
+
+    fn save_pending_page(&mut self, force: bool) {
+        if !force && self.page_changed_at.elapsed() < Duration::from_millis(500) {
+            return;
+        }
+        let Some(page) = self.pending_page.take() else {
+            return;
+        };
+        let result = self
+            .control
+            .lock_settings()
+            .and_then(|_lock| settings::save_last_page(&self.options.config_path, &page));
+        match result {
+            Ok(()) => self.last_saved_page = Some(page),
+            Err(error) => eprintln!("Could not remember the current page: {error:#}"),
+        }
     }
 
     fn session(&mut self, dock: &Dock) -> Result<()> {
@@ -241,7 +309,17 @@ impl Controller {
         );
 
         while self.is_running() {
+            // Handle queued presses/releases before disk polling, clock writes or
+            // focus redraws. read_timeout returns immediately when input is ready.
+            if let Some(event) = dock.read_button(Duration::ZERO)? {
+                if self.handle_button(dock, event)? {
+                    last_focus = Instant::now();
+                }
+                continue;
+            }
             if last_brightness.elapsed() >= Duration::from_millis(500) {
+                // Keep disk writes away from a burst of navigation button events.
+                self.save_pending_page(false);
                 match Config::load_brightness(&self.options.config_path) {
                     Ok(level) => {
                         brightness_error.clear();
@@ -285,6 +363,12 @@ impl Controller {
                     last_focus = Instant::now();
                 }
             }
+        }
+
+        // Only a normal exit reaches this point. Connection and controller
+        // errors return earlier, so they do not pretend to be graceful stops.
+        if let Err(error) = dock.fade_out(self.config.brightness) {
+            eprintln!("Could not fade the dock during shutdown: {error:#}");
         }
 
         Ok(())
@@ -488,5 +572,32 @@ impl Controller {
             )?;
         }
         Ok(page_changed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_restores_only_an_enabled_regular_page() {
+        let mut config = Config::default();
+        let spotify = config
+            .pages
+            .iter()
+            .position(|page| page.name == "Spotify")
+            .unwrap();
+        assert_eq!(restored_page(&config, Some("Spotify")), spotify);
+        config.pages[spotify].enabled = false;
+        assert_eq!(restored_page(&config, Some("Spotify")), config.home_page());
+        assert_eq!(
+            restored_page(&config, Some(PAGE_INDEX_NAME)),
+            config.home_page()
+        );
+        assert_eq!(
+            restored_page(&config, Some("Removed custom page")),
+            config.home_page()
+        );
+        assert_eq!(restored_page(&config, None), config.home_page());
     }
 }

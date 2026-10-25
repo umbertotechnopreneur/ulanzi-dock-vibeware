@@ -20,6 +20,11 @@ param(
     [switch] $KeepBuildCache
 )
 
+if ($PSBoundParameters.Count -eq 0) {
+    & (Join-Path $PSScriptRoot 'ulanzi.ps1')
+    return
+}
+
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw 'PowerShell 7 or newer is required.'

@@ -13,17 +13,30 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [string]$Target,
-    [Parameter(Mandatory)]
+    [string]$Target,
     [ValidateSet('windows-x64', 'windows-arm64', 'linux-x64', 'macos-arm64')]
     [string]$Label,
-    [Parameter(Mandatory)]
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
     [string]$Tag
 )
 
+if ($PSBoundParameters.Count -eq 0) {
+    & (Join-Path $PSScriptRoot 'ulanzi.ps1')
+    return
+}
+foreach ($name in 'Target', 'Label', 'Tag') {
+    if (-not $PSBoundParameters.ContainsKey($name)) { throw "-$name is required. Run without parameters for the menu." }
+}
+
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$targets = @{
+    'windows-x64' = 'x86_64-pc-windows-msvc'
+    'windows-arm64' = 'aarch64-pc-windows-msvc'
+    'linux-x64' = 'x86_64-unknown-linux-gnu'
+    'macos-arm64' = 'aarch64-apple-darwin'
+}
+if ($Target -ne $targets[$Label]) { throw "Target $Target does not match platform $Label." }
 $package = Join-Path $root "dist/package-$Label"
 $archiveRoot = Join-Path $root 'dist'
 if (Test-Path -LiteralPath $package) { throw "Refusing to reuse a package directory: $package" }
@@ -36,14 +49,16 @@ if ($isWindowsPackage) {
     Copy-Item -LiteralPath (Join-Path $root "target/$Target/release/ulanzi-dock-launcher.exe") -Destination $package
 }
 Copy-Item -LiteralPath (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE') -Destination $package
-Copy-Item -LiteralPath (Join-Path $root 'docs/ARTWORK.md'), (Join-Path $root 'docs/THIRD-PARTY.md'), (Join-Path $root 'docs/RELEASING.md'), (Join-Path $root 'docs/ulanzi-dock-vibeware-guide-v2.pdf') -Destination "$package/docs"
+Copy-Item -LiteralPath (Join-Path $root 'docs/ARTWORK.md'), (Join-Path $root 'docs/THIRD-PARTY.md'), (Join-Path $root 'docs/RELEASING.md'), (Join-Path $root 'docs/INSTALLATION.md'), (Join-Path $root 'docs/PLATFORMS.md'), (Join-Path $root 'docs/README.md'), (Join-Path $root 'docs/BRANDING.md'), (Join-Path $root 'docs/DEVELOPMENT.md'), (Join-Path $root 'docs/ulanzi-dock-vibeware-guide-v2.pdf'), (Join-Path $root 'docs/obs-creator-quick-start.pdf') -Destination "$package/docs"
+Copy-Item -LiteralPath (Join-Path $root 'docs/design') -Destination "$package/docs" -Recurse
+Copy-Item -LiteralPath (Join-Path $root 'presets') -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'docs/photos'), (Join-Path $root 'docs/screenshots') -Destination "$package/docs" -Recurse
 New-Item -ItemType Directory -Path "$package/assets/banners" | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'assets/banners/ulanzi-dock-light.png') -Destination "$package/assets/banners"
 Copy-Item -Path (Join-Path $root 'docs/licenses/*') -Destination "$package/docs/licenses"
 Copy-Item -LiteralPath (Join-Path $root 'assets/fonts/bitstream-vera-license.txt') -Destination "$package/assets/fonts"
 
-& python (Join-Path $PSScriptRoot 'collect-notices.py') --mode cargo --target $Target --output (Join-Path $package 'third-party-notices')
+& python (Join-Path $PSScriptRoot 'tools.py') notices --mode cargo --target $Target --output (Join-Path $package 'third-party-notices')
 if ($LASTEXITCODE -ne 0) { throw 'Dependency notice collection failed.' }
 
 # Keep Unix executable permissions by using tar rather than a Windows-style ZIP.
