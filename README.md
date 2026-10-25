@@ -21,11 +21,16 @@ VBWR E -->
 
 Your shortcuts, music and favourite apps, one button away.
 
+## Quick-start PDFs
+
+- **[Quick Start PDF](docs/ulanzi-dock-vibeware-guide-v2.pdf)** — the visual guide to UlanziDock.
+- **[OBS Creator Quick Start PDF](docs/obs-creator-quick-start.pdf)** — set up the OBS page and its shortcuts.
+
 ## Why I built it
 
 I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I made this as a weekend project for my own desk.
 
-I bought a **Ulanzi D200H** and wanted to change a few button pictures without running a huge app. So I built a small controller in Rust. Pick a theme, set your shortcuts and get on with your day.
+I bought a **Ulanzi D200H** and wanted to change a few button pictures without running a huge app. So I built a small controller in Rust, a language that compiles into a fast program without a browser runtime. Pick a theme, set your shortcuts and get on with your day.
 
 This is an independent, unofficial project. I do not work for Ulanzi, and I am not affiliated with or sponsored by Ulanzi. Ulanzi does not endorse this project. All trademarks and registered trademarks belong to their respective owners.
 
@@ -56,21 +61,17 @@ The code is free to use, change and share under the [MIT License](LICENSE).
 
 ## Get it running
 
-Download the right package from [Releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases). Extract the whole archive into a writable folder. On Windows, open `ulanzi-dock-vibeware.exe`. Keep the launcher beside it if you want startup at sign-in.
+Download the right package from [Releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases). Extract the whole archive into a writable folder. On Windows, open `ulanzi-dock-vibeware.exe`. Keep the launcher beside it for startup at sign-in.
 
-Linux and macOS Apple Silicon use `./ulanzi-dock-vibeware run`. macOS Intel is not supported. See [package notes](docs/RELEASING.md) for requirements.
+Linux and macOS Apple Silicon use `./ulanzi-dock-vibeware run`. Features differ by system; see [Windows, Linux and macOS](docs/PLATFORMS.md).
 
-Want an installer and a Start-menu entry? See [MSIX installation](docs/INSTALLATION.md). Want to build or change the app? See [the source and Codex guide](docs/DEVELOPMENT.md).
+Want an installer and a Start-menu entry? See [installation and settings](docs/INSTALLATION.md). Want to build or change the app? See [development and the tools menu](docs/DEVELOPMENT.md). [All guides](docs/README.md) lists the other topics.
 
 ## Change your setup
 
-On Windows, right-click the tray icon and choose **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the active app. Click **Save + Restart**.
+On Windows, right-click the tray icon near the Windows clock and choose **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the active app. Click **Save + Restart**.
 
-The settings buttons open `settings.json` and `applications.yaml` to edit shortcuts and app names. Office shortcuts start with US English defaults; change them for your keyboard if needed.
-
-App detection, automatic switching and their interval are in `settings.json`, under `runtime`. The YAML only lists applications.
-
-Old settings are not converted. Keep a backup, run `init --config new-settings.json` and copy across the shortcuts you want. Use the current `applications.yaml` too; it no longer has a `runtime` section.
+The settings buttons open the files for shortcuts and app assignments. See [settings and backups](docs/INSTALLATION.md#change-and-back-up-settings) for their locations and what to edit.
 
 To show the page and theme instead of the clock:
 
@@ -94,7 +95,11 @@ At the minimum or maximum, the matching button shows UNAVAILABLE.
 
 ### Jump to a page
 
-At startup and on page changes, the dock starts with a black screen and reveals buttons from left to right, top to bottom. Each button uses three fade steps over a nominal 50 ms, with starts spaced about 8.3 ms apart. The full reveal targets 150 ms, plus USB and device processing time. The wide panel returns after the buttons. Presses received during the transition are discarded.
+At the first dock connection, the UlanziDock and VibeWare picture appears immediately and stays fully visible for at least two seconds. It then fades to black over one more second, and the last enabled page and saved theme return. The artwork compensates for the two physical gaps between the three display rows. If the saved page was removed or disabled, the normal home page opens instead. The page index itself is never remembered.
+
+On page changes, buttons fade in from left to right, top to bottom. The animation targets 100 ms in total; USB and device processing can add time. Button pictures are kept in a bounded memory cache for reuse, and overdue animation updates are combined. The wide panel returns after the buttons. Presses during a transition are discarded.
+
+When the app closes normally, the current dock screen fades to black over one second. This does not change the saved brightness. A forced termination, crash or USB disconnection cannot guarantee the closing animation.
 
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 
@@ -131,9 +136,7 @@ Copyright © 2026 Umberto Giacobbi. [MIT License](LICENSE).
 
 ## A note on security
 
-I care about what goes into this project. Before I add a third-party library or prebuilt binary, including files supplied without source code, I scan the downloaded package, its extracted files and any dependencies with Microsoft Windows Defender. I keep new imports aside until the scan finishes without detections.
-
-I keep a record of where each new import came from and the scan result. If a scan cannot finish or flags something, I leave it out.
+Before adding an external library or binary, I require a targeted Microsoft Windows Defender scan of the downloaded archive and extracted files. New imports stay aside until the scan finishes without detections; I record the source and result. See [development](docs/DEVELOPMENT.md) for the first-import rule.
 
 ---
 

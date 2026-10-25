@@ -1,0 +1,11 @@
+Use case: logo-brand. Create ONE flat raster boot splash master for Umberto Giacobbi's independent UlanziDock VibeWare app. This image will later be sliced across a Ulanzi D200H's physical key displays. It is the image itself, NOT a mockup, NOT a photo of hardware, no buttons drawn, no monitor, no perspective.
+
+Composition: wide landscape, exact intended master canvas 988 x 592 pixels (or an exact 5:3 landscape composition if the generator chooses a larger master). The device virtual layout is five 196x196 squares in each of the top two rows, then three 196x196 squares on the bottom left and one 400x200 wide bottom-right display; the 8 extra pixels on the right and 4 extra pixels at the bottom can remain plain background. No visible grid lines or gaps. Treat this as a continuous mural for that arrangement. Leave 24px safe margin relative to 988x592.
+
+Background: solid very dark navy almost black, clean. Style: sharp beautifully legible restrained 8-bit pixel-art branding, warm ivory type with subtle muted blue pixel shadow, matching the attached original VibeWare logo.
+
+Left approximately 58% of canvas: large exact text on TWO lines, 'ULANZI' above 'DOCK', centered in the left region. The upper word can be slightly smaller so both words form a balanced block. Bold geometric block/pixel lettering. Render these two words exactly. No 'OPEN DOCK DRIVER', no extra captions, no loading bar, no status or interactive function.
+
+Right approximately 38% of canvas: place the PROVIDED ORIGINAL VibeWare floppy logo and its ORIGINAL 'VibeWare' wordmark as ONE preserved brand lockup. Reference image 1 is the actual immutable VibeWare artwork to composite. Preserve its floppy shape, VW emblem, blue and ivory colors, pixel edges, and exact VibeWare lettering, with proportional scaling only; do not redraw, reinterpret, crop or distort it. The logo should fit entirely in the right region and remain legible once shown at key-display resolution. Reference image 2 shows the project's existing retro visual language, style reference only; do not copy its nine-key device icon or its old subtitle.
+
+Only the words ULANZI, DOCK, VibeWare. Clear optical balance, generous breathing room, high contrast. Produce the final standalone opaque boot image, no guide overlays.

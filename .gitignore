@@ -14,11 +14,13 @@
 # VBWR E
 
 /target/
+desktop.ini
 /artifacts/
 /dist/
 /tmp/
 __pycache__/
 /settings.json
+/settings.session.json
 /settings.json.obs-creator-backup-*.json
 *.json.bak
 *.gui.bak

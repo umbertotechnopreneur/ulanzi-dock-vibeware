@@ -21,8 +21,10 @@ use anyhow::{Context, Result};
 use hidapi::{HidApi, HidDevice};
 use serde_json::{json, Map, Value};
 use std::{
-    collections::BTreeMap,
+    cell::RefCell,
+    collections::{BTreeMap, VecDeque},
     io::{Cursor, Write},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
@@ -32,13 +34,45 @@ const PRODUCT_ID: u16 = 0x0019;
 const PACKET: usize = 1024;
 const COMMAND_HEADER_BYTES: usize = 8;
 const FIRST_PACKET_PAYLOAD: usize = PACKET - COMMAND_HEADER_BYTES;
-const REVEAL_DURATION_MS: u64 = 150;
+const REVEAL_DURATION_MS: u64 = 100;
+const PREPARED_PAGE_LIMIT: usize = 12;
 const FADE_STEP_INTERVALS: u64 = 2;
 const FADE_STEPS: u64 = 3;
+const BOOT_HOLD_DURATION_MS: u64 = 2_000;
+const BOOT_FADE_DURATION_MS: u64 = 1_000;
+const BOOT_FADE_STEPS: u64 = 20;
+const SHUTDOWN_FADE_DURATION_MS: u64 = 1_000;
+const SHUTDOWN_FADE_STEPS: u64 = 20;
+
+mod boot {
+    include!(concat!(env!("OUT_DIR"), "/boot-pictures.rs"));
+}
 
 /// Owns the D200H HID handle for one connection session.
 pub struct Dock {
     device: HidDevice,
+    prepared_pages: RefCell<VecDeque<Arc<PreparedPage>>>,
+}
+
+// Cache pictures, not ZIPs: every USB update must still use fresh firmware icon names.
+struct PreparedPage {
+    identity: Vec<u8>,
+    status_display: bool,
+    blanks: Vec<Vec<u8>>,
+    frames: Vec<(u64, Vec<(usize, Vec<u8>)>)>,
+    released: Vec<Vec<u8>>,
+    pressed: Vec<Vec<u8>>,
+    panel: Vec<u8>,
+}
+
+fn picture_identity(page: &PageConfig, theme: Theme, enabled: bool) -> Result<Vec<u8>> {
+    // Availability is runtime-only and deliberately omitted by PageConfig's serializer.
+    Ok(serde_json::to_vec(&(
+        page,
+        &page.key_availability,
+        theme,
+        enabled,
+    ))?)
 }
 
 /// A press or release reported by the dock, never global keyboard input.
@@ -81,6 +115,110 @@ fn is_dock_interface(device: &hidapi::DeviceInfo) -> bool {
 }
 
 impl Dock {
+    // Show the embedded splash before preparing the restored page. Fade through
+    // device brightness commands, avoiding repeated full-screen image transfers.
+    // Restore the user's brightness even on cancellation or an animation error.
+    pub fn show_boot(
+        &self,
+        brightness: u8,
+        running: impl Fn() -> bool,
+        prepare_page: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        if !running() {
+            return Ok(());
+        }
+        let keys = (0..KEY_COUNT).collect::<Vec<_>>();
+        let pictures = boot::PICTURES
+            .iter()
+            .map(|picture| picture.to_vec())
+            .collect::<Vec<_>>();
+        let archive = archive_from_pictures(&keys, &pictures, true)?;
+        let mut blanks = vec![black_picture(196, 196)?; KEY_COUNT];
+        blanks[CLOCK_KEY] = black_picture(400, 200)?;
+        let black = archive_from_pictures(&keys, &blanks, true)?;
+
+        self.set_brightness(brightness)?;
+        let result = (|| -> Result<()> {
+            self.background()?;
+            self.send_file(0x0001, &archive)?;
+            let visible_since = Instant::now();
+            self.background()?;
+            // The cold-page drawing cost is hidden behind the already visible logo.
+            prepare_page()?;
+            // Keep the complete logo on screen for at least two seconds. Page
+            // preparation counts toward the hold, but never shortens it.
+            while running()
+                && visible_since.elapsed() < Duration::from_millis(BOOT_HOLD_DURATION_MS)
+            {
+                let remaining = Duration::from_millis(BOOT_HOLD_DURATION_MS)
+                    .saturating_sub(visible_since.elapsed());
+                std::thread::sleep(remaining.min(Duration::from_millis(50)));
+            }
+            let started = Instant::now();
+            let mut previous_level = brightness;
+            for step in 1..=BOOT_FADE_STEPS {
+                if !running() {
+                    break;
+                }
+                let deadline =
+                    Duration::from_millis(step * BOOT_FADE_DURATION_MS / BOOT_FADE_STEPS);
+                if let Some(delay) = deadline.checked_sub(started.elapsed()) {
+                    std::thread::sleep(delay);
+                }
+                let level =
+                    (u64::from(brightness) * (BOOT_FADE_STEPS - step) / BOOT_FADE_STEPS) as u8;
+                if level != previous_level {
+                    self.set_brightness(level)?;
+                    previous_level = level;
+                }
+            }
+            // Clear the logo before restoring brightness, so it cannot flash back.
+            self.send_file(0x0001, &black)?;
+            self.discard_input()
+        })();
+        let restore = self.set_brightness(brightness);
+        result.and(restore)
+    }
+
+    pub fn prepare_transition(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        enabled: bool,
+        status_display: bool,
+        running: impl Fn() -> bool,
+    ) -> Result<()> {
+        self.prepare_page(
+            page,
+            theme,
+            enabled,
+            status_display || page.name == PAGE_INDEX_NAME,
+            &running,
+        )?;
+        Ok(())
+    }
+
+    // Fade whatever is currently visible without changing the saved setting.
+    // The next app run restores the user's configured brightness.
+    pub fn fade_out(&self, brightness: u8) -> Result<()> {
+        let started = Instant::now();
+        let mut previous_level = brightness;
+        for step in 1..=SHUTDOWN_FADE_STEPS {
+            let deadline =
+                Duration::from_millis(step * SHUTDOWN_FADE_DURATION_MS / SHUTDOWN_FADE_STEPS);
+            if let Some(delay) = deadline.checked_sub(started.elapsed()) {
+                std::thread::sleep(delay);
+            }
+            let level =
+                (u64::from(brightness) * (SHUTDOWN_FADE_STEPS - step) / SHUTDOWN_FADE_STEPS) as u8;
+            if level != previous_level {
+                self.set_brightness(level)?;
+                previous_level = level;
+            }
+        }
+        Ok(())
+    }
+
     // api: enumerated HID context.
     // Errors: missing consumer interface or failed exclusive/open access.
     pub fn open(api: &HidApi) -> Result<Self> {
@@ -95,7 +233,10 @@ impl Dock {
         let device = info
             .open_device(api)
             .context("opening D200H consumer HID interface")?;
-        Ok(Self { device })
+        Ok(Self {
+            device,
+            prepared_pages: RefCell::new(VecDeque::new()),
+        })
     }
 
     // page: page to show on all 14 display keys.
@@ -122,29 +263,33 @@ impl Dock {
         Ok(())
     }
 
-    // Prepare artwork before clearing the screen. USB transfer time can exceed
-    // the nominal 50 ms fade; never add a full delay after a late transfer.
-    pub fn show_transition(
+    fn prepare_page(
         &self,
         page: &PageConfig,
         theme: Theme,
         enabled: bool,
         status_display: bool,
-        running: impl Fn() -> bool,
-    ) -> Result<()> {
-        let status_display = status_display || page.name == PAGE_INDEX_NAME;
-        let keys = (0..KEY_COUNT).collect::<Vec<_>>();
-        let black = black_picture(196, 196)?;
-        let mut blanks = vec![black; KEY_COUNT];
-        blanks[CLOCK_KEY] = black_picture(400, 200)?;
-        let blank_archive = archive_from_pictures(&keys, &blanks, true)?;
+        running: &impl Fn() -> bool,
+    ) -> Result<Option<Arc<PreparedPage>>> {
+        let identity = picture_identity(page, theme, enabled)?;
+        {
+            let mut cache = self.prepared_pages.borrow_mut();
+            if let Some(position) = cache.iter().position(|entry| {
+                entry.identity == identity && entry.status_display == status_display
+            }) {
+                let prepared = cache.remove(position).expect("located cached page");
+                cache.push_front(Arc::clone(&prepared));
+                return Ok(Some(prepared));
+            }
+        }
+
+        let mut released = Vec::with_capacity(CLOCK_KEY);
+        let mut pressed = Vec::with_capacity(CLOCK_KEY);
         let mut frames = BTreeMap::<u64, Vec<(usize, Vec<u8>)>>::new();
-        // Keep overlapping fade steps grouped in one USB update as timing shrinks.
         let reveal_intervals = (CLOCK_KEY - 1) as u64 + FADE_STEPS * FADE_STEP_INTERVALS;
-        // Physical indices are row-major: five columns, then the next row.
         for index in 0..CLOCK_KEY {
             if !running() {
-                return Ok(());
+                return Ok(None);
             }
             let picture = art::render_available(theme, page, index, false, enabled)?;
             let image = image::load_from_memory(&picture)?.to_rgba8();
@@ -166,31 +311,84 @@ impl Dock {
                     .or_default()
                     .push((index, faded));
             }
+            // Prepare both faces before accepting input, instead of drawing on every press.
+            released.push(picture);
+            pressed.push(art::render_available(theme, page, index, true, enabled)?);
         }
-        let frames = frames
-            .into_iter()
-            .map(|(time, pictures)| {
-                let (keys, pictures): (Vec<_>, Vec<_>) = pictures.into_iter().unzip();
-                Ok((time, archive_from_pictures(&keys, &pictures, false)?))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let panel =
-            make_archive_for_keys(page, theme, None, &[CLOCK_KEY], enabled, status_display)?;
+
+        let mut blanks = vec![black_picture(196, 196)?; KEY_COUNT];
+        blanks[CLOCK_KEY] = black_picture(400, 200)?;
+        let panel = if status_display {
+            art::render_status(theme, page, enabled)?
+        } else {
+            black_picture(196, 196)?
+        };
+        let prepared = Arc::new(PreparedPage {
+            identity,
+            status_display,
+            blanks,
+            frames: frames.into_iter().collect(),
+            released,
+            pressed,
+            panel,
+        });
+        let mut cache = self.prepared_pages.borrow_mut();
+        if cache.len() == PREPARED_PAGE_LIMIT {
+            cache.pop_back();
+        }
+        cache.push_front(Arc::clone(&prepared));
+        Ok(Some(prepared))
+    }
+
+    // The reveal targets 100 ms. Reuse prepared pictures and merge overdue fade
+    // updates so slow USB writes do not build a queue of obsolete frames.
+    pub fn show_transition(
+        &self,
+        page: &PageConfig,
+        theme: Theme,
+        enabled: bool,
+        status_display: bool,
+        running: impl Fn() -> bool,
+    ) -> Result<()> {
+        let status_display = status_display || page.name == PAGE_INDEX_NAME;
+        let Some(prepared) = self.prepare_page(page, theme, enabled, status_display, &running)?
+        else {
+            return Ok(());
+        };
         if !running() {
             return Ok(());
         }
+        let keys = (0..KEY_COUNT).collect::<Vec<_>>();
+        let blank_archive = archive_from_pictures(&keys, &prepared.blanks, true)?;
         self.background()?;
         self.send_file(0x0001, &blank_archive)?;
         let started = Instant::now();
-        for (time, archive) in frames {
+        let mut next_frame = 0;
+        while next_frame < prepared.frames.len() {
             if !running() {
                 return Ok(());
             }
+            let time = prepared.frames[next_frame].0;
             if let Some(delay) = Duration::from_millis(time).checked_sub(started.elapsed()) {
                 std::thread::sleep(delay);
             }
+            let mut latest = BTreeMap::new();
+            loop {
+                for (index, picture) in &prepared.frames[next_frame].1 {
+                    latest.insert(*index, picture.clone());
+                }
+                next_frame += 1;
+                if next_frame == prepared.frames.len()
+                    || Duration::from_millis(prepared.frames[next_frame].0) > started.elapsed()
+                {
+                    break;
+                }
+            }
+            let (keys, pictures): (Vec<_>, Vec<_>) = latest.into_iter().unzip();
+            let archive = archive_from_pictures(&keys, &pictures, false)?;
             self.send_file(0x000d, &archive)?;
         }
+        let panel = archive_from_pictures(&[CLOCK_KEY], &[prepared.panel.clone()], status_display)?;
         self.send_file(0x000d, &panel)?;
         if status_display {
             self.background()?;
@@ -209,7 +407,25 @@ impl Dock {
         pressed: bool,
         enabled: bool,
     ) -> Result<()> {
-        let archive = make_key_archive(page, theme, index, pressed, enabled)?;
+        let identity = picture_identity(page, theme, enabled)?;
+        let cached = self
+            .prepared_pages
+            .borrow()
+            .iter()
+            .find(|entry| entry.identity == identity)
+            .and_then(|entry| {
+                if pressed {
+                    entry.pressed.get(index)
+                } else {
+                    entry.released.get(index)
+                }
+            })
+            .cloned();
+        let archive = if let Some(picture) = cached {
+            archive_from_pictures(&[index], &[picture], false)?
+        } else {
+            make_key_archive(page, theme, index, pressed, enabled)?
+        };
         self.send_file(0x000d, &archive)
     }
 
@@ -523,6 +739,47 @@ mod tests {
     use super::*;
     use crate::model::Config;
     use std::io::Read;
+
+    #[test]
+    fn boot_pictures_use_every_native_display_size() -> Result<()> {
+        assert_eq!(boot::PICTURES.len(), KEY_COUNT);
+        for (index, picture) in boot::PICTURES.iter().enumerate() {
+            let image = image::load_from_memory(picture)?;
+            let expected = if index == CLOCK_KEY {
+                (400, 200)
+            } else {
+                (196, 196)
+            };
+            assert_eq!(
+                (image.width(), image.height()),
+                expected,
+                "boot key {index}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn prepared_picture_identity_tracks_runtime_availability_and_shortcuts() -> Result<()> {
+        let mut page = Config::default().pages[0].clone();
+        let original = picture_identity(&page, Theme::DarkClassic, true)?;
+        // These flags are skipped when settings are serialized, but must invalidate pictures.
+        page.key_availability = vec![true; KEY_COUNT];
+        page.key_availability[0] = false;
+        assert_ne!(original, picture_identity(&page, Theme::DarkClassic, true)?);
+        page.key_availability[0] = true;
+        let before_edit = picture_identity(&page, Theme::DarkClassic, true)?;
+        page.keys[0].label = "MY SHORTCUT".into();
+        assert_ne!(
+            before_edit,
+            picture_identity(&page, Theme::DarkClassic, true)?
+        );
+        assert_ne!(
+            picture_identity(&page, Theme::DarkClassic, true)?,
+            picture_identity(&page, Theme::DarkClassic, false)?
+        );
+        Ok(())
+    }
 
     #[test]
     fn full_layout_contains_thirteen_icons_and_safe_boundaries() -> Result<()> {

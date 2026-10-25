@@ -9,8 +9,9 @@
  * License: MIT - see LICENSE
  * VBWR E */
 
-use crate::model::{Config, RuntimeSettings, Theme};
+use crate::model::{Config, RuntimeSettings, Theme, PAGE_INDEX_NAME};
 use anyhow::{ensure, Context, Result};
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -32,6 +33,55 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
     }
+}
+
+// Session state is kept apart from settings, so page navigation cannot make an
+// open Configure dialog stale or overwrite a user's shortcut edits.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionState {
+    page: String,
+}
+
+fn session_path(settings: &Path) -> PathBuf {
+    settings.with_extension("session.json")
+}
+
+pub fn load_last_page(settings: &Path) -> Result<Option<String>> {
+    let path = session_path(settings);
+    let Some(bytes) = read_optional(&path)? else {
+        return Ok(None);
+    };
+    let session: SessionState = serde_json::from_slice(&bytes)
+        .with_context(|| format!("reading session state {}", path.display()))?;
+    ensure!(
+        !session.page.trim().is_empty() && session.page != PAGE_INDEX_NAME,
+        "session state must name a regular page"
+    );
+    Ok(Some(session.page))
+}
+
+pub fn save_last_page(settings: &Path, page: &str) -> Result<()> {
+    ensure!(
+        !page.trim().is_empty() && page != PAGE_INDEX_NAME,
+        "only a regular page can be remembered"
+    );
+    let path = session_path(settings);
+    let original = read_optional(&path)?;
+    let mut bytes = serde_json::to_vec_pretty(&SessionState {
+        page: page.to_owned(),
+    })?;
+    bytes.push(b'\n');
+    if original.as_deref() == Some(bytes.as_slice()) {
+        return Ok(());
+    }
+    let change = Change::stage(&path, original.clone(), bytes)?;
+    change.backup()?;
+    ensure!(
+        read_optional(&path)? == original,
+        "Session state changed before saving"
+    );
+    change.apply()
 }
 
 impl SettingsStore {
@@ -280,6 +330,8 @@ mod tests {
             // Remove only this fixture's named files, never recurse over a shared directory.
             for name in [
                 "settings.json",
+                "settings.session.json",
+                "settings.session.json.gui.bak",
                 "applications.yaml",
                 "settings.json.gui.bak",
             ] {
@@ -287,8 +339,33 @@ mod tests {
             }
             let temporary = format!("settings.gui-{}.tmp", std::process::id());
             let _ = fs::remove_file(self.0.join(temporary));
+            let temporary = format!("settings.session.gui-{}.tmp", std::process::id());
+            let _ = fs::remove_file(self.0.join(temporary));
             let _ = fs::remove_dir(&self.0);
         }
+    }
+
+    #[test]
+    fn remembering_pages_keeps_settings_and_open_dialogs_independent() -> Result<()> {
+        let fixture = Fixture::create()?;
+        let path = fixture.0.join("settings.json");
+        let original = fs::read(&path)?;
+        let mut dialog = SettingsStore::load(&path)?;
+        assert_eq!(load_last_page(&path)?, None);
+        save_last_page(&path, "Spotify")?;
+        assert_eq!(load_last_page(&path)?.as_deref(), Some("Spotify"));
+        assert_eq!(fs::read(&path)?, original);
+
+        save_last_page(&path, "VS Code")?;
+        let previous: SessionState =
+            serde_json::from_slice(&fs::read(fixture.0.join("settings.session.json.gui.bak"))?)?;
+        assert_eq!(previous.page, "Spotify");
+        dialog.save_theme(Theme::Memphis)?;
+        assert_eq!(load_last_page(&path)?.as_deref(), Some("VS Code"));
+        assert_eq!(Config::load(&path)?.theme, Theme::Memphis);
+        assert!(save_last_page(&path, PAGE_INDEX_NAME).is_err());
+        assert_eq!(load_last_page(&path)?.as_deref(), Some("VS Code"));
+        Ok(())
     }
 
     #[test]

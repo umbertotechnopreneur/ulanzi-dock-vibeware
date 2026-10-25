@@ -8,62 +8,63 @@ SPDX-License-Identifier: MIT
 License: MIT - see LICENSE
 VBWR E -->
 
-# Install on Windows
+# Install and set up UlanziDock
 
-## Use the installer
+## Use the Windows installer
 
-1. Double-click the MSIX and choose **Install**.
+Download an MSIX from [my releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases), when available. MSIX is Windows' app package format.
+
+1. Open the MSIX and choose **Install**.
 2. Open **UlanziDock VibeWare** from Start.
-3. Right-click its tray icon and choose **About → Configure**.
+3. Follow the first-run setup. Right-click the tray icon, then choose **About → Configure** to change your choices later.
 
-Opening the app can send commands to a connected dock.
+The tray icon is the small app icon near the Windows clock. Starting the controller can update a connected dock. If startup fails, an error window explains why.
 
-If startup fails, the launcher and controller show a Windows error dialog with the cause, even when no terminal is open.
+After the first launch, Windows lists the app in **Startup apps**. Turn it off there if you do not want it to start at sign-in. Terminal users can use `ulanzi-dock-vibeware.exe` without finding the WindowsApps folder.
 
-After the first launch, the package registers **UlanziDock VibeWare** in Windows
-Startup apps. Windows controls that setting; turn it off there if you do not want
-the hidden tray controller at sign-in. In a terminal, the MSIX also provides the
-`ulanzi-dock-vibeware.exe` app-execution alias, so scripts never need the changing
-`WindowsApps` installation path.
-
-Use packages from [my releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases), when available, or build your own below. A package built on your PC is not a Microsoft Store release.
-
-If Windows rejects a local package's certificate, check who made it before trusting it. Do not disable Windows security to install it.
+A locally signed installer needs a trusted certificate from its maker. Check who made it before trusting that certificate.
 
 ## Run without installing
 
-Download a ZIP from my releases and extract the whole folder somewhere you can write files. Open `ulanzi-dock-vibeware.exe`. Keep `ulanzi-dock-launcher.exe` beside it if you want startup at sign-in.
+Extract the whole Windows ZIP into a writable folder. Open `ulanzi-dock-vibeware.exe`. Keep `ulanzi-dock-launcher.exe` beside it for startup at sign-in.
 
-For Linux and macOS, see [package notes](RELEASING.md).
+Linux and macOS use a terminal. See [platform instructions](PLATFORMS.md).
 
-## Build your own MSIX
+## Change and back up settings
 
-First follow [the build guide](DEVELOPMENT.md). You also need Python 3, PowerShell 7 and the Windows SDK tools `makeappx.exe` and `signtool.exe`.
+On Windows, open **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the app you are using. **Save + Restart** applies the changes.
 
-You need your own code-signing certificate. It must have a private key in `Cert:\CurrentUser\My`, be trusted in `Cert:\CurrentUser\Root` and remain valid for at least 30 days. The script does not create or trust certificates.
+The settings buttons open two text files:
 
-Run this from the repository folder, using your certificate's exact subject:
+- `settings.json`: pages, button shortcuts, brightness and automatic switching preferences.
+- `applications.yaml`: application names, executable names and optional app commands.
+
+The controller also keeps the last regular page in `settings.session.json`, beside `settings.json`. The selected theme stays in `settings.json`. On the next run, the boot picture fades out and that page and theme return. A removed or disabled page falls back to the normal home page, and the temporary page index is not saved. With a custom settings path such as `my-dock.json`, the session file is `my-dock.session.json`.
+
+Office shortcuts start with US English defaults. Adjust them for your keyboard and application language.
+
+The MSIX saves these files under `%LOCALAPPDATA%\Packages\<package-family>\LocalState\`. The portable app uses its executable folder. Local builds in `artifacts/` use the repository's settings. Files inside WindowsApps are not your editable settings.
+
+Updates keep existing preferences. Back up the two settings files, the application catalogue and the session file before uninstalling or resetting. If a file uses an unsupported format, keep it as a reference and create a separate current file with `init --config new-settings.json`. Copy the shortcuts you want into that file; use the current application catalogue too.
+
+### Add OBS Creator to existing settings
+
+Fresh settings already contain OBS Creator. An update does not insert it into a settings file you already use. Close the app and follow [Add the page](../presets/obs-creator/README.md#add-the-page), using your actual settings path. The preset installer makes a backup.
+
+With automatic switching on, OBS must be the app in front to select its page. Having it open in the background is not enough.
+
+## Build your own installer
+
+First follow [development setup](DEVELOPMENT.md). You also need Python 3.10 or newer and the Windows SDK tools `makeappx.exe` and `signtool.exe`.
+
+The script uses your existing signing certificate. Its private key must be in `Cert:\CurrentUser\My`, its public certificate trusted in `Cert:\CurrentUser\Root`, and its expiry at least 30 days away. The script does not create or trust certificates.
 
 ```powershell
-pwsh -NoProfile -File .\scripts\build-msix.ps1 -PublisherSubject 'CN=Your Local Publisher'
+pwsh -NoProfile -File scripts/ulanzi.ps1 -Command msix -Configuration Debug -PublisherSubject 'CN=Your Local Publisher'
 ```
 
-The signed x64 package is saved in `artifacts/msix/`, with its license, notices and icon sizes. It gets fresh settings, not your personal file. Its version comes from `Cargo.toml`.
+It builds both programs from current source, creates fresh package settings, includes licenses and signs an x64 MSIX in `artifacts/msix/`. The version comes from `Cargo.toml`. `-Configuration Release` makes an optimized build; the original `build-msix.ps1` command still defaults to Release when given parameters.
 
-For a local Debug build, add `-Configuration Debug`. The script builds both programs from the current source with the locked dependencies. The default configuration is Release.
+Add `-Install` to install the package on this PC. This can close a running copy. Local signing does not publish the app to Microsoft Store.
 
-Add `-Install` to install it too. This can close a running copy of the app.
-
-## Settings and updates
-
-The MSIX keeps settings in `%LOCALAPPDATA%\Packages\<package-family>\LocalState\`. Do not edit files in `WindowsApps`. Back up your settings before uninstalling or resetting.
-
-Old settings are not converted. Create a current file with `init --config new-settings.json` and copy the shortcuts you want to keep. Use the current `applications.yaml`; app preferences now belong in the JSON file.
-
-### OBS Creator is missing
-
-Updating the app keeps your existing settings. It does not add the OBS Creator page to them. The installed MSIX uses its own `LocalState/settings.json`; editing the repository's settings does not change that file.
-
-Close UlanziDock and follow [Add the page](../presets/obs-creator/README.md#add-the-page), passing the installed app's settings path. Keep app detection and automatic switching on if you want the dock to switch when OBS Studio is in front. An OBS window open in the background does not select its page.
-
-I have tested only my D200H on Windows x64. Building or installing the app does not prove that every feature works on a dock. The WinUI 3 pictures show a [planned interface](design/README.md), not the current app.
+See [platform coverage](PLATFORMS.md) for what has been checked on real hardware.

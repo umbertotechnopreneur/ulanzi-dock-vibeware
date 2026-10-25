@@ -9,7 +9,46 @@
  * License: MIT - see LICENSE
  * VBWR E */
 
-use std::{env, fs::File, path::PathBuf};
+use std::{
+    env,
+    fs::{self, File},
+    path::{Path, PathBuf},
+};
+
+// Slice one continuous splash into the dock's native display sizes at build time.
+// The original ImageGen master stays unchanged and is not decoded during startup.
+fn prepare_boot_pictures(directory: &Path) {
+    let source = image::open("assets/boot/ulanzi-dock-boot-v1.png")
+        .expect("boot image master")
+        .to_rgba8();
+    let canvas = image::imageops::resize(&source, 988, 592, image::imageops::FilterType::Lanczos3);
+    let mut module = String::from("pub const PICTURES: [&[u8]; 14] = [\n");
+    for index in 0..14 {
+        // The physical rows have two black gaps. Move the outside bands away
+        // from those gaps while keeping the centre band anchored in place.
+        let row = index / 5;
+        let y = match row {
+            0 => 36,
+            1 => 196,
+            _ => 356,
+        };
+        let (x, width, height) = if index == 13 {
+            (588, 400, 200)
+        } else {
+            ((index % 5) * 196, 196, 196)
+        };
+        let name = format!("boot-key-{index:02}.png");
+        image::imageops::crop_imm(&canvas, x, y, width, height)
+            .to_image()
+            .save(directory.join(&name))
+            .expect("native boot picture");
+        module.push_str(&format!(
+            "include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{name}\")),\n"
+        ));
+    }
+    module.push_str("];\n");
+    fs::write(directory.join("boot-pictures.rs"), module).expect("embedded boot picture list");
+}
 
 // Errors: propagated to Cargo for UI compilation, generated artwork, or Windows resources.
 fn main() {
@@ -17,7 +56,9 @@ fn main() {
     println!("cargo:rerun-if-changed=assets/brand/ulanzi-dock-icon.png");
     println!("cargo:rerun-if-changed=assets/brand/ulanzi-dock-logo.png");
     println!("cargo:rerun-if-changed=assets/brand/vibeware-logo.png");
+    println!("cargo:rerun-if-changed=assets/boot/ulanzi-dock-boot-v1.png");
     let directory = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
+    prepare_boot_pictures(&directory);
     let source = image::open("assets/brand/ulanzi-dock-icon.png")
         .expect("product icon master")
         .to_rgba8();

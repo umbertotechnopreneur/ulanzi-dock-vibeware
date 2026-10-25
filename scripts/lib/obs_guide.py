@@ -19,7 +19,6 @@ Requires Pillow and ReportLab. Input is the controller's offline render output,
 not a hardware screenshot. See presets/obs-creator/README.md for regeneration.
 """
 
-import argparse
 import json
 from pathlib import Path
 
@@ -32,7 +31,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PACK = ROOT / "presets" / "obs-creator"
 OUTPUT = ROOT / "docs" / "obs-creator-quick-start.pdf"
 W, H = landscape(A4)
@@ -79,7 +78,7 @@ def frame(pdf, number, section, title, subtitle):
     text(pdf, "ULANZIDOCK / OBS CREATOR", 36, 30, 8.5, "Bold", BLUE)
     pdf.setFont("Mono", 8)
     pdf.setFillColor(MUTED)
-    pdf.drawRightString(W - 36, H - 30, "14 OCT 2026 / v1")
+    pdf.drawRightString(W - 36, H - 30, "25 OCT 2026 / v2")
     text(pdf, title, 36, 69, 26, "Bold")
     text(pdf, subtitle, 36, 94, 10.5, color=MUTED)
     rule(pdf, 110)
@@ -141,10 +140,10 @@ def cover(pdf, image_path):
 
 def setup(pdf):
     frame(pdf, 2, "SETUP", "Set it up once.",
-          "Windows workflow. Use a build that includes the obs icon family; older releases reject this preset.")
+          "Windows workflow. Fresh UlanziDock settings already include the OBS Creator page.")
     x, right, width = 36, 432, 373
-    text(pdf, "1  Add the dock page", x, 145, 14, "Bold")
-    paragraph(pdf, "Close UlanziDock from its tray menu. From the repository root, run this PowerShell 7 command, replacing the settings path with the file used by your controller:", x, 171, width)
+    text(pdf, "1  Find the dock page", x, 145, 14, "Bold")
+    paragraph(pdf, "If OBS Creator is already in Configure, skip the command below. If it is missing, close UlanziDock and run this from the source folder, using your actual settings path:", x, 171, width)
     box(pdf, x, 218, width, 76)
     for i, line in enumerate([
         "pwsh -NoProfile -File",
@@ -153,7 +152,7 @@ def setup(pdf):
         "Type as ONE line; the path above is an example.",
     ]):
         text(pdf, line, x + 12, 235 + i * 15, 7.7, "Mono")
-    paragraph(pdf, "The installer adds OBS Creator before Themes and creates a backup. It keeps your other pages, shortcuts and theme. Start the updated controller with the same settings file.", x, 316, width)
+    paragraph(pdf, "For an existing setup without OBS Creator, the installer adds the page before Themes and makes a backup. Other pages and shortcuts stay in place. Start the controller with that settings file.", x, 316, width)
     text(pdf, "2  Keep OBS controls within reach", x, 385, 14, "Bold")
     paragraph(pdf, "In UlanziDock Configure, turn automatic page switching OFF, then Save + Restart. Application detection may stay ON. Press NEXT PAGE until OBS Creator appears.", x, 411, width)
     paragraph(pdf, "In OBS Settings > Advanced > Hotkeys, choose Never disable hotkeys. Keep Studio Mode OFF so scene keys go directly to the recorded output.", x, 476, width, size=9.4, leading=14)
@@ -224,12 +223,12 @@ def bindings(pdf, page):
     pdf.showPage()
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artwork", type=Path, default=ROOT / "tmp/obs-creator/artwork/dark-abstract/page-9")
-    args = parser.parse_args()
+def main(artwork: Path):
+    build_pdf(preview(artwork))
+
+
+def build_pdf(image_path: Path):
     page = json.loads((PACK / "page.json").read_text(encoding="utf-8-sig"))
-    image_path = preview(args.artwork)
     pdf = canvas.Canvas(str(OUTPUT), pagesize=landscape(A4), pageCompression=1, invariant=1)
     pdf.setTitle("OBS Creator - UlanziDock quick start")
     pdf.setAuthor("Umberto Giacobbi")
@@ -241,6 +240,3 @@ def main():
     print(OUTPUT)
     print(image_path)
 
-
-if __name__ == "__main__":
-    main()

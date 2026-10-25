@@ -23,7 +23,7 @@ A page for recording with OBS: start, stop, pause, resume, four scenes, and micr
 
 *Artwork preview, not a dock photo. The clock is illustrated.*
 
-Use a current build with OBS icon support. Older releases may not draw these buttons. This page sends hotkeys, not commands over an OBS connection. It shows no live recording or mute status. I have not yet tried it with the dock and OBS.
+This page sends hotkeys, not commands over an OBS connection. It shows no live recording or mute status. I have not yet tried it with the dock and OBS.
 
 ## Add the page
 
@@ -85,20 +85,19 @@ Before a full recording, make a short clip and play it back. Check the picture, 
 
 ## Rebuild the pictures and PDF
 
-Build the current source with `cargo build --release --locked`. Use its executable, not an older installed copy, and pass your settings path with `--config` when using the preset.
+Build the current source as described in [development](../../docs/DEVELOPMENT.md). Use that executable for the export.
 
 To recreate the pictures, use a fresh temporary settings file. These commands create files without opening the dock or sending shortcuts. You also need Python, Pillow and ReportLab.
 
 ```powershell
 New-Item -ItemType Directory -Force tmp/obs-creator | Out-Null
-.\target\release\ulanzi-dock-vibeware.exe init --config tmp/obs-creator/settings.json
-.\presets\obs-creator\install-preset.ps1 -SettingsPath tmp/obs-creator/settings.json
+.\target\debug\ulanzi-dock-vibeware.exe init --config tmp/obs-creator/settings.json
 .\target\release\ulanzi-dock-vibeware.exe render --config tmp/obs-creator/settings.json --output tmp/obs-creator/artwork --page 9
-python docs/build_obs_guide.py
+python scripts/tools.py obs-guide
 ```
 
-`init` will not overwrite an existing file. In this fresh setup, OBS Creator is page 9 and Themes is page 10. The export makes both button states in all thirteen themes. The builder writes `preview.png` here and the PDF in `docs/`.
+`init` will not overwrite an existing file. Fresh settings already include OBS Creator, so do not run the preset installer on that file. OBS Creator is page 9 and Themes is page 10. The export makes both button states in all thirteen themes. The builder writes `preview.png` here and the PDF in `docs/`.
 
-The Windows x64 build, artwork export and PDF review were completed. No live-settings installation, automated tests, OBS session or dock trial was run for this preset.
+See [platform coverage](../../docs/PLATFORMS.md) for build and physical-check evidence. These pictures do not show live OBS status.
 
 I made this as [Umberto Giacobbi](https://umbertogiacobbi.biz). **VibeWare is Human intent, AI execution, and plenty of tokens.** [Manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).
