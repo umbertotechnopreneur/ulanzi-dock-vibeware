@@ -1,13 +1,27 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ *
+ * Modified with AI: OpenAI Codex; content sizing and Store theme controls and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+ * Evidence: docs/CODE-REVIEW.md; current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
+ * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+// Visual structure of About, Configuration and reconnect windows. Callbacks request
+// Rust operations; this file does not access settings, HID or Store services itself.
+// Scrollable bodies provide preferred sizes while footers remain reachable.
+// Store properties are display-only snapshots; Rust enforces theme entitlement.
 
 import { AboutSlint, CheckBox, ComboBox, ScrollView, SpinBox } from "std-widgets.slint";
 import { Palette as WidgetPalette } from "std-widgets.slint";
@@ -19,12 +33,14 @@ global Palette {
     out property <color> muted: #526573;
 }
 
+// Text-sized, keyboard-accessible button shared by all dialogs. `enabled` gates
+// pointer/focus input; `primary` only changes emphasis, never the callback behavior.
 component PixelButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
     in property <bool> primary: false;
     callback clicked();
-    min-width: 90px;
+    min-width: max(90px, caption.preferred-width + 24px);
     height: 36px;
     border-width: focus.has-focus ? 3px : 2px;
     border-color: Palette.ink;
@@ -32,7 +48,7 @@ component PixelButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.text;
     forward-focus: focus;
-    Text {
+    caption := Text {
         text: root.text;
         font-weight: 600;
         color: !root.enabled ? Palette.muted : root.primary || touch.pressed ? Palette.paper : Palette.ink;
@@ -55,6 +71,7 @@ component PixelButton inherits Rectangle {
     }
 }
 
+// Fixed-size initiative badge. Its caller chooses the manifesto navigation action.
 component VibeWareLink inherits Rectangle {
     callback clicked();
     width: 64px;
@@ -105,30 +122,12 @@ component ProductWordmark inherits Rectangle {
     }
 }
 
-component VibeWareFooter inherits Rectangle {
-    callback learn();
-    in property <string> disclosure: "I created this software with AI assistance.";
-    background: #e2e5dc;
-    border-width: 2px;
-    border-color: Palette.ink;
-    HorizontalLayout {
-        padding: 12px;
-        spacing: 8px;
-        VerticalLayout {
-            spacing: 6px;
-            Text { text: "This is VibeWare"; color: Palette.blue; font-weight: 700; }
-            Text { text: root.disclosure; color: Palette.ink; font-size: 12px; wrap: word-wrap; }
-            PixelButton { text: "What is VibeWare?"; clicked => { root.learn(); } }
-        }
-        VibeWareLink { clicked => { root.learn(); } }
-    }
-}
-
+// Product/author links with a separate fixed footer for Configure and Close.
 export component AboutDialog inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
     title: "About UlanziDock VibeWare";
-    preferred-width: 560px;
-    preferred-height: 660px;
+    preferred-width: 640px;
+    preferred-height: body.preferred-height + footer.preferred-height;
     min-width: 420px;
     min-height: 360px;
     background: Palette.paper;
@@ -145,7 +144,7 @@ export component AboutDialog inherits Window {
      ScrollView {
       horizontal-scrollbar-policy: always-off;
       viewport-width: self.visible-width;
-      VerticalLayout {
+      body := VerticalLayout {
         padding: 22px;
         spacing: 12px;
         HorizontalLayout {
@@ -177,10 +176,6 @@ export component AboutDialog inherits Window {
             AboutSlint { width: parent.width; height: parent.height; }
         }
         Text { text: root.message; color: Palette.muted; wrap: word-wrap; visible: root.message != ""; }
-        VibeWareFooter {
-            disclosure: "I created this software with AI assistance. I define its purpose, guide the implementation, and take responsibility for checking functionality, performance and security. I share this weekend project as a participant in my VibeWare initiative.";
-            learn => { root.open-link("manifesto"); }
-        }
         HorizontalLayout {
             spacing: 8px;
             PixelButton { text: "Terms"; clicked => { root.open-link("terms"); } }
@@ -188,7 +183,7 @@ export component AboutDialog inherits Window {
         }
       }
      }
-     VerticalLayout {
+     footer := VerticalLayout {
         padding-left: 22px;
         padding-right: 22px;
         padding-top: 12px;
@@ -202,10 +197,10 @@ export component AboutDialog inherits Window {
     }
 }
 
+// Modeless connection notice. Dismissal does not stop the controller's retry loop.
 export component RecoveryDialog inherits Window {
     title: "UlanziDock VibeWare - Dock disconnected";
-    preferred-width: 480px;
-    preferred-height: 250px;
+    preferred-width: 520px;
     min-width: 420px;
     min-height: 230px;
     background: Palette.paper;
@@ -230,16 +225,19 @@ export component RecoveryDialog inherits Window {
     }
 }
 
+// One application-page checkbox. Names identify pages; enabled flags preserve keys.
 export struct AppPage {
     name: string,
     enabled: bool,
 }
 
+// Editable preferences plus Store status. Rust owns stale-write checks, licensing,
+// saving and restart requests; selecting a theme here does not activate it directly.
 export component MainWindow inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
     title: "UlanziDock VibeWare — Configuration";
-    preferred-width: 600px;
-    preferred-height: 740px;
+    preferred-width: 680px;
+    preferred-height: body.preferred-height + footer.preferred-height;
     min-width: 520px;
     min-height: 360px;
     background: Palette.paper;
@@ -255,6 +253,14 @@ export component MainWindow inherits Window {
     in-out property <string> message;
     in-out property <bool> ready: false;
     in property <bool> resident;
+    in property <bool> store-edition;
+    in property <bool> store-busy;
+    in property <bool> store-owned;
+    in property <bool> store-can-purchase;
+    in property <string> store-price;
+    in property <string> store-message;
+    callback buy-themes();
+    callback restore-purchases();
     callback save(bool);
     callback page-toggled(int, bool);
     callback reload();
@@ -266,7 +272,7 @@ export component MainWindow inherits Window {
      ScrollView {
       horizontal-scrollbar-policy: always-off;
       viewport-width: self.visible-width;
-      VerticalLayout {
+      body := VerticalLayout {
         padding: 22px;
         spacing: 14px;
         HorizontalLayout {
@@ -277,12 +283,27 @@ export component MainWindow inherits Window {
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
         Text { text: "Dock theme"; color: Palette.ink; }
         ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; }
+        if root.store-edition: VerticalLayout {
+            spacing: 8px;
+            Text { text: root.store-message; color: Palette.muted; wrap: word-wrap; }
+            HorizontalLayout {
+                spacing: 8px;
+                if !root.store-owned: PixelButton {
+                    text: root.store-price == "" ? "Unlock 10 themes" : "Unlock 10 themes · " + root.store-price;
+                    enabled: !root.store-busy && root.store-can-purchase;
+                    primary: true;
+                    clicked => { root.buy-themes(); }
+                }
+                PixelButton { text: "Restore purchases"; enabled: !root.store-busy; clicked => { root.restore-purchases(); } }
+            }
+            Text { text: "MATRIX, IVORY BLUE and MINT TEAL are free. The theme pack is a one-time purchase. No trial or subscription."; color: Palette.muted; wrap: word-wrap; }
+        }
         CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; }
         if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; }
         if !root.detect-applications: Text { text: "Enabled pages stay available. Automatic switching is off."; color: Palette.muted; wrap: word-wrap; }
         HorizontalLayout {
             spacing: 12px;
-            Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; }
+            Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
             SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; }
         }
         Rectangle { height: 2px; background: Palette.ink; }
@@ -324,10 +345,9 @@ export component MainWindow inherits Window {
             color: Palette.muted;
             wrap: word-wrap;
         }
-        VibeWareFooter { learn => { root.learn-vibeware(); } }
       }
      }
-     VerticalLayout {
+     footer := VerticalLayout {
         padding: 22px;
         spacing: 8px;
         Text { text: root.message; color: Palette.blue; wrap: word-wrap; min-height: 42px; }

@@ -1,16 +1,21 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI execution, and plenty of tokens
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-# AI Versions: Tools and models may vary by contributor and execution environment.
-# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+#
+# Modified with AI: OpenAI Codex; hardware-free unit test release gate and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+# Evidence: docs/CODE-REVIEW.md; current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
 # Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+#
 # VBWR E
 
 name: Release
@@ -31,6 +36,10 @@ on:
         description: Mark as prerelease
         type: boolean
         default: false
+      run_tests:
+        description: Run hardware-free unit tests when explicitly authorized
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -110,6 +119,12 @@ jobs:
         run: |
           rustup target add ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed.' }
+      - name: Run unit tests without hardware
+        if: inputs.run_tests
+        shell: pwsh
+        run: |
+          cargo test --locked --lib --bins --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
       - name: Build release executables
         shell: pwsh
         run: |

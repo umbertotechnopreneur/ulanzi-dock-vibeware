@@ -1,17 +1,26 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Adapt console ownership, dimensions and attached-console input to Windows.
+//! RAII guards keep redirected handles alive and restore temporary input modes.
+//! No global keyboard hooks are installed and another process's terminal is never hidden.
 
 // Use the visible viewport, rather than the scrollback buffer's width.
 pub fn columns() -> Option<usize> {
@@ -54,6 +63,7 @@ pub fn owns_console() -> bool {
     false
 }
 
+/// Keep NUL handles alive for as long as a detached/background process needs them.
 pub struct BackgroundConsole {
     #[cfg(target_os = "windows")]
     _input: std::fs::File,
@@ -117,6 +127,7 @@ pub fn detach() -> anyhow::Result<BackgroundConsole> {
     Ok(BackgroundConsole {})
 }
 
+/// The small set of attached-console inputs understood by the welcome menu.
 pub enum MenuKey {
     Up,
     Down,
@@ -125,6 +136,7 @@ pub enum MenuKey {
     Other,
 }
 
+/// Own a temporary console input mode and restore the original mode on drop.
 pub struct MenuInput {
     #[cfg(target_os = "windows")]
     handle: windows_sys::Win32::Foundation::HANDLE,
@@ -170,6 +182,8 @@ impl MenuInput {
         Ok(None)
     }
 
+    /// Block for the next console event and map it to a menu action.
+    /// Ignore unrelated events; propagate native read failures without global capture.
     pub fn read_key(&mut self) -> std::io::Result<MenuKey> {
         #[cfg(target_os = "windows")]
         {
@@ -209,6 +223,7 @@ impl MenuInput {
 }
 
 impl Drop for MenuInput {
+    /// Restore the attached console mode; cleanup cannot report errors to the caller.
     fn drop(&mut self) {
         #[cfg(target_os = "windows")]
         unsafe {

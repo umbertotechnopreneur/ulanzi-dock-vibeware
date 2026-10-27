@@ -7,8 +7,9 @@
 @REM VibeWare: Human intent, AI execution, and plenty of tokens
 @REM Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 @REM
-@REM Modified with AI: OpenAI Codex; added this header on 2026-10-10.
-@REM Human guidance: Umberto Giacobbi; requested VibeWare branding.
+@REM Modified with AI: OpenAI Codex; header and purpose comments; 2026-10-27
+@REM Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare templates.
+@REM Evidence: docs/CODE-REVIEW.md and current working-tree changes.
 @REM
 @REM Copyright (c) 2026 Umberto Giacobbi
 @REM License: Existing AGPL notice retained below.
@@ -37,6 +38,9 @@ REM
 REM YAi!
 REM VS Code workspace launcher
 
+@REM Open this checkout in VS Code using the existing code command on PATH.
+@REM No build, install, device access or source modification is performed.
+@REM A missing launcher exits with failure; the original YAi! license remains above.
 @echo off
 setlocal
 

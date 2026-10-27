@@ -1,17 +1,27 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; command routing and Store edition boundaries and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+ * Evidence: docs/CODE-REVIEW.md; current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Process entry point and command routing. Resolve settings/CLI overrides here;
+//! delegate rendering, GUI lifecycle and HID work to their dedicated modules.
+//! Informational commands do not connect to the dock. Store builds enforce theme
+//! entitlement in the controller and keep artwork export a community developer tool.
 
 mod actions;
 mod applications;
@@ -21,6 +31,7 @@ mod console;
 mod controller;
 mod dock;
 mod gui;
+mod licensing;
 mod model;
 mod onboarding;
 mod settings;
@@ -41,12 +52,14 @@ use ulanzi_dock_vibeware::paths;
     disable_help_subcommand = true,
     about = "Independent Ulanzi D200H controller participating in the VibeWare initiative"
 )]
+/// Parsed top-level command. Individual variants document their user-visible options.
 struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
+/// Explicit entry points keep device access separate from file-only and UI commands.
 enum Command {
     /// Show the command guide and examples.
     Help,
@@ -86,7 +99,7 @@ enum Command {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Create a settings file with nine regular pages and a generated page index.
+    /// Create a settings file with ten regular pages and a generated page index.
     Init {
         #[arg(long, default_value = "settings.json")]
         config: PathBuf,
@@ -151,6 +164,9 @@ enum Command {
 
 // output: destination for PNGs; creates a directory tree per theme and page.
 // config: validated page definitions.
+// selected: optional theme filter; selected_page: optional one-based page filter.
+// brightness: preview level override; inactive: render unavailable application keys.
+// status_display: replace wide-key clock artwork with the generated status panel.
 // Errors: image generation or filesystem failure.
 fn export_art(
     output: &PathBuf,
@@ -161,6 +177,10 @@ fn export_art(
     inactive: bool,
     status_display: bool,
 ) -> Result<()> {
+    anyhow::ensure!(
+        !cfg!(feature = "store-licensing"),
+        "Artwork export is a development command. Use a community source build for exports."
+    );
     anyhow::ensure!(
         selected_page.is_none_or(|page| page <= config.pages.len() as u64),
         "requested page is outside this configuration"
@@ -378,9 +398,14 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             } else {
                 None
             };
+            let _instance = singleton::acquire()?;
             let mut settings = Config::load(&config)?;
+            // MSIX launches have redirected handles. Automatic console onboarding
+            // returned false there, silently ending the app before its GUI existed.
+            let console_welcome =
+                oobe || (!cfg!(target_os = "windows") && !settings.setup_completed && !no_actions);
             if !background
-                && (oobe || !settings.setup_completed && !no_actions)
+                && console_welcome
                 && !onboarding::show(&mut settings, &config, !args.is_empty())?
             {
                 return Ok(());
@@ -390,11 +415,12 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 focus_poll_seconds.unwrap_or(settings.runtime.focus_poll_seconds);
             let detect_applications = settings.runtime.detect_applications && !no_app_detection;
             let auto_page = detect_applications && settings.runtime.auto_switch && !no_auto_page;
-            singleton::replace_existing()?;
             #[cfg(target_os = "windows")]
             let ui_config = config.clone();
             #[cfg(target_os = "windows")]
             let ui_control = Arc::clone(&control);
+            #[cfg(target_os = "windows")]
+            let first_run = settings.is_first_run;
             let controller = move || {
                 let options = controller::RunOptions {
                     config_path: config,
@@ -410,7 +436,7 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 controller::run(settings, options, control)
             };
             #[cfg(target_os = "windows")]
-            gui::resident(ui_config, ui_control, controller)?;
+            gui::resident(ui_config, ui_control, first_run, controller)?;
             #[cfg(not(target_os = "windows"))]
             controller()?;
         }

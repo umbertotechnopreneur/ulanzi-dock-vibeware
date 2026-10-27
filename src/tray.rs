@@ -1,17 +1,27 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Coordinate controller lifetime and expose Windows tray and desktop operations.
+//! `Control` is shared across threads; native tray resources stay on their owning thread.
+//! Shell helpers open links/files or restart this executable. Device I/O and Slint dialog
+//! construction remain in their own modules.
 
 #[cfg(not(target_os = "windows"))]
 use anyhow::Result;
@@ -27,12 +37,15 @@ const RESTART: u8 = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+/// Connection episodes shown by the tray; Waiting is distinct from a lost connection.
 pub enum ConnectionState {
     Waiting = 0,
     Connected = 1,
     Disconnected = 2,
 }
 
+/// Shared stop/restart flags and process-local settings serialization.
+/// This object carries decisions between UI/controller threads, never the HID handle.
 pub struct Control {
     running: AtomicBool,
     action: AtomicU8,
@@ -44,6 +57,7 @@ pub struct Control {
 }
 
 impl Control {
+    /// Start in the running/waiting state with no pending restart or tray window.
     pub fn new() -> Self {
         Self {
             running: AtomicBool::new(true),
@@ -56,6 +70,7 @@ impl Control {
         }
     }
 
+    /// Read the shared stop signal without owning the controller thread.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
@@ -75,6 +90,7 @@ impl Control {
     }
 
     #[cfg(target_os = "windows")]
+    /// Decode the connection state atomically for native tray presentation.
     fn connection(&self) -> ConnectionState {
         match self.connection.load(Ordering::SeqCst) {
             1 => ConnectionState::Connected,
@@ -83,22 +99,27 @@ impl Control {
         }
     }
 
+    /// Ask the controller to leave its loop; this does not terminate a process.
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
 
+    /// Report whether the accepted lifecycle request is a restart.
     pub fn restart_requested(&self) -> bool {
         self.action.load(Ordering::SeqCst) == RESTART
     }
 
+    /// Distinguish an explicit tray/UI lifecycle request from other shutdown paths.
     pub fn stopped_from_tray(&self) -> bool {
         self.action.load(Ordering::SeqCst) != 0
     }
 
+    /// Mark this launch as background so failures can use an appropriate UI.
     pub fn enter_background(&self) {
         self.background.store(true, Ordering::SeqCst);
     }
 
+    /// Report whether this launch is running without an interactive console.
     pub fn is_background(&self) -> bool {
         self.background.load(Ordering::SeqCst)
     }
@@ -139,7 +160,7 @@ mod windows {
         path::PathBuf,
         process::{Command, Stdio},
         ptr,
-        sync::{atomic::AtomicBool, mpsc, Arc},
+        sync::{mpsc, Arc},
         thread::{self, JoinHandle},
     };
     use windows_sys::Win32::{
@@ -167,13 +188,12 @@ mod windows {
                 DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, EndMenu, GetCursorPos,
                 GetMessageW, GetSystemMetrics, GetWindowLongPtrW, MessageBoxW, PostMessageW,
                 PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow,
-                SetWindowLongPtrW, SetWindowPos, TrackPopupMenu, TranslateMessage,
-                UnregisterClassW, CREATESTRUCTW, GWLP_USERDATA, HICON, HMENU, ICONINFO,
-                MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MF_SEPARATOR, MF_STRING,
-                MSG, SM_CXSMICON, SM_CYSMICON, SWP_NOACTIVATE, SWP_NOZORDER, SW_SHOWNORMAL,
-                TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN, TPM_RIGHTBUTTON,
-                WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_NCCREATE,
-                WM_NCDESTROY, WM_NULL, WM_QUERYENDSESSION, WNDCLASSW,
+                SetWindowLongPtrW, TrackPopupMenu, TranslateMessage, UnregisterClassW,
+                CREATESTRUCTW, GWLP_USERDATA, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_OK,
+                MB_SETFOREGROUND, MF_SEPARATOR, MF_STRING, MSG, SM_CXSMICON, SM_CYSMICON,
+                SW_SHOWNORMAL, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN,
+                TPM_RIGHTBUTTON, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION,
+                WM_NCCREATE, WM_NCDESTROY, WM_NULL, WM_QUERYENDSESSION, WNDCLASSW,
             },
         },
     };
@@ -188,36 +208,44 @@ mod windows {
     const EXIT_APP: i32 = 15;
     const RESTART_PARENT: &str = "ULANZIDOCK_VIBEWARE_RESTART_PARENT";
 
+    /// Owned icon handle, destroyed exactly once when its guard is dropped.
     struct Icon(HICON);
 
     impl Drop for Icon {
+        /// Release the native resource owned by this guard on its tray thread.
         fn drop(&mut self) {
             unsafe { DestroyIcon(self.0) };
         }
     }
 
+    /// Owned native menu tree, released with its child menus on drop.
     struct Menu(HMENU);
 
     impl Drop for Menu {
+        /// Release the native resource owned by this guard on its tray thread.
         fn drop(&mut self) {
             unsafe { DestroyMenu(self.0) };
         }
     }
 
+    /// Registration identity retained until the hidden tray window has been destroyed.
     struct WindowClass {
         name: Vec<u16>,
         instance: HINSTANCE,
     }
 
     impl Drop for WindowClass {
+        /// Release the native resource owned by this guard on its tray thread.
         fn drop(&mut self) {
             unsafe { UnregisterClassW(self.name.as_ptr(), self.instance) };
         }
     }
 
+    /// Hidden tray window; cleanup removes the shell icon before destroying the HWND.
     struct Window(HWND);
 
     impl Drop for Window {
+        /// Release the native resource owned by this guard on its tray thread.
         fn drop(&mut self) {
             unsafe {
                 Shell_NotifyIconW(NIM_DELETE, &notification(self.0, ptr::null_mut()));
@@ -226,14 +254,15 @@ mod windows {
         }
     }
 
+    /// Tray-thread resources borrowed by the native window procedure during dispatch.
     struct State {
         control: Arc<Control>,
         icon: Icon,
         menu: Menu,
         taskbar_created: u32,
-        dialog_open: AtomicBool,
     }
 
+    /// Handle to the tray thread; drop requests shutdown and waits for resource cleanup.
     pub struct Tray {
         window: usize,
         worker: Option<JoinHandle<()>>,
@@ -272,6 +301,7 @@ mod windows {
     }
 
     impl Drop for Tray {
+        /// Release the native resource owned by this guard on its tray thread.
         fn drop(&mut self) {
             // Close on the owning UI thread, including any open menu or owned dialog.
             unsafe { PostMessageW(self.window as HWND, WM_CLOSE, 0, 0) };
@@ -358,6 +388,8 @@ mod windows {
     }
 
     // Errors: embedded PNG decoding or native bitmap/icon creation failure.
+    /// Convert the embedded logo to a native HICON with explicit bitmap ownership.
+    /// Return an owning guard; decoding, allocation and Win32 creation errors propagate.
     fn logo_icon() -> Result<Icon> {
         let width = unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16) as u32;
         let height = unsafe { GetSystemMetrics(SM_CYSMICON) }.max(16) as u32;
@@ -439,6 +471,7 @@ mod windows {
     }
 
     // Errors: native menu creation or insertion failure.
+    /// Create the native command menu; transfer ownership only after every item succeeds.
     fn menu() -> Result<Menu> {
         let handle = unsafe { CreatePopupMenu() };
         ensure!(!handle.is_null(), "creating the tray menu failed");
@@ -497,7 +530,6 @@ mod windows {
             icon: logo_icon()?,
             menu: menu()?,
             taskbar_created,
-            dialog_open: AtomicBool::new(false),
         });
         let instance = unsafe { GetModuleHandleW(ptr::null()) };
         let name = wide(&format!("UlanziDockVibeWareTray-{}", std::process::id()));
@@ -602,10 +634,9 @@ mod windows {
                 if event == WM_CONTEXTMENU {
                     show_menu(window, state, wparam);
                 } else if event == NIN_SELECT || event == (NIN_SELECT | 1) {
-                    information(
-                        window, state,
-                        "Please right-click on the icon for the menu. Open About to access the configurator.",
-                    );
+                    if let Err(error) = crate::gui::show_about() {
+                        eprintln!("Could not open About from the tray: {error:#}");
+                    }
                 }
                 return 0;
             }
@@ -633,38 +664,6 @@ mod windows {
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
         }
-    }
-
-    // window: hidden owner of the modal Windows message box.
-    // state: guards against repeated clicks creating nested copies of the dialog.
-    // text: message shown in the native dialog.
-    fn information(window: HWND, state: &State, text: &str) {
-        use std::sync::atomic::Ordering;
-        if state.dialog_open.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let point = icon_anchor(window, None);
-        unsafe {
-            // Keep the invisible owner on the tray's monitor so Windows places its dialog there.
-            SetWindowPos(
-                window,
-                ptr::null_mut(),
-                point.x,
-                point.y,
-                1,
-                1,
-                SWP_NOACTIVATE | SWP_NOZORDER,
-            );
-        }
-        unsafe {
-            MessageBoxW(
-                window,
-                wide(text).as_ptr(),
-                wide("UlanziDock VibeWare").as_ptr(),
-                MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND,
-            );
-        }
-        state.dialog_open.store(false, Ordering::SeqCst);
     }
 
     // window: owner of notification icon ID 1.
@@ -697,10 +696,6 @@ mod windows {
     // state: menu handles and lifecycle signals for the running controller.
     // coordinates: signed screen coordinates packed by notification API version 4.
     fn show_menu(window: HWND, state: &State, coordinates: WPARAM) {
-        // A right click while the information/About dialog is open must not nest another menu.
-        if state.dialog_open.load(std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
         let point = icon_anchor(window, Some(coordinates));
         let selected = unsafe {
             SetForegroundWindow(window);
@@ -914,6 +909,7 @@ pub fn open_file(path: &std::path::Path) -> Result<()> {
 }
 
 #[cfg(not(target_os = "windows"))]
+/// No-op tray placeholder for console-only platforms.
 pub struct Tray;
 
 #[cfg(not(target_os = "windows"))]

@@ -1,29 +1,40 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
 
-use anyhow::{Context, Result};
+//! Validate configured actions and dispatch approved shortcuts or browser links.
+//! Foreground matching uses executable names only. This module never hooks global input;
+//! the controller decides whether a physical dock release is allowed to execute an action.
+
+use anyhow::Result;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-use std::process::Command;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Distinguish a known executable from a failed lookup or an unsupported platform.
 pub enum ForegroundProcess {
     Known(String),
     Unknown,
     Unsupported,
 }
 
+/// `page` is usable when it has no executable restriction or matches `foreground`.
+/// Unknown foreground identity does not authorize an application-specific page.
 pub fn page_available(page: &crate::model::PageConfig, foreground: &ForegroundProcess) -> bool {
     if page.executables.is_empty() || *foreground == ForegroundProcess::Unsupported {
         return true;
@@ -37,6 +48,8 @@ pub fn page_available(page: &crate::model::PageConfig, foreground: &ForegroundPr
     }
 }
 
+/// Find an enabled application page for `foreground`; return no automatic target
+/// for an unknown process or for pages without an executable mapping.
 pub fn matching_page(
     config: &crate::model::Config,
     foreground: &ForegroundProcess,
@@ -51,6 +64,7 @@ pub fn matching_page(
 
 // Inspect only the owner of the foreground window; never read titles or keyboard input.
 #[cfg(target_os = "windows")]
+/// Read the active executable, or explicitly report that this platform has no implementation.
 pub fn foreground_process() -> ForegroundProcess {
     use windows_sys::Win32::{
         Foundation::CloseHandle,
@@ -92,6 +106,7 @@ pub fn foreground_process() -> ForegroundProcess {
 }
 
 #[cfg(not(target_os = "windows"))]
+/// Read the active executable, or explicitly report that this platform has no implementation.
 pub fn foreground_process() -> ForegroundProcess {
     ForegroundProcess::Unsupported
 }
@@ -99,55 +114,79 @@ pub fn foreground_process() -> ForegroundProcess {
 // action: one configured action, excluding page navigation.
 // Errors: invalid action or failed OS input/open operation.
 pub fn execute(action: &str) -> Result<()> {
+    if action == "none" {
+        return Ok(());
+    }
     if let Some(keys) = action.strip_prefix("hotkey:") {
         return hotkey(keys);
     }
     if let Some(media) = action.strip_prefix("media:") {
-        let key = match media {
-            "play-pause" => Key::MediaPlayPause,
-            "previous" => Key::MediaPrevTrack,
-            "next" => Key::MediaNextTrack,
-            "mute" => Key::VolumeMute,
-            "volume-down" => Key::VolumeDown,
-            "volume-up" => Key::VolumeUp,
-            _ => anyhow::bail!("unsupported media action: {media}"),
-        };
+        let key = media_key(media)?;
         return Enigo::new(&Settings::default())?
             .key(key, Direction::Click)
             .map_err(Into::into);
     }
     if let Some(url) = action.strip_prefix("open:") {
-        anyhow::ensure!(
-            url.starts_with("https://") || url.starts_with("http://"),
-            "only HTTP(S) URLs are supported"
-        );
-        #[cfg(target_os = "windows")]
-        let mut command = {
-            let mut c = Command::new("explorer.exe");
-            c.arg(url);
-            c
-        };
-        #[cfg(target_os = "macos")]
-        let mut command = {
-            let mut c = Command::new("open");
-            c.arg(url);
-            c
-        };
-        #[cfg(target_os = "linux")]
-        let mut command = {
-            let mut c = Command::new("xdg-open");
-            c.arg(url);
-            c
-        };
-        command.spawn().with_context(|| format!("opening {url}"))?;
+        validate_url(url)?;
+        return crate::tray::open_browser(url);
+    }
+    anyhow::bail!("unsupported action: {action}")
+}
+
+/// Translate a configured media token to an input-library key without sending it.
+fn media_key(media: &str) -> Result<Key> {
+    Ok(match media {
+        "play-pause" => Key::MediaPlayPause,
+        "previous" => Key::MediaPrevTrack,
+        "next" => Key::MediaNextTrack,
+        "mute" => Key::VolumeMute,
+        "volume-down" => Key::VolumeDown,
+        "volume-up" => Key::VolumeUp,
+        _ => anyhow::bail!("unsupported media action: {media}"),
+    })
+}
+
+/// Accept only nonempty HTTP(S) targets without whitespace/control characters.
+/// This is a launch-policy check, not a network request or a destination trust check.
+fn validate_url(url: &str) -> Result<()> {
+    let address = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    anyhow::ensure!(
+        address.is_some_and(|address| !address.is_empty() && !address.starts_with('/')),
+        "only non-empty HTTP(S) URLs are supported"
+    );
+    anyhow::ensure!(
+        !url.chars().any(|c| c.is_control() || c.is_whitespace()),
+        "URL contains whitespace or control characters"
+    );
+    Ok(())
+}
+
+/// Validate without constructing an input injector or launching an application.
+pub fn validate(action: &str) -> Result<()> {
+    if action == "none" {
         return Ok(());
+    }
+    if let Some(chord) = action.strip_prefix("hotkey:") {
+        hotkey_keys(chord)?;
+        return Ok(());
+    }
+    if let Some(media) = action.strip_prefix("media:") {
+        media_key(media)?;
+        return Ok(());
+    }
+    if let Some(url) = action.strip_prefix("open:") {
+        return validate_url(url);
     }
     anyhow::bail!("unsupported action: {action}")
 }
 
 // chord: plus-separated modifiers and final key, e.g. ctrl+shift+p.
-// Errors: unsupported key name or failed OS keyboard injection.
-fn hotkey(chord: &str) -> Result<()> {
+// Errors: unsupported key name. Parsing never injects input.
+/// Parse `chord` into ordered keys before any injection begins.
+/// Reject unknown tokens so malformed shortcuts cannot leave a partial chord pressed.
+fn hotkey_keys(chord: &str) -> Result<Vec<Key>> {
     let mut keys = Vec::new();
     for token in chord.split('+') {
         let key = match token.to_ascii_lowercase().as_str() {
@@ -170,6 +209,13 @@ fn hotkey(chord: &str) -> Result<()> {
         keys.push(key);
     }
     anyhow::ensure!(!keys.is_empty(), "empty hotkey");
+    Ok(keys)
+}
+
+/// Inject validated `chord` in order, then release held keys in reverse order.
+/// Propagate input-library errors and attempt cleanup after partial injection.
+fn hotkey(chord: &str) -> Result<()> {
+    let keys = hotkey_keys(chord)?;
     let mut enigo = Enigo::new(&Settings::default())?;
     let mut pressed = Vec::new();
     for key in keys {
@@ -196,6 +242,29 @@ fn hotkey(chord: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_actions_are_rejected_without_os_side_effects() {
+        for action in [
+            "hotkey:",
+            "hotkey:ctrl+",
+            "hotkey:ctrl+unknown",
+            "media:invalid",
+            "open:file:///settings.json",
+            "open:https://",
+            "open:https://example.com\0.exe",
+        ] {
+            assert!(validate(action).is_err(), "accepted {action:?}");
+        }
+        for action in [
+            "none",
+            "hotkey:ctrl+shift+f12",
+            "media:play-pause",
+            "open:https://example.com/",
+        ] {
+            assert!(validate(action).is_ok(), "rejected {action:?}");
+        }
+    }
 
     #[test]
     fn application_pages_require_the_configured_foreground_process() {

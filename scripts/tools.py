@@ -1,6 +1,28 @@
+# VBWR B
+#
+# Project: UlanziDock VibeWare version
+# Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+# Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
+# Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+#
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
-"""Prepare UlanziDock artwork, its OBS guide, or dependency notices."""
+# License: MIT - see LICENSE
+#
+# VBWR E
+
+"""Prepare artwork, the OBS guide, or notices through explicit developer commands.
+
+Files are written only by the selected command. Existing rendered pictures and
+restored Cargo sources are inputs; this tool never controls HID, launches the
+controller, downloads dependencies or publishes a release.
+"""
 
 import argparse
 import json
@@ -14,6 +36,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def icons():
+    """Write PNG/ICO/ICNS derivatives of the original transparent logo.
+
+    Reject a nontransparent source; Pillow and filesystem errors propagate.
+    """
     from PIL import Image
 
     output = ROOT / "assets/icons"
@@ -33,7 +59,13 @@ def icons():
 
 
 def atlases(source: Path, settings: Path, output: Path):
-    """Use the same settings as the render command, so page numbers cannot drift."""
+    """Build preview sheets from a complete offline artwork export.
+
+    source: directory of exported theme/page/key PNGs.
+    settings: the JSON used by the render command, preserving page-number meaning.
+    output: destination directory for one sheet per theme/page.
+    Validate completeness and dimensions before replacing preview sheets.
+    """
     from PIL import Image, ImageDraw, ImageFont
 
     pages = json.loads(settings.read_text(encoding="utf-8-sig"))["pages"]
@@ -41,8 +73,11 @@ def atlases(source: Path, settings: Path, output: Path):
         pages.append({"name": "Page index"})
     names = {"Windows / media": "windows", "VS Code": "vscode",
              "OBS Creator": "obs", "Page index": "index"}
-    slugs = [names.get(page["name"], re.sub(r"[^a-z0-9]+", "-", page["name"].lower()).strip("-"))
-             for page in pages]
+    slugs = []
+    for page in pages:
+        page_name = page["name"]
+        default_slug = re.sub(r"[^a-z0-9]+", "-", page_name.lower()).strip("-")
+        slugs.append(names.get(page_name, default_slug))
     if not all(slugs) or len(set(slugs)) != len(slugs):
         raise ValueError("Page names must produce distinct, non-empty picture filenames.")
     themes = sorted(path for path in source.iterdir() if path.is_dir())
@@ -76,18 +111,30 @@ def atlases(source: Path, settings: Path, output: Path):
                                 raise ValueError(f"Unexpected button size: {path}")
                             tile = sprite.convert("RGB")
                             tile.thumbnail((side, side), Image.Resampling.LANCZOS)
-                            x = margin + (key % 2 * 2 + pressed) * (side + gap)
-                            y = margin + header + key // 2 * (side + gap)
+                            # Two physical keys per row, each with released/pressed tiles.
+                            column = key % 2 * 2 + pressed
+                            row = key // 2
+                            x = margin + column * (side + gap)
+                            y = margin + header + row * (side + gap)
                             sheet.paste(tile, (x + (side - tile.width) // 2, y + (side - tile.height) // 2))
                 path = output / f"{slug}-{theme.name}.png"
                 sheet.save(path, optimize=True)
                 print(path)
 
 
-def notices(output: Path, target: str | None):
+def notices(output: Path, target: str | None, features: str | None = None):
+    """Copy dependency notices from locally restored, locked Cargo packages.
+
+    output: destination for per-package files and an index.
+    target: optional Rust platform filter, not a build request.
+    features: optional Cargo feature selection matching the packaged binaries.
+    Cargo runs offline. Metadata, copy and file errors abort the command.
+    """
     command = ["cargo", "metadata", "--locked", "--offline", "--format-version", "1"]
     if target:
         command += ["--filter-platform", target]
+    if features:
+        command += ["--features", features]
     metadata = json.loads(subprocess.check_output(command, cwd=ROOT, text=True, encoding="utf-8"))
     output.mkdir(parents=True, exist_ok=True)
     index = ["# Dependency notices", "",
@@ -121,6 +168,10 @@ def notices(output: Path, target: str | None):
 
 
 def main():
+    """Parse arguments or an interactive menu and run exactly one selected task.
+
+    Noninteractive use requires a command; invalid or missing input is an error.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("icons", help="Prepare app icons for Windows, Linux and macOS")
@@ -132,6 +183,7 @@ def main():
     guide.add_argument("--artwork", type=Path, default=ROOT / "tmp/obs-creator/artwork/dark-abstract/page-9")
     licenses = commands.add_parser("notices", help="Copy licenses from already restored Cargo packages")
     licenses.add_argument("--mode", choices=["cargo"], default="cargo")
+    licenses.add_argument("--features", help="Cargo feature selection used by the packaged build")
     licenses.add_argument("--output", type=Path, required=True)
     licenses.add_argument("--target")
     if len(sys.argv) == 1:
@@ -165,7 +217,7 @@ def main():
         from lib.obs_guide import main as obs_guide
         obs_guide(args.artwork)
     elif args.command == "notices":
-        notices(args.output, args.target)
+        notices(args.output, args.target, args.features)
 
 
 if __name__ == "__main__":

@@ -1,16 +1,21 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI execution, and plenty of tokens
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-# AI Versions: Tools and models may vary by contributor and execution environment.
-# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+#
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
 # Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+#
 # VBWR E
 
 #Requires -Version 7.0
@@ -41,6 +46,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Element: JSON subtree to inspect. Location: diagnostic path shown on duplicates.
+# Recursion preserves the original JSON values and rejects ambiguous object properties.
 function Assert-UniqueJsonProperties {
     param([System.Text.Json.JsonElement] $Element, [string] $Location)
     if ($Element.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
@@ -60,6 +67,8 @@ function Assert-UniqueJsonProperties {
     }
 }
 
+# Page: a candidate page from the existing settings or bundled preset.
+# Throws before any write if types, key count, or fixed navigation/clock actions are invalid.
 function Assert-Page {
     param([System.Text.Json.JsonElement] $Page)
     if ($Page.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
@@ -108,6 +117,7 @@ function Assert-Page {
     }
 }
 
+# Resolve the exact destination and capture bytes before constructing a candidate.
 $settingsItem = Get-Item -LiteralPath $SettingsPath
 if ($settingsItem -isnot [System.IO.FileInfo] -or
     ($settingsItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {

@@ -1,15 +1,37 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+#
 # VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+#
 # Created with AI: OpenAI Codex; cross-platform release packaging, 2026-10-09.
-# Human guidance: Umberto Giacobbi requested Windows, macOS and Linux packages.
-# Evidence: Git history and GitHub Actions; physical device checks are separate.
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
+# SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
+#
 # VBWR E
+
+<#
+.SYNOPSIS
+Package a target already compiled from this checkout into a distribution archive.
+.DESCRIPTION
+Copies source-built binaries, documentation and local dependency notices into a fresh
+staging folder, then writes an archive and checksum. Does not compile, run tests, install,
+create a GitHub release or prove device behavior. Existing output names are preserved.
+.PARAMETER Target
+Rust target triple matching the selected Label and its source-build output directory.
+.PARAMETER Label
+Supported platform label used in filenames and archive-format selection.
+.PARAMETER Tag
+Version label used in the output archive name; this does not create a Git tag.
+#>
 
 [CmdletBinding()]
 param(

@@ -1,13 +1,25 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
+ *
  * VBWR E */
+
+//! Resolve portable and MSIX settings locations and seed a new package profile safely.
+//! Existing user files are preserved. These helpers do not migrate old formats, install
+//! packages or load the application UI; the launcher and controller share them.
 
 use anyhow::{Context, Result};
 use std::{
@@ -45,13 +57,14 @@ pub fn package_settings(executable: &Path) -> Result<Option<PathBuf>> {
         .with_context(|| format!("creating {}", local_state.display()))?;
 
     let settings = local_state.join("settings.json");
-    if !settings.is_file() {
+    let transaction = crate::persistence::Transaction::begin(&settings)?;
+    if transaction.read()?.is_none() {
         let source = executable
             .parent()
             .context("locating the MSIX installation folder")?
             .join("settings.json");
-        fs::copy(&source, &settings)
-            .with_context(|| format!("copying {} to {}", source.display(), settings.display()))?;
+        let bytes = fs::read(&source).with_context(|| format!("reading {}", source.display()))?;
+        transaction.create(&bytes)?;
     }
 
     Ok(Some(settings))
@@ -63,6 +76,8 @@ pub fn is_packaged() -> Result<bool> {
 }
 
 #[cfg(target_os = "windows")]
+/// Resolve the current package's per-user LocalState folder without creating it.
+/// No package returns `None`; Windows identity/environment failures are errors.
 fn package_local_state() -> Result<Option<PathBuf>> {
     use anyhow::ensure;
     use std::{ffi::OsString, os::windows::ffi::OsStringExt, ptr};
@@ -106,6 +121,8 @@ fn package_local_state() -> Result<Option<PathBuf>> {
 }
 
 #[cfg(not(target_os = "windows"))]
+/// Resolve the current package's per-user LocalState folder without creating it.
+/// No package returns `None`; Windows identity/environment failures are errors.
 fn package_local_state() -> Result<Option<PathBuf>> {
     Ok(None)
 }

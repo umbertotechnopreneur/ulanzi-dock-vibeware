@@ -1,17 +1,27 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Encode D200H pictures and commands, own one HID connection, and decode button reports.
+//! Image preparation and ZIP framing are separate from transport writes so they can be
+//! reasoned about offline. The controller owns action policy and page navigation; a
+//! successful USB write here does not prove that the physical display changed.
 
 use crate::{
     art,
@@ -65,6 +75,8 @@ struct PreparedPage {
     panel: Vec<u8>,
 }
 
+/// Serialize every input that can change prepared pixels, including derived availability.
+/// `page`, `theme` and `enabled` form a cache key, not a saved user configuration.
 fn picture_identity(page: &PageConfig, theme: Theme, enabled: bool) -> Result<Vec<u8>> {
     // Availability is runtime-only and deliberately omitted by PageConfig's serializer.
     Ok(serde_json::to_vec(&(
@@ -79,6 +91,29 @@ fn picture_identity(page: &PageConfig, theme: Theme, enabled: bool) -> Result<Ve
 pub struct ButtonEvent {
     pub index: usize,
     pub pressed: bool,
+}
+
+// Parse only the two observed button message types and explicit up/down states.
+// Malformed state bytes must never turn an accepted press into an action release.
+fn decode_button(bytes: &[u8]) -> Option<ButtonEvent> {
+    for offset in [0, 1] {
+        if bytes.len() < offset + 12 || bytes[offset..offset + 2] != [0x7c, 0x7c] {
+            continue;
+        }
+        let command = u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]);
+        if command != 0x0101 && command != 0x0102 {
+            continue;
+        }
+        let index = bytes[offset + 9] as usize;
+        if index >= KEY_COUNT || !matches!(bytes[offset + 11], 0 | 1) {
+            return None;
+        }
+        return Some(ButtonEvent {
+            index,
+            pressed: bytes[offset + 11] == 1,
+        });
+    }
+    None
 }
 
 // Missing interfaces and incomplete reports are transport failures, unlike artwork errors.
@@ -107,6 +142,7 @@ pub fn discover() -> Result<(HidApi, bool)> {
     Ok((api, found))
 }
 
+/// Match the supported VID/PID and consumer usage; other interfaces are never opened.
 fn is_dock_interface(device: &hidapi::DeviceInfo) -> bool {
     device.vendor_id() == VENDOR_ID
         && device.product_id() == PRODUCT_ID
@@ -180,6 +216,9 @@ impl Dock {
         result.and(restore)
     }
 
+    /// Warm the render cache for `page`/`theme` without writing USB reports.
+    /// `enabled` controls inactive faces, `status_display` selects the wide panel,
+    /// and `running` permits cancellation between keys. Rendering errors propagate.
     pub fn prepare_transition(
         &self,
         page: &PageConfig,
@@ -239,30 +278,9 @@ impl Dock {
         })
     }
 
-    // page: page to show on all 14 display keys.
-    // theme: selected artwork family.
-    // held: pressed key to draw; all other keys use up artwork.
-    // Errors: image, archive, or USB write failure.
-    pub fn show(
-        &self,
-        page: &PageConfig,
-        theme: Theme,
-        held: Option<usize>,
-        enabled: bool,
-        status_display: bool,
-    ) -> Result<()> {
-        let status_display = status_display || page.name == PAGE_INDEX_NAME;
-        let archive = make_archive(page, theme, held, enabled, status_display)?;
-        if status_display {
-            self.background()?;
-        }
-        self.send_file(0x0001, &archive)?;
-        if status_display {
-            self.background()?;
-        }
-        Ok(())
-    }
-
+    /// Reuse or render pixels for `page`, `theme`, availability and panel mode.
+    /// `running` cancels work between keys; cancellation returns `None` without caching
+    /// an incomplete page. Successful entries use a bounded least-recently-used cache.
     fn prepare_page(
         &self,
         page: &PageConfig,
@@ -342,6 +360,9 @@ impl Dock {
 
     // The reveal targets 100 ms. Reuse prepared pictures and merge overdue fade
     // updates so slow USB writes do not build a queue of obsolete frames.
+    /// Send a complete page reveal for `page`/`theme`, respecting `enabled` artwork.
+    /// `status_display` selects the wide panel; `running` cancels between frames.
+    /// Returns rendering/transport errors and drains stale input after completion.
     pub fn show_transition(
         &self,
         page: &PageConfig,
@@ -399,6 +420,8 @@ impl Dock {
 
     // Update only the pressed or released display key, without a page transition.
     // Errors: invalid key, image/archive generation, or USB write failure.
+    /// `page`/`theme` identify pixels; `index` is the physical ordinary key.
+    /// `pressed` selects its state and `enabled` controls the inactive overlay.
     pub fn show_key(
         &self,
         page: &PageConfig,
@@ -430,7 +453,10 @@ impl Dock {
     }
 
     // A focus change replaces only the twelve application keys, preserving
-    // NEXT PAGE and the clock. No updates are sent while availability is stable.
+    // NEXT PAGE and the clock. The controller calls this only when availability changes.
+    /// Redraw application keys using `enabled`, retaining the optional `held` state.
+    /// `page`/`theme` select artwork; `status_display` also redraws the wide panel.
+    /// The caller decides when availability changed; image and USB errors propagate.
     pub fn refresh_availability(
         &self,
         page: &PageConfig,
@@ -455,6 +481,8 @@ impl Dock {
     }
 
     // Redraw only the brightness keys when a bound is reached or left.
+    /// Find brightness actions on `page` and redraw only those positions.
+    /// `theme`, `held` and `enabled` preserve the current face/press/availability state.
     pub fn refresh_brightness_keys(
         &self,
         page: &PageConfig,
@@ -506,25 +534,7 @@ impl Dock {
         let count = self
             .device
             .read_timeout(&mut buffer, timeout.as_millis() as i32)?;
-        let bytes = &buffer[..count];
-        for offset in [0, 1] {
-            if bytes.len() < offset + 12 || bytes[offset..offset + 2] != [0x7c, 0x7c] {
-                continue;
-            }
-            let command = u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]);
-            if command != 0x0101 && command != 0x0102 {
-                continue;
-            }
-            let index = bytes[offset + 9] as usize;
-            if index >= KEY_COUNT {
-                return Ok(None);
-            }
-            return Ok(Some(ButtonEvent {
-                index,
-                pressed: bytes[offset + 11] == 1,
-            }));
-        }
-        Ok(None)
+        Ok(decode_button(&buffer[..count]))
     }
 
     // Errors: USB input failure or a queue that does not drain within 256 reports.
@@ -547,12 +557,15 @@ impl Dock {
             archive.len() <= u32::MAX as usize,
             "layout ZIP exceeds protocol length"
         );
+        let first_payload_length = archive.len().min(FIRST_PACKET_PAYLOAD);
         self.send_packet(
             command,
-            &archive[..archive.len().min(FIRST_PACKET_PAYLOAD)],
+            &archive[..first_payload_length],
             archive.len() as u32,
         )?;
-        for chunk in archive[archive.len().min(FIRST_PACKET_PAYLOAD)..].chunks(PACKET) {
+
+        // Continuations have no command header, so each carries a full protocol packet.
+        for chunk in archive[first_payload_length..].chunks(PACKET) {
             let mut report = [0u8; PACKET + 1];
             report[1..1 + chunk.len()].copy_from_slice(chunk);
             self.write(&report)?;
@@ -599,7 +612,8 @@ impl Dock {
 // theme: selected artwork family.
 // held: currently pressed key, if any.
 // Errors: PNG or ZIP generation failure; archive boundary retry exhaustion.
-pub fn make_archive(
+#[cfg(test)]
+fn make_archive(
     page: &PageConfig,
     theme: Theme,
     held: Option<usize>,
@@ -617,6 +631,8 @@ pub fn make_archive(
 }
 
 // Build an additive archive containing exactly one ordinary display key.
+/// `page`/`theme` supply artwork; `index` must precede the wide clock position.
+/// `pressed` and `enabled` select the visual state. No device is accessed.
 pub fn make_key_archive(
     page: &PageConfig,
     theme: Theme,
@@ -638,6 +654,9 @@ pub fn make_key_archive(
     )
 }
 
+/// Render the ordered physical `keys` from `page` into an in-memory additive archive.
+/// `held` selects one pressed face; `enabled` and `status_display` select availability
+/// and panel behavior. Preserve key/picture order when constructing the manifest.
 fn make_archive_for_keys(
     page: &PageConfig,
     theme: Theme,
@@ -660,12 +679,14 @@ fn make_archive_for_keys(
     archive_from_pictures(keys, &pictures, status_display)
 }
 
+/// Encode owned RGBA `picture` as PNG bytes; propagate encoder errors.
 fn encode_picture(picture: image::RgbaImage) -> Result<Vec<u8>> {
     let mut output = Cursor::new(Vec::new());
     image::DynamicImage::ImageRgba8(picture).write_to(&mut output, image::ImageFormat::Png)?;
     Ok(output.into_inner())
 }
 
+/// Produce an opaque black PNG of `width` by `height` for blank transition frames.
 fn black_picture(width: u32, height: u32) -> Result<Vec<u8>> {
     encode_picture(image::RgbaImage::from_pixel(
         width,
@@ -674,6 +695,9 @@ fn black_picture(width: u32, height: u32) -> Result<Vec<u8>> {
     ))
 }
 
+/// Pair physical `keys` with corresponding PNG `pictures` and build a firmware ZIP.
+/// Inputs must have matching order/length. `status_display` controls wide-key metadata.
+/// Fresh image names avoid firmware cache reuse; only app-generated bytes are archived.
 fn archive_from_pictures(
     keys: &[usize],
     pictures: &[Vec<u8>],
@@ -739,6 +763,30 @@ mod tests {
     use super::*;
     use crate::model::Config;
     use std::io::Read;
+
+    #[test]
+    fn malformed_button_reports_cannot_become_releases() {
+        for offset in [0, 1] {
+            let mut report = vec![0; offset + 12];
+            report[offset..offset + 4].copy_from_slice(&[0x7c, 0x7c, 0x01, 0x01]);
+            report[offset + 9] = 3;
+            for state in 0..=u8::MAX {
+                report[offset + 11] = state;
+                match decode_button(&report) {
+                    Some(event) => {
+                        assert!(state <= 1);
+                        assert_eq!(event.index, 3);
+                        assert_eq!(event.pressed, state == 1);
+                    }
+                    None => assert!(state > 1),
+                }
+            }
+            report[offset + 11] = 0;
+            report[offset + 9] = KEY_COUNT as u8;
+            assert!(decode_button(&report).is_none());
+            assert!(decode_button(&report[..offset + 11]).is_none());
+        }
+    }
 
     #[test]
     fn boot_pictures_use_every_native_display_size() -> Result<()> {
@@ -874,7 +922,7 @@ mod tests {
     }
 
     #[test]
-    fn inactive_focus_update_is_grayscale_and_preserves_navigation_and_clock() -> Result<()> {
+    fn inactive_focus_update_preserves_gray_base_overlay_navigation_and_clock() -> Result<()> {
         let page = &Config::default().pages[2];
         let keys = (0..CLOCK_KEY)
             .filter(|&i| i != NEXT_KEY)
@@ -891,15 +939,28 @@ mod tests {
         assert_eq!(positions.as_object().expect("manifest object").len(), 12);
         assert!(positions.get("4_0").is_none());
         assert!(positions.get("3_2").is_none());
+        let overlay =
+            image::load_from_memory(include_bytes!("../assets/overlay/not-available.png"))?
+                .resize_exact(196, 196, image::imageops::FilterType::Lanczos3)
+                .to_rgba8();
         for entry in positions.as_object().expect("manifest object").values() {
             let mut png = Vec::new();
             zip.by_name(entry["ViewParam"][0]["Icon"].as_str().expect("icon"))?
                 .read_to_end(&mut png)?;
             let image = image::load_from_memory(&png)?.to_rgba8();
             assert_eq!(image.dimensions(), (196, 196));
-            assert!(image
-                .pixels()
-                .all(|p| p[0] == p[1] && p[1] == p[2] && p[3] == 255));
+            assert!(image.pixels().all(|p| p[3] == 255));
+            let mut base_pixels = 0;
+            for (x, y, pixel) in image.enumerate_pixels() {
+                if overlay.get_pixel(x, y)[3] == 0 {
+                    assert_eq!(pixel[0], pixel[1]);
+                    assert_eq!(pixel[1], pixel[2]);
+                    base_pixels += 1;
+                }
+            }
+            assert!(base_pixels > 0);
+            // The existing UNAVAILABLE overlay deliberately uses the theme's color.
+            assert!(image.pixels().any(|p| p[0] != p[1] || p[1] != p[2]));
         }
         assert_eq!(
             art::render_available(Theme::CyberpunkNeon, page, NEXT_KEY, false, false)?,

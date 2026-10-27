@@ -1,21 +1,30 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Define the current settings format, built-in pages and derived navigation state.
+//! Loading validates user input before drawing or input dispatch. Generated index entries
+//! and key availability stay in memory; this module does not send keys or write to HID.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, io::Write, path::Path};
+use std::{fs, path::Path};
 
 pub const KEY_COUNT: usize = 14;
 pub const NEXT_KEY: usize = 4;
@@ -26,6 +35,7 @@ pub const THEME_KEYS: [usize; 12] = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12];
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 #[clap(rename_all = "kebab-case")]
+/// Stable serialized theme identifiers; display labels may differ from their slugs.
 pub enum Theme {
     DarkClassic,
     DarkAbstract,
@@ -59,6 +69,7 @@ impl Theme {
         Self::Memphis,
     ];
 
+    /// Return the stable settings/action token for this theme.
     pub fn slug(self) -> &'static str {
         match self {
             Self::DarkClassic => "dark-classic",
@@ -77,6 +88,7 @@ impl Theme {
         }
     }
 
+    /// Return the short human-facing theme name shown on the dock and in settings.
     pub fn label(self) -> &'static str {
         match self {
             Self::DarkClassic => "MATRIX",
@@ -125,6 +137,7 @@ pub struct PageConfig {
 }
 
 impl PageConfig {
+    /// Check the derived availability for physical `index`; an absent entry is available.
     pub fn key_available(&self, index: usize) -> bool {
         self.key_availability.get(index).copied().unwrap_or(true)
     }
@@ -133,6 +146,7 @@ impl PageConfig {
 /// Preferences saved in settings.json, separate from application shortcuts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// User preferences for executable detection and automatic page following.
 pub struct RuntimeSettings {
     pub detect_applications: bool,
     pub auto_switch: bool,
@@ -140,6 +154,7 @@ pub struct RuntimeSettings {
 }
 
 impl Default for RuntimeSettings {
+    /// Supply current defaults for a new profile; do not migrate an existing file.
     fn default() -> Self {
         Self {
             detect_applications: true,
@@ -150,6 +165,7 @@ impl Default for RuntimeSettings {
 }
 
 impl RuntimeSettings {
+    /// Reject unsupported values before callers use this configuration.
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(
             (1..=60).contains(&self.focus_poll_seconds),
@@ -161,20 +177,31 @@ impl RuntimeSettings {
 
 /// Saved dock settings plus availability calculated for the running controller.
 #[derive(Clone, Serialize, Deserialize)]
+/// Current on-disk preferences plus generated page and availability state.
 pub struct Config {
     pub theme: Theme,
     pub brightness: u8,
     pub pages: Vec<PageConfig>,
     pub setup_completed: bool,
+    /// Show the graphical welcome once. Missing flags start the new welcome flow.
+    #[serde(default = "first_run_default")]
+    pub is_first_run: bool,
     pub runtime: RuntimeSettings,
 }
 
+/// Initial percentage for a genuinely new profile, not a migration fallback.
 fn default_brightness() -> u8 {
     100
 }
 
+/// New and not-yet-welcomed profiles must display About on their first GUI launch.
+fn first_run_default() -> bool {
+    true
+}
+
 // name: user-facing page title.
 // keys: labels and actions in physical key order.
+/// Build a regular page from `name` and exactly fourteen `(label, action)` slots.
 fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
     PageConfig {
         name: name.into(),
@@ -199,11 +226,13 @@ fn page(name: &str, keys: [(&str, &str); KEY_COUNT]) -> PageConfig {
 }
 
 impl Default for Config {
+    /// Supply current defaults for a new profile; do not migrate an existing file.
     fn default() -> Self {
         let mut config = Self {
             theme: Theme::DarkClassic,
             brightness: default_brightness(),
             setup_completed: false,
+            is_first_run: true,
             runtime: RuntimeSettings::default(),
             pages: vec![
                 page(
@@ -279,6 +308,7 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Decode the bundled OBS preset; malformed bundled data is a build/source defect.
     fn obs_page() -> PageConfig {
         serde_json::from_str(include_str!("../presets/obs-creator/page.json"))
             .expect("bundled OBS Creator page must be valid")
@@ -460,6 +490,8 @@ impl Config {
             .expect("configuration includes a generated page index")
     }
 
+    /// Rebuild direct page choices from the current ordered pages.
+    /// Keep navigation/clock slots fixed; validation enforces the twelve-choice limit.
     fn refresh_page_index(&mut self) {
         let mut keys = vec![
             KeyConfig {
@@ -604,18 +636,22 @@ impl Config {
     pub fn save_new(&self, path: &Path) -> Result<()> {
         self.validate()?;
         let json = serde_json::to_vec_pretty(self)?;
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .with_context(|| format!("creating {} without overwriting it", path.display()))?;
-        file.write_all(&json)
-            .with_context(|| format!("writing {}", path.display()))
+        ulanzi_dock_vibeware::persistence::create_new(path, &json)
     }
 
     // Errors: a missing page, wrong key count, or reassigned navigation/clock key.
+    /// Reject unsupported values before callers use this configuration.
     pub fn validate(&self) -> Result<()> {
         self.runtime.validate()?;
+        anyhow::ensure!(
+            self.pages
+                .iter()
+                .filter(|page| page.name != PAGE_INDEX_NAME)
+                .count()
+                <= THEME_KEYS.len(),
+            "the page index supports at most {} regular pages",
+            THEME_KEYS.len()
+        );
         anyhow::ensure!(self.brightness <= 100, "brightness must be 0-100");
         anyhow::ensure!(
             self.pages
@@ -659,6 +695,31 @@ impl Config {
                 "page '{}' must have 14 keys",
                 page.name
             );
+            for (index, key) in page.keys.iter().enumerate() {
+                let action = key.action.as_str();
+                let valid = if matches!(action, "page:next" | "brightness:up" | "brightness:down") {
+                    Ok(())
+                } else if let Some(target) = action.strip_prefix("page:go:") {
+                    anyhow::ensure!(
+                        names.contains(target),
+                        "unknown page target '{target}' on '{}' key {index}",
+                        page.name
+                    );
+                    Ok(())
+                } else if let Some(theme) = action.strip_prefix("theme:") {
+                    Theme::from_slug(theme)
+                        .context("unknown theme action")
+                        .map(|_| ())
+                } else {
+                    crate::actions::validate(action)
+                };
+                valid.with_context(|| format!("invalid action on '{}' key {index}", page.name))?;
+                if !key.asset.is_empty() {
+                    crate::applications::validate_asset(&key.asset).with_context(|| {
+                        format!("invalid artwork on '{}' key {index}", page.name)
+                    })?;
+                }
+            }
             anyhow::ensure!(
                 page.keys[NEXT_KEY].action == "page:next",
                 "key 4 must remain page:next"
@@ -676,6 +737,23 @@ impl Config {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn invalid_custom_actions_and_assets_fail_before_controller_start() {
+        for action in [
+            "theme:missing",
+            "page:go:missing",
+            "hotkey:ctrl+unsupported",
+            "open:file:///x",
+        ] {
+            let mut config = Config::default();
+            config.pages[0].keys[0].action = action.into();
+            assert!(config.validate().is_err(), "accepted {action}");
+        }
+        let mut config = Config::default();
+        config.pages[0].keys[0].asset = "index:12".into();
+        assert!(config.validate().is_err());
+    }
 
     #[test]
     fn selector_reaches_every_other_theme_without_reassigning_navigation_or_clock() {
@@ -706,5 +784,28 @@ mod tests {
 
         assert!(config.validate().is_err());
         assert!(!config.pages.iter().any(|page| page.name == "Utility"));
+    }
+
+    #[test]
+    fn page_index_capacity_is_enforced_without_changing_defaults() {
+        let mut config = Config::default();
+        assert_eq!(
+            config
+                .pages
+                .iter()
+                .filter(|page| page.name != PAGE_INDEX_NAME)
+                .count(),
+            10
+        );
+        for index in 0..2 {
+            let mut custom = config.pages[0].clone();
+            custom.name = format!("Custom {index}");
+            config.pages.insert(config.pages.len() - 2, custom);
+        }
+        assert!(config.validate().is_ok());
+        let mut extra = config.pages[0].clone();
+        extra.name = "Overflow".into();
+        config.pages.push(extra);
+        assert!(config.validate().is_err());
     }
 }

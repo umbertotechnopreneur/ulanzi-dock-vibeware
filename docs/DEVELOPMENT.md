@@ -1,11 +1,21 @@
 <!-- VBWR B
+
 Project: UlanziDock VibeWare version
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-VibeWare is Human intent, AI execution, and plenty of tokens
+
+VibeWare: Human intent, AI execution, and plenty of tokens
+Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+
+Modified with AI: OpenAI Codex; module map, persistence and Store build guidance and readability; 2026-10-27
+Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+Evidence: docs/CODE-REVIEW.md; current working-tree changes
+
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
 License: MIT - see LICENSE
+Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+
 VBWR E -->
 
 # Build and change UlanziDock
@@ -60,12 +70,36 @@ The `build`, `msix` and `msix-icons` tasks use Windows tools. Other systems can 
 | `src/main.rs` | Reads terminal commands. |
 | `src/controller.rs` and `src/dock.rs` | Connect to the dock, draw pages and receive button presses. |
 | `src/model.rs` and `src/settings.rs` | Define pages and save preferences. |
+| `src/persistence.rs` | Lock, back up and atomically publish state across processes. |
 | `src/actions.rs` and `src/applications.rs` | Send configured shortcuts and match applications. |
-| `ui/dialogs.slint` and `src/gui.rs` | Define the windows and connect their buttons to Rust. |
+| `ui/dialogs.slint`, `src/gui.rs` and `src/gui/placement.rs` | Define windows, connect their buttons and remember Windows display placement. |
 | `src/paths.rs`, `src/startup.rs` and `src/tray.rs` | Find settings and provide Windows desktop integration. |
-| `src/art.rs` | Draws button pictures, including pressed and unavailable states. |
+| `src/art.rs`, `src/art/icons.rs`, `src/art/palette.rs` | Compose button pictures, build icon masks and choose theme colors/motifs. |
+| `src/licensing.rs`, `src/licensing/store.rs`, `src/gui/store_ui.rs` | Apply the Store theme policy, read licenses and connect purchase controls. |
 
 `settings.json` stores pages, shortcuts and runtime preferences. `applications.yaml` maps apps to pages and can provide app commands. Keep preferences such as automatic switching in the JSON file. The app accepts the current formats; it does not convert older ones.
+
+Windows dialogs save their size, position, monitor and DPI in `settings.windows.json` beside the selected settings file. If a saved monitor is disconnected, the dialog uses the monitor under the mouse, or the primary monitor if the pointer is unavailable. A second controller in the same Windows session reports that one is already running; it does not terminate it. Use the tray menu to restart or exit the existing controller.
+
+`is_first_run` starts true for a profile that has not seen the graphical welcome.
+The first Windows launch opens About on the primary display and clears the flag
+only after native presentation succeeds. Later left-clicks on the tray icon open
+About using its remembered placement; right-clicks open the tray menu. Windows
+startup never depends on the terminal welcome, which remains available through
+the explicit `run --oobe` command.
+
+See the [27 October code review](CODE-REVIEW.md) for the source findings, changes and outstanding validation.
+
+Each writable state file has a persistent `.lock` sidecar. Its OS handle serializes
+application transactions; the empty sidecar is not a stale lock after a crash.
+Do not remove it while a process may be saving. Backups remain in `.gui.bak` files.
+Initial file publication requires filesystem hard-link support (for example NTFS).
+External editors do not honor the application lock; stale-snapshot checks detect
+observed changes, but cannot eliminate every race with an unrelated editor.
+
+See [Store licensing](LICENSING.md) for the optional Windows Store build and private
+configuration. Ordinary community builds include all themes. No real product
+identity belongs in this repository.
 
 ## Work with Codex
 

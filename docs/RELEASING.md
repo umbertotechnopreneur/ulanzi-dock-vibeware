@@ -36,6 +36,10 @@ Builds on `main` and pull requests save downloadable build artifacts; they do no
 
 A built package proves that packaging completed. Real-dock checks are recorded separately in [platform coverage](PLATFORMS.md).
 
+The workflow normally runs hardware-free unit tests. When the owner explicitly
+requests builds without tests, dispatch it with `run_tests=false` and record that
+limit in the release notes. Do not describe skipped tests as passed.
+
 ## WinGet
 
 `UmbertoGiacobbi.UlanziDockVibeWare` is a proposed package ID, not a confirmed listing. For an authorized submission, use the actual release links and checksums for the two Windows ZIPs. Set `InstallerType: zip`, `NestedInstallerType: portable`, executable `ulanzi-dock-vibeware.exe` and command alias `ulanzi-dock-vibeware`.

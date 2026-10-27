@@ -1,17 +1,35 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI execution, and plenty of tokens
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-# AI Versions: Tools and models may vary by contributor and execution environment.
-# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+#
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
 # Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+#
 # VBWR E
+
+<#
+.SYNOPSIS
+Build both Windows programs from the current source and replace workspace artifacts.
+.DESCRIPTION
+Uses a dedicated build directory and staged replacement with recoverable previous files.
+It does not install, publish, run tests or contact the dock. Cleanup stays inside the
+validated workspace paths. A build failure is propagated before replacing final binaries.
+.PARAMETER StopRunning
+Explicitly allow stopping matching controller processes whose verified paths are in this workspace.
+.PARAMETER KeepBuildCache
+Retain the dedicated build directory between runs instead of removing it after the build.
+#>
 
 # Build in a dedicated temporary directory, publish one stable EXE, then
 # remove this script's temporary output unless dependency caching is requested.

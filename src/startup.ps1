@@ -1,13 +1,32 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI execution, and plenty of tokens
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+#
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
+#
 # VBWR E
+
+<#
+.SYNOPSIS
+Manage the current user's owned portable-app sign-in shortcut.
+.DESCRIPTION
+Called by startup.rs with ULANZIDOCK_STARTUP_MODE (status, enable or disable) and
+ULANZIDOCK_STARTUP_EXE, _LAUNCHER, _WORKDIR and _CONFIG path values. Paths are passed as
+data through the environment. The script checks ownership, stages changes and keeps
+backups outside Startup. It never launches the app, changes drivers or touches HID.
+Unrecognized shortcuts, malformed operations and file/COM failures stop the operation.
+#>
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
