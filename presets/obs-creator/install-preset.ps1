@@ -1,6 +1,6 @@
 # VBWR B
 #
-# Project: UlanziDock VibeWare version
+# Project: UlanziDeck
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 #
@@ -22,16 +22,16 @@
 
 <#
 .SYNOPSIS
-Adds the optional OBS Creator page to an existing UlanziDock settings file.
+Adds the optional OBS Creator page to an existing UlanziDeck settings file.
 .DESCRIPTION
-Close UlanziDock before using this script. An explicit settings path is required.
+Close UlanziDeck before using this script. An explicit settings path is required.
 Existing page values and unknown JSON values are retained as raw JSON. The nine
 standard pages keep their canonical order, additional custom pages are retained,
 and OBS Creator is placed immediately before the final Themes page.
-The script never starts UlanziDock, OBS, a build, or a device session. It does not
+The script never starts UlanziDeck, OBS, a build, or a device session. It does not
 change applications.yaml. OBS hotkeys must be configured manually.
 .PARAMETER SettingsPath
-The existing settings.json used by your UlanziDock installation.
+The existing settings.json used by your UlanziDeck installation.
 .PARAMETER Replace
 Explicitly replace an existing OBS Creator page, including its customizations.
 #>
@@ -211,7 +211,7 @@ try {
     $backupPath = $targetPath + '.obs-creator-backup-' + $suffix + '.json'
     [System.IO.File]::WriteAllText($temporaryPath, $candidateText, [System.Text.UTF8Encoding]::new($false))
     if ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($targetPath)) -cne $originalFingerprint) {
-        throw 'Settings changed while preparing the preset. Close UlanziDock and try again.'
+        throw 'Settings changed while preparing the preset. Close UlanziDeck and try again.'
     }
     # Same-directory atomic replacement also saves the exact previous file.
     # If the filesystem cannot support this operation, fail without a fallback.

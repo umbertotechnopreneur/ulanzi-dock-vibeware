@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -35,7 +35,7 @@ The controller shares its Rust code across these systems. The Windows desktop in
 | Follow the app in front and dim inactive actions | Implemented | Not implemented | Not implemented |
 | Sign-in startup and replacement of a running controller | Implemented | Start and stop manually | Start and stop manually |
 | Automatic reconnect after a missing/disconnected dock | Implemented | Controller returns an error | Controller returns an error |
-| Download format | ZIP; local x64 MSIX builder | tar.gz | tar.gz; no signed app bundle |
+| Download format | ZIP; local x64 and ARM64 MSIX builder | tar.gz | tar.gz; no signed app bundle |
 
 On Linux and macOS, application matching reports “unsupported”. Pages remain available, but do not switch automatically. Edit Windows-specific shortcuts for your system. In particular, Ctrl and the Windows key do not automatically become macOS Command shortcuts.
 

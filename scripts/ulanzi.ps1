@@ -1,6 +1,6 @@
 # VBWR B
 #
-# Project: UlanziDock VibeWare version
+# Project: UlanziDeck
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 #
@@ -19,7 +19,7 @@
 
 <#
 .SYNOPSIS
-Build UlanziDock or prepare its packages, pictures and notices.
+Build UlanziDeck or prepare its packages, pictures and notices.
 .DESCRIPTION
 Without parameters, show the menu. With -Command, run that task directly.
 Reject options that do not belong to the selected task. Work is delegated to the
@@ -36,6 +36,8 @@ For msix: install the newly built package on this PC.
 For msix: retain the package staging directory for inspection.
 .PARAMETER Configuration
 For msix: choose Debug or Release source compilation.
+.PARAMETER Architecture
+For msix: choose x64 or arm64. The default is x64.
 .PARAMETER PublisherSubject
 For msix: select the existing local signing certificate by subject.
 .PARAMETER StoreConfig
@@ -72,6 +74,7 @@ param(
     [switch] $Install,
     [switch] $KeepStaging,
     [ValidateSet('Debug', 'Release')] [string] $Configuration,
+    [ValidateSet('x64', 'arm64')] [string] $Architecture,
     [string] $PublisherSubject,
     [string] $StoreConfig,
     [string] $PackageVersion,
@@ -90,7 +93,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'PowerShell 7 or newer is req
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $allowed = @{
     build = @('StopRunning', 'KeepBuildCache')
-    msix = @('Install', 'KeepStaging', 'Configuration', 'PublisherSubject', 'StoreConfig', 'PackageVersion', 'SignStoreTestPackage')
+    msix = @('Install', 'KeepStaging', 'Configuration', 'Architecture', 'PublisherSubject', 'StoreConfig', 'PackageVersion', 'SignStoreTestPackage')
     package = @('Target', 'Label', 'Tag')
     icons = @()
     'msix-icons' = @()
@@ -160,7 +163,7 @@ if ([Console]::IsInputRedirected) { throw 'Use -Command in unattended jobs. Run 
 Push-Location -LiteralPath $root
 try {
     while ($true) {
-        Write-Host "`nUlanziDock tools" -ForegroundColor Cyan
+        Write-Host "`nUlanziDeck tools" -ForegroundColor Cyan
         Write-Host '  1  Build local Windows programs (Release, from current source)'
         Write-Host '  2  Build a Windows installer (Debug)'
         Write-Host '  3  Build and install on this PC (Debug; can close the running app)'

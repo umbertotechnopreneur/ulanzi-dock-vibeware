@@ -12,7 +12,7 @@ This guide is for preparing downloads. For everyday use, start with [installatio
 | Linux x64 | tar.gz for Ubuntu 24.04 or a compatible system. |
 | macOS Apple Silicon | tar.gz built on macOS 15. No Intel package. |
 
-See [platform coverage](PLATFORMS.md) for features and runtime limits. Windows also has a separate [local MSIX installer](INSTALLATION.md#build-your-own-installer); its script currently builds x64 only.
+See [platform coverage](PLATFORMS.md) for features and runtime limits. Windows also has a separate [local MSIX installer](INSTALLATION.md#build-your-own-installer) for x64 and ARM64.
 
 Archives include the README, guides, presets, artwork credits, MIT license, Slint and font licenses, and dependency notices. Python collects notices from already restored Cargo packages. Missing dependencies must be obtained and scanned before packaging; the notice tool does not download them.
 
@@ -42,6 +42,6 @@ limit in the release notes. Do not describe skipped tests as passed.
 
 ## WinGet
 
-`UmbertoGiacobbi.UlanziDockVibeWare` is a proposed package ID, not a confirmed listing. For an authorized submission, use the actual release links and checksums for the two Windows ZIPs. Set `InstallerType: zip`, `NestedInstallerType: portable`, executable `ulanzi-dock-vibeware.exe` and command alias `ulanzi-dock-vibeware`.
+`UmbertoGiacobbi.UlanziDeck` is a proposed package ID, not a confirmed listing. For an authorized submission, use the actual release links and checksums for the two Windows ZIPs. Set `InstallerType: zip`, `NestedInstallerType: portable`, executable `ulanzi-dock-vibeware.exe` and command alias `ulanzi-dock-vibeware`.
 
 Keep the launcher and notices beside the executable. Validate manifests with `winget validate --manifest <manifest-directory>` before submitting them to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). The install command becomes available only after acceptance and indexing. WinGet does not configure sign-in startup.

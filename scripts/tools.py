@@ -1,6 +1,6 @@
 # VBWR B
 #
-# Project: UlanziDock VibeWare version
+# Project: UlanziDeck
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 #
@@ -189,7 +189,7 @@ def main():
     if len(sys.argv) == 1:
         if not sys.stdin.isatty():
             parser.error("Choose a command; run with --help to see the choices.")
-        print("\nUlanziDock file tools\n1. App icons\n2. Button preview sheets\n3. OBS guide\n4. Dependency notices\n0. Exit")
+        print("\nUlanziDeck file tools\n1. App icons\n2. Button preview sheets\n3. OBS guide\n4. Dependency notices\n0. Exit")
         choice = input("Choose: ").strip()
         if choice in {"", "0"}:
             return

@@ -1,6 +1,6 @@
 @REM VBWR B
 @REM
-@REM Project: UlanziDock VibeWare version
+@REM Project: UlanziDeck
 @REM Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 @REM Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 @REM

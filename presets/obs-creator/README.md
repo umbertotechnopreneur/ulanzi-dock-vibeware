@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -32,11 +32,11 @@ This page sends hotkeys, not commands over an OBS connection. It shows no live r
 
 ## Add the page
 
-Existing settings need the page added once. Close UlanziDock and find the `settings.json` it uses. Start the app once first if the file does not exist.
+Existing settings need the page added once. Close UlanziDeck and find the `settings.json` it uses. Start the app once first if the file does not exist.
 2. From the repository folder, run this in PowerShell 7 with your actual settings path:
 
    ```powershell
-   .\presets\obs-creator\install-preset.ps1 -SettingsPath 'C:\path\to\UlanziDock\settings.json'
+   .\presets\obs-creator\install-preset.ps1 -SettingsPath 'C:\path\to\UlanziDeck\settings.json'
    ```
 
    The script makes a backup and prints its path. It keeps your other pages and shortcuts, and adds OBS Creator before Themes. It stops on invalid settings or duplicate page names. To replace an existing OBS Creator page, add `-Replace`; this also replaces that page's custom shortcuts.

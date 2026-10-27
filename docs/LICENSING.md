@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -77,10 +77,14 @@ product records. Use these fields with actual Partner Center values:
   "theme_product_id": "YOUR_THEME_ADDON_PRODUCT_ID",
   "package_family_name": "YOUR_PACKAGE_FAMILY_NAME",
   "package_name": "YOUR_PACKAGE_IDENTITY_NAME",
+  "display_name": "YOUR_RESERVED_APP_NAME",
   "publisher": "YOUR_PACKAGE_PUBLISHER",
   "publisher_display_name": "YOUR_PUBLISHER_DISPLAY_NAME"
 }
 ```
+
+`display_name` must exactly match a reserved app name in Partner Center. Packaging
+uses it for the package, Start entry and startup-task labels.
 
 The Product ID is the name entered when creating the add-on, not its generated
 Store ID. Match spelling/case exactly. The owner keeps the real file in Obsidian;
@@ -127,8 +131,9 @@ does not create a Store entitlement or validate purchases.
 version. Store packages require the first section to be at least 1 and the fourth
 section to be 0. If the crate is still at 0.x, supply this parameter explicitly.
 
-The current MSIX script packages x64. ARM64 packaging remains separate work; this
-change does not establish an ARM64 Store deliverable.
+The MSIX script supports `-Architecture x64` (the default) and `-Architecture arm64`.
+Cross-builds use a host-native build of the same source to generate clean settings;
+they do not execute the ARM64 application on an x64 PC. See [Store delivery](STORE-DELIVERY.md).
 
 ## Validation boundary
 

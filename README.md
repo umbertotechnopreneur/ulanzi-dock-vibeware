@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -18,7 +18,11 @@ Required by the MIT License: retain the copyright and permission notice in all c
 
 VBWR E -->
 
-# UlanziDock VibeWare version
+<img src="docs/photos/dock-closeup-clean.png" alt="Close-up of my Ulanzi D200H and its theme buttons" width="100%">
+
+<img src="docs/photos/desk-clean.png" alt="My Ulanzi D200H on a clean desk with a mouse and mousepad" width="100%">
+
+# UlanziDeck
 
 [![Build status](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/actions/workflows/build.yml)
 ![Platform: Windows, Linux and macOS](https://img.shields.io/badge/platform-Windows_%C2%B7_Linux_%C2%B7_macOS-0078D4)
@@ -28,7 +32,7 @@ Your shortcuts, music and favourite apps, one button away.
 
 ## Quick-start PDFs
 
-- **[Quick Start PDF](docs/ulanzi-dock-vibeware-guide-v2.pdf)** — the visual guide to UlanziDock.
+- **[Artwork atlas PDF](docs/ulanzi-dock-vibeware-guide-v2.pdf)** — the archived six-page design set; see the current setup guide below.
 - **[OBS Creator Quick Start PDF](docs/obs-creator-quick-start.pdf)** — set up the OBS page and its shortcuts.
 
 ## Why I built it
@@ -100,7 +104,7 @@ At the minimum or maximum, the matching button shows UNAVAILABLE.
 
 ### Jump to a page
 
-At the first dock connection, the UlanziDock and VibeWare picture appears immediately and stays fully visible for at least two seconds. It then fades to black over one more second, and the last enabled page and saved theme return. The artwork compensates for the two physical gaps between the three display rows. If the saved page was removed or disabled, the normal home page opens instead. The page index itself is never remembered.
+At the first dock connection, the UlanziDeck and VibeWare picture appears immediately and stays fully visible for at least two seconds. It then fades to black over one more second, and the last enabled page and saved theme return. The artwork compensates for the two physical gaps between the three display rows. If the saved page was removed or disabled, the normal home page opens instead. The page index itself is never remembered.
 
 On page changes, buttons fade in from left to right, top to bottom. The animation targets 100 ms in total; USB and device processing can add time. Button pictures are kept in a bounded memory cache for reuse, and overdue animation updates are combined. The wide panel returns after the buttons. Presses during a transition are discarded.
 
@@ -161,7 +165,7 @@ I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I define this project's pu
 
 To learn what VibeWare means and why I created it, read the [VibeWare manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).
 
-[UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
+[UlanziDeck on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
 
 *You are welcome to explore, adapt and reuse the open-source VibeWare materials under the project license — my contribution to the developer community.*
 

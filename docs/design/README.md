@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -18,6 +18,8 @@ License: MIT - see LICENSE
 VBWR E -->
 
 # Ideas for a future Windows editor
+
+The archived v1 renders show the former UlanziDock name. They are design history; the current public name is UlanziDeck.
 
 These twelve AI-made pictures show an idea I want to build. The current settings windows use **Slint**, a toolkit that draws desktop controls. The proposed editor would use **WinUI 3**, Microsoft's Windows interface toolkit. It would be Windows-only; the Rust controller would stay portable.
 

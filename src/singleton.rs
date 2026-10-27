@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -75,7 +75,7 @@ pub fn acquire() -> Result<Instance> {
                 let error = std::io::Error::last_os_error();
                 unsafe { CloseHandle(handle) };
                 if wait == WAIT_TIMEOUT {
-                    anyhow::bail!("UlanziDock is already running in this Windows session. Use its tray menu to configure, restart or exit it before starting another controller.");
+                    anyhow::bail!("UlanziDeck is already running in this Windows session. Use its tray menu to configure, restart or exit it before starting another controller.");
                 }
                 Err(error).context("acquiring the controller mutex")
             }

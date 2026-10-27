@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -321,7 +321,7 @@ mod windows {
     fn notification(window: HWND, icon: HICON) -> NOTIFYICONDATAW {
         let mut tip = [0u16; 128];
         let label = wide(&format!(
-            "UlanziDock VibeWare v{}",
+            "UlanziDeck v{}",
             env!("CARGO_PKG_VERSION")
         ));
         tip[..label.len()].copy_from_slice(&label);
@@ -360,7 +360,7 @@ mod windows {
         data.uFlags = NIF_TIP | NIF_SHOWTIP;
         data.szTip.fill(0);
         let label = wide(&format!(
-            "UlanziDock VibeWare v{}\n{status}",
+            "UlanziDeck v{}\n{status}",
             env!("CARGO_PKG_VERSION")
         ));
         let length = label.len().min(data.szTip.len() - 1);
@@ -377,7 +377,7 @@ mod windows {
         let data = notification(window, icon);
         ensure!(
             unsafe { Shell_NotifyIconW(NIM_ADD, &data) } != 0,
-            "Windows could not add the UlanziDock notification icon"
+            "Windows could not add the UlanziDeck notification icon"
         );
         if unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) } == 0 {
             // Leave no partially registered icon behind if startup needs to retry.
@@ -397,7 +397,7 @@ mod windows {
             env!("OUT_DIR"),
             "/ulanzi-dock-icon-32.png"
         )))
-        .context("decoding the UlanziDock tray icon")?;
+        .context("decoding the UlanziDeck tray icon")?;
         let resized = source.resize(width, height, FilterType::Nearest).to_rgba8();
         let mut rgba = image::RgbaImage::new(width, height);
         image::imageops::overlay(
@@ -549,7 +549,7 @@ mod windows {
             CreateWindowExW(
                 0,
                 class.name.as_ptr(),
-                wide("UlanziDock VibeWare").as_ptr(),
+                wide("UlanziDeck").as_ptr(),
                 0,
                 0,
                 0,
@@ -831,13 +831,13 @@ mod windows {
             if error.raw_os_error() == Some(87) {
                 return Ok(());
             }
-            return Err(error).context("opening the previous UlanziDock process");
+            return Err(error).context("opening the previous UlanziDeck process");
         }
         let waited = unsafe { WaitForSingleObject(handle, 10_000) };
         unsafe { CloseHandle(handle) };
         ensure!(
             waited == WAIT_OBJECT_0,
-            "the previous UlanziDock process did not exit within ten seconds"
+            "the previous UlanziDeck process did not exit within ten seconds"
         );
         Ok(())
     }
@@ -856,7 +856,7 @@ mod windows {
             .stderr(Stdio::null())
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .context("restarting UlanziDock")?;
+            .context("restarting UlanziDeck")?;
         Ok(())
     }
 
@@ -866,7 +866,7 @@ mod windows {
             MessageBoxW(
                 ptr::null_mut(),
                 wide(text).as_ptr(),
-                wide("UlanziDock VibeWare").as_ptr(),
+                wide("UlanziDeck").as_ptr(),
                 MB_OK | MB_ICONERROR | MB_SETFOREGROUND,
             );
         }

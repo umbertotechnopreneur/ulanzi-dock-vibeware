@@ -1,13 +1,13 @@
 # VBWR B
 #
-# Project: UlanziDock VibeWare version
+# Project: UlanziDeck
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 #
 # VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 #
-# Modified with AI: OpenAI Codex; private Store configuration and unsigned source packaging and readability; 2026-10-27
+# Modified with AI: OpenAI Codex; x64/ARM64 Store source packaging and private configuration; 2026-10-27
 # Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
 # Evidence: docs/CODE-REVIEW.md; current working-tree changes
 #
@@ -20,7 +20,7 @@
 
 <#
 .SYNOPSIS
-Build Windows x64 MSIX packages from current source.
+Build Windows x64 or ARM64 MSIX packages from current source.
 .DESCRIPTION
 Local packages use the existing trusted signing certificate. -StoreConfig embeds
 licensing configuration from an external JSON file and produces an unsigned Store
@@ -33,6 +33,9 @@ Sign a Store-identity Debug package with an already trusted matching local certi
 This enables local installation; it does not simulate a Store purchase or grant a license.
 .PARAMETER Configuration
 Debug or Release source compilation. Release is the distribution default.
+.PARAMETER Architecture
+Package architecture: x64 (default) or arm64. Cross-builds compile a host-native
+settings generator from the same source; the target executable is never run.
 .PARAMETER PackageVersion
 Optional four-part MSIX version, independent of the source crate version. Store
 versions require a nonzero major and a final zero (for example 1.0.0.0).
@@ -59,6 +62,8 @@ param(
     [switch] $KeepStaging,
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
+    [ValidateSet('x64', 'arm64')]
+    [string] $Architecture = 'x64',
     [string] $PublisherSubject = 'CN=umber',
     [string] $StoreConfig,
     [string] $PackageVersion,
@@ -71,11 +76,13 @@ if ($PSBoundParameters.Count -eq 0) {
 }
 
 $ErrorActionPreference = 'Stop'
+$Architecture = $Architecture.ToLowerInvariant()
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspacePrefix = $root.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 
 $packageName = 'VibeWare.UlanziDock'
+$packageDisplayName = 'UlanziDeck'
 $publisherDisplayName = 'Umberto Giacobbi'
 if ($SignStoreTestPackage -and (!$StoreConfig -or $Configuration -ne 'Debug')) {
     throw '-SignStoreTestPackage requires -StoreConfig and -Configuration Debug.'
@@ -87,12 +94,14 @@ if ($StoreConfig) {
         throw 'Keep Store identity configuration outside the repository.'
     }
     $storeIdentity = Get-Content -LiteralPath $StoreConfig -Raw | ConvertFrom-Json
-    foreach ($field in 'theme_product_id', 'package_family_name', 'package_name', 'publisher', 'publisher_display_name') {
+    foreach ($field in 'theme_product_id', 'package_family_name', 'package_name', 'publisher', 'publisher_display_name', 'display_name') {
         if ([string]::IsNullOrWhiteSpace([string]$storeIdentity.$field)) { throw "Store configuration is missing $field." }
     }
     $packageName = [string]$storeIdentity.package_name
     $PublisherSubject = [string]$storeIdentity.publisher
     $publisherDisplayName = [string]$storeIdentity.publisher_display_name
+    $packageDisplayName = [string]$storeIdentity.display_name
+    if ($packageDisplayName -cne $packageDisplayName.Trim()) { throw 'Store display_name must not contain surrounding whitespace.' }
 }
 
 # Path: candidate generated output; return its absolute path after workspace checks.
@@ -290,6 +299,13 @@ if ($IconsOnly) {
 }
 
 $cargo = Get-Command cargo -ErrorAction Stop
+$targetTriple = if ($Architecture -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+$rustVersion = & rustc -vV
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the Rust host target.' }
+$hostLine = $rustVersion | Where-Object { $_ -match '^host: ' } | Select-Object -First 1
+if (!$hostLine) { throw 'Rust did not report its host target.' }
+$hostTriple = $hostLine.Substring(6).Trim()
+$crossBuild = $targetTriple -ne $hostTriple
 $makeAppx = Get-WindowsSdkTool 'makeappx.exe'
 $signTool = if (!$StoreConfig -or $SignStoreTestPackage) { Get-WindowsSdkTool 'signtool.exe' }
 $cargoToml = Join-Path $root 'Cargo.toml'
@@ -314,10 +330,10 @@ if ($StoreConfig -and !$SignStoreTestPackage -and ($parsedVersion.Major -lt 1 -o
 }
 
 $configurationSuffix = if ($Configuration -eq 'Debug') { '-debug' } else { '' }
-$stage = Assert-WorkspacePath (Join-Path $root "tmp/msix-x64$configurationSuffix")
+$stage = Assert-WorkspacePath (Join-Path $root "tmp/msix-$Architecture$configurationSuffix")
 $outputDir = Assert-WorkspacePath (Join-Path $root 'artifacts/msix')
-$output = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-x64$configurationSuffix.msix")
-$unsigned = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-x64$configurationSuffix.unsigned.msix")
+$output = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.msix")
+$unsigned = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.unsigned.msix")
 $certificateFile = Assert-WorkspacePath (Join-Path $outputDir 'ulanzi-dock-vibeware-local.cer')
 
 if (Test-Path -LiteralPath $stage) {
@@ -328,22 +344,34 @@ New-Item -ItemType Directory -Force -Path $stage, $outputDir | Out-Null
 try {
     Push-Location -LiteralPath $root
     $previousStoreConfig = $env:ULANZI_STORE_CONFIG
+    $previousBuildTarget = $env:CARGO_BUILD_TARGET
     try {
+        # Use the detected host for ordinary builds and an explicit target for
+        # cross-builds, independent of a caller's CARGO_BUILD_TARGET setting.
+        $env:CARGO_BUILD_TARGET = $hostTriple
         $buildArguments = @('build', '--locked', '--bins')
         if ($Configuration -eq 'Release') { $buildArguments += '--release' }
         if ($StoreConfig) {
             $env:ULANZI_STORE_CONFIG = $StoreConfig
             $buildArguments += @('--features', 'store-licensing')
         }
-        & $cargo.Source @buildArguments
+        $targetArguments = @($buildArguments)
+        if ($crossBuild) { $targetArguments += @('--target', $targetTriple) }
+        & $cargo.Source @targetArguments
         if ($LASTEXITCODE -ne 0) { throw "Cargo build failed with exit code $LASTEXITCODE." }
+        if ($crossBuild) {
+            & $cargo.Source @buildArguments
+            if ($LASTEXITCODE -ne 0) { throw "Host settings-generator build failed with exit code $LASTEXITCODE." }
+        }
     }
     finally {
         $env:ULANZI_STORE_CONFIG = $previousStoreConfig
+        $env:CARGO_BUILD_TARGET = $previousBuildTarget
         Pop-Location
     }
 
-    $buildOutput = Join-Path $root ('target/' + $Configuration.ToLowerInvariant())
+    $buildOutput = Join-Path $root "target/$targetTriple/$($Configuration.ToLowerInvariant())"
+    $seedOutput = Join-Path $root "target/$hostTriple/$($Configuration.ToLowerInvariant())"
     foreach ($binary in 'ulanzi-dock-vibeware.exe', 'ulanzi-dock-launcher.exe') {
         $source = Join-Path $buildOutput $binary
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
@@ -352,7 +380,7 @@ try {
         Copy-Item -LiteralPath $source -Destination (Join-Path $stage $binary) -Force
     }
     # Ship clean defaults, never the developer's personal settings or completed setup.
-    & (Join-Path $buildOutput 'ulanzi-dock-vibeware.exe') init --config (Join-Path $stage 'settings.json')
+    & (Join-Path $seedOutput 'ulanzi-dock-vibeware.exe') init --config (Join-Path $stage 'settings.json')
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the initial package settings.' }
     # The seeding process has exited; its empty lock sidecar is runtime state,
     # not package content. Remove only this known file within the staging folder.
@@ -365,7 +393,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'docs/THIRD-PARTY.md') -Destination (Join-Path $notices 'THIRD-PARTY.md') -Force
     Copy-Item -LiteralPath (Join-Path $root 'docs/licenses/slint-royalty-free-2.0.md') -Destination (Join-Path $notices 'Slint-LICENSE.md') -Force
     Copy-Item -LiteralPath (Join-Path $root 'assets/fonts/bitstream-vera-license.txt') -Destination (Join-Path $notices 'Bitstream-Vera-LICENSE.txt') -Force
-    $noticeArguments = @((Join-Path $PSScriptRoot 'tools.py'), 'notices', '--mode', 'cargo', '--target', 'x86_64-pc-windows-msvc', '--output', (Join-Path $notices 'dependencies'))
+    $noticeArguments = @((Join-Path $PSScriptRoot 'tools.py'), 'notices', '--mode', 'cargo', '--target', $targetTriple, '--output', (Join-Path $notices 'dependencies'))
     if ($StoreConfig) { $noticeArguments += @('--features', 'store-licensing') }
     & python @noticeArguments
     if ($LASTEXITCODE -ne 0) { throw "Dependency notice collection failed with exit code $LASTEXITCODE." }
@@ -375,7 +403,12 @@ try {
     $manifest.Package.Identity.SetAttribute('Name', $packageName)
     $manifest.Package.Identity.SetAttribute('Version', $version)
     $manifest.Package.Identity.SetAttribute('Publisher', $PublisherSubject)
+    $manifest.Package.Identity.SetAttribute('ProcessorArchitecture', $Architecture)
     $manifest.Package.Properties.PublisherDisplayName = $publisherDisplayName
+    $manifest.Package.Properties.DisplayName = $packageDisplayName
+    foreach ($node in $manifest.SelectNodes('//*[@DisplayName]')) {
+        $node.SetAttribute('DisplayName', $packageDisplayName)
+    }
     $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
     $assets = Join-Path $stage 'Assets'
     New-Item -ItemType Directory -Force -Path $assets | Out-Null
@@ -389,6 +422,7 @@ try {
     }
     $assetDefinitions = @(
         @{ Name = 'StoreLogo'; Width = 50; Height = 50 },
+        @{ Name = 'Square71x71Logo'; Width = 71; Height = 71 },
         @{ Name = 'Square44x44Logo'; Width = 44; Height = 44 },
         @{ Name = 'Square150x150Logo'; Width = 150; Height = 150 },
         @{ Name = 'Square310x310Logo'; Width = 310; Height = 310 },
@@ -405,8 +439,12 @@ try {
             Save-Logo $logo (Join-Path $assets "$($asset.Name).scale-$scale.png") $width $height
         }
     }
-    foreach ($targetSize in 16, 20, 24, 30, 32, 36, 40, 48) {
-        Save-Logo $compactLogo (Join-Path $assets "Square44x44Logo.targetsize-$targetSize.png") $targetSize $targetSize
+    foreach ($targetSize in 16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256) {
+        $logo = if ($targetSize -lt 64) { $compactLogo } else { $detailedLogo }
+        Save-Logo $logo (Join-Path $assets "Square44x44Logo.targetsize-$targetSize.png") $targetSize $targetSize
+        foreach ($alternate in 'unplated', 'lightunplated') {
+            Save-Logo $logo (Join-Path $assets "Square44x44Logo.targetsize-$targetSize`_altform-$alternate.png") $targetSize $targetSize
+        }
     }
 
     # A Store submission must not remove an existing locally signed installer.
@@ -440,7 +478,7 @@ try {
     # pre-trusted local certificate; no certificate-store mutation occurs here.
     $signature = Get-AuthenticodeSignature -FilePath $unsigned
     if ($null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
-        throw 'The MSIX signer does not match the local UlanziDock certificate.'
+        throw 'The MSIX signer does not match the local UlanziDeck certificate.'
     }
     Move-Item -LiteralPath $unsigned -Destination $output -Force
 

@@ -30,7 +30,7 @@
     {
       "label": "NEXT PAGE",
       "action": "page:next",
-      "description": "Go to the next enabled UlanziDock page."
+      "description": "Go to the next enabled UlanziDeck page."
     },
     {
       "label": "CAMERA",
@@ -83,7 +83,7 @@
     {
       "label": "CLOCK",
       "action": "none",
-      "description": "Firmware clock or configured UlanziDock status panel; no physical-press action."
+      "description": "Firmware clock or configured UlanziDeck status panel; no physical-press action."
     }
   ]
 }

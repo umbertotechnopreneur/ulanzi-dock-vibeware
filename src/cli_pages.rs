@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -26,7 +26,7 @@ use image::imageops::FilterType;
 use std::io::{self, IsTerminal};
 
 const LOGO: &[u8] = include_bytes!("../assets/brand/vibeware-logo.png");
-const NAME: &str = "ULANZI DOCK";
+const NAME: &str = "ULANZI DECK";
 const LOGO_COLUMNS: usize = 20;
 
 /// Honor redirected output and terminal color preferences before emitting ANSI codes.
@@ -60,6 +60,9 @@ fn glyph(letter: char) -> [&'static str; 7] {
         'D' => [
             "#### ", "#   #", "#   #", "#   #", "#   #", "#   #", "#### ",
         ],
+        'E' => [
+            "#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#####",
+        ],
         'O' => [
             " ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### ",
         ],
@@ -76,7 +79,7 @@ fn glyph(letter: char) -> [&'static str; 7] {
 /// Assemble banner pixels into lines and retain their visible widths for alignment.
 fn banner_rows() -> Vec<(String, usize)> {
     if !color_enabled() {
-        let name = "UlanziDock VibeWare";
+        let name = "UlanziDeck";
         return vec![(name.to_owned(), name.chars().count())];
     }
     let banner_width = NAME.chars().count() * 6 - 1;
@@ -256,7 +259,7 @@ pub fn print_setup_intro(show_branding: bool) {
     }
     println!();
     setup_text(
-        &format!("{} Welcome to UlanziDock VibeWare", setup_icon("✨", "*")),
+        &format!("{} Welcome to UlanziDeck", setup_icon("✨", "*")),
         Tone::Accent,
     );
     setup_text(

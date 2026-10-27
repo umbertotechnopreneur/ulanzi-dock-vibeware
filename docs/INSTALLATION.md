@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -17,14 +17,14 @@ License: MIT - see LICENSE
 
 VBWR E -->
 
-# Install and set up UlanziDock
+# Install and set up UlanziDeck
 
 ## Use the Windows installer
 
 Download an MSIX from [my releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases), when available. MSIX is Windows' app package format.
 
 1. Open the MSIX and choose **Install**.
-2. Open **UlanziDock VibeWare** from Start.
+2. Open **UlanziDeck** from Start.
 3. Follow the first-run setup. Right-click the tray icon, then choose **About → Configure** to change your choices later.
 
 The tray icon is the small app icon near the Windows clock. Starting the controller can update a connected dock. If startup fails, an error window explains why.
@@ -73,6 +73,10 @@ pwsh -NoProfile -File scripts/ulanzi.ps1 -Command msix -Configuration Debug -Pub
 ```
 
 It builds both programs from current source, creates fresh package settings, includes licenses and signs an x64 MSIX in `artifacts/msix/`. The version comes from `Cargo.toml`. `-Configuration Release` makes an optimized build; the original `build-msix.ps1` command still defaults to Release when given parameters.
+
+Add `-Architecture arm64` for a native ARM64 package. The matching Rust target,
+Visual C++ ARM64 build tools and SDK libraries must already be installed. An x64
+PC can compile the ARM64 package; this does not check its behavior on ARM64 hardware.
 
 Add `-Install` to install the package on this PC. This can close a running copy. Local signing does not publish the app to Microsoft Store.
 

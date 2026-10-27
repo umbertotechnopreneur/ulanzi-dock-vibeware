@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -33,6 +33,12 @@ VBWR E -->
 | `docs/design/` | Ideas for the future Windows editor. |
 
 Most button pictures are 196 × 196 pixels. The page-index status panel is 400 × 200. The Rust drawing code in `src/art.rs` creates unavailable buttons from the normal pictures and a ribbon; there is no separate disabled-picture set.
+
+The current wordmark is `assets/brand/ulanzi-deck-logo.png`; the current boot master
+is `assets/boot/ulanzi-deck-boot-v2.png`. Older logo, banner and concept files are
+retained as design history. Use [Store delivery](STORE-DELIVERY.md) for the current
+upload icons and banners. The README opens with `dock-closeup-clean.png` and
+`desk-clean.png` from `docs/photos/`; the original photographs remain beside them.
 
 The startup master is not a ready-made set of key files. During a source build, `build.rs` resizes and slices it for the thirteen square keys and wide panel. The controller joins those slices into one picture across the dock.
 

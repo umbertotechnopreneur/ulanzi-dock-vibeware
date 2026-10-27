@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -34,7 +34,7 @@ use std::{
 // directory: Cargo output folder receiving the cropped PNGs and Rust include list.
 // Panics on missing artwork or encoding/write failure, which makes Cargo fail clearly.
 fn prepare_boot_pictures(directory: &Path) {
-    let source = image::open("assets/boot/ulanzi-dock-boot-v1.png")
+    let source = image::open("assets/boot/ulanzi-deck-boot-v2.png")
         .expect("boot image master")
         .to_rgba8();
     let canvas = image::imageops::resize(&source, 988, 592, image::imageops::FilterType::Lanczos3);
@@ -71,9 +71,9 @@ fn main() {
     prepare_store_configuration();
     println!("cargo:rerun-if-changed=ui/dialogs.slint");
     println!("cargo:rerun-if-changed=assets/brand/ulanzi-dock-icon.png");
-    println!("cargo:rerun-if-changed=assets/brand/ulanzi-dock-logo.png");
+    println!("cargo:rerun-if-changed=assets/brand/ulanzi-deck-logo.png");
     println!("cargo:rerun-if-changed=assets/brand/vibeware-logo.png");
-    println!("cargo:rerun-if-changed=assets/boot/ulanzi-dock-boot-v1.png");
+    println!("cargo:rerun-if-changed=assets/boot/ulanzi-deck-boot-v2.png");
     let directory = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
     prepare_boot_pictures(&directory);
     let source = image::open("assets/brand/ulanzi-dock-icon.png")
@@ -109,7 +109,7 @@ fn main() {
             .expect("Windows icon encoding");
         winresource::WindowsResource::new()
             .set_icon(icon.to_str().expect("Windows icon path"))
-            .set("ProductName", "UlanziDock VibeWare")
+            .set("ProductName", "UlanziDeck")
             .set("CompanyName", "Umberto Giacobbi")
             .set("LegalCopyright", "Copyright © 2026 Umberto Giacobbi")
             .compile()

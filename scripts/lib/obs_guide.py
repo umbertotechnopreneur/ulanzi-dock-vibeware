@@ -1,6 +1,6 @@
 # VBWR B
 #
-# Project: UlanziDock VibeWare version
+# Project: UlanziDeck
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 #
@@ -88,7 +88,7 @@ def rule(pdf, y):
 
 def frame(pdf, number, section, title, subtitle):
     """Draw shared page furniture; number/section label the page and title/subtitle head it."""
-    text(pdf, "ULANZIDOCK / OBS CREATOR", 36, 30, 8.5, "Bold", BLUE)
+    text(pdf, "ULANZIDECK / OBS CREATOR", 36, 30, 8.5, "Bold", BLUE)
     pdf.setFont("Mono", 8)
     pdf.setFillColor(MUTED)
     pdf.drawRightString(W - 36, H - 30, "25 OCT 2026 / v2")
@@ -159,21 +159,21 @@ def cover(pdf, image_path):
 def setup(pdf):
     """Draw the static setup instructions on pdf; no OBS or controller commands run."""
     frame(pdf, 2, "SETUP", "Set it up once.",
-          "Windows workflow. Fresh UlanziDock settings already include the OBS Creator page.")
+          "Windows workflow. Fresh UlanziDeck settings already include the OBS Creator page.")
     x, right, width = 36, 432, 373
     text(pdf, "1  Find the dock page", x, 145, 14, "Bold")
-    paragraph(pdf, "If OBS Creator is already in Configure, skip the command below. If it is missing, close UlanziDock and run this from the source folder, using your actual settings path:", x, 171, width)
+    paragraph(pdf, "If OBS Creator is already in Configure, skip the command below. If it is missing, close UlanziDeck and run this from the source folder, using your actual settings path:", x, 171, width)
     box(pdf, x, 218, width, 76)
     for i, line in enumerate([
         "pwsh -NoProfile -File",
         "  .\\presets\\obs-creator\\install-preset.ps1",
-        "  -SettingsPath 'C:\\UlanziDock\\settings.json'",
+        "  -SettingsPath 'C:\\UlanziDeck\\settings.json'",
         "Type as ONE line; the path above is an example.",
     ]):
         text(pdf, line, x + 12, 235 + i * 15, 7.7, "Mono")
     paragraph(pdf, "For an existing setup without OBS Creator, the installer adds the page before Themes and makes a backup. Other pages and shortcuts stay in place. Start the controller with that settings file.", x, 316, width)
     text(pdf, "2  Keep OBS controls within reach", x, 385, 14, "Bold")
-    paragraph(pdf, "In UlanziDock Configure, turn automatic page switching OFF, then Save + Restart. Application detection may stay ON. Press NEXT PAGE until OBS Creator appears.", x, 411, width)
+    paragraph(pdf, "In UlanziDeck Configure, turn automatic page switching OFF, then Save + Restart. Application detection may stay ON. Press NEXT PAGE until OBS Creator appears.", x, 411, width)
     paragraph(pdf, "In OBS Settings > Advanced > Hotkeys, choose Never disable hotkeys. Keep Studio Mode OFF so scene keys go directly to the recorded output.", x, 476, width, size=9.4, leading=14)
     text(pdf, "3  Build four OBS scenes", right, 145, 14, "Bold")
     scenes = [
@@ -256,7 +256,7 @@ def build_pdf(image_path: Path):
     Overwrites the generated PDF; ReportLab, JSON and filesystem errors propagate."""
     page = json.loads((PACK / "page.json").read_text(encoding="utf-8-sig"))
     pdf = canvas.Canvas(str(OUTPUT), pagesize=landscape(A4), pageCompression=1, invariant=1)
-    pdf.setTitle("OBS Creator - UlanziDock quick start")
+    pdf.setTitle("OBS Creator - UlanziDeck quick start")
     pdf.setAuthor("Umberto Giacobbi")
     pdf.setSubject("Optional D200H recording preset: installation, OBS scenes and hotkeys")
     cover(pdf, image_path)

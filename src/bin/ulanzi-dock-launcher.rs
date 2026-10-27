@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -92,11 +92,11 @@ fn main() -> std::process::ExitCode {
     {
         if let Err(error) = launch() {
             use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-            let message: Vec<u16> = format!("UlanziDock could not start:\n{error:#}")
+            let message: Vec<u16> = format!("UlanziDeck could not start:\n{error:#}")
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();
-            let title: Vec<u16> = "UlanziDock VibeWare"
+            let title: Vec<u16> = "UlanziDeck"
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();

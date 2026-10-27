@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -117,7 +117,7 @@ component ProductWordmark inherits Rectangle {
     Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/brand/ulanzi-dock-logo.png");
+        source: @image-url("../assets/brand/ulanzi-deck-logo.png");
         image-fit: contain;
     }
 }
@@ -125,7 +125,7 @@ component ProductWordmark inherits Rectangle {
 // Product/author links with a separate fixed footer for Configure and Close.
 export component AboutDialog inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
-    title: "About UlanziDock VibeWare";
+    title: "About UlanziDeck";
     preferred-width: 640px;
     preferred-height: body.preferred-height + footer.preferred-height;
     min-width: 420px;
@@ -164,7 +164,7 @@ export component AboutDialog inherits Window {
         Text { text: "I'm Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
         HorizontalLayout {
             spacing: 8px;
-            PixelButton { text: "UlanziDock"; clicked => { root.open-link("project"); } }
+            PixelButton { text: "UlanziDeck"; clicked => { root.open-link("project"); } }
             PixelButton { text: "VibeWare"; clicked => { root.open-link("vibeware"); } }
             PixelButton { text: "My website"; clicked => { root.open-link("website"); } }
         }
@@ -199,7 +199,7 @@ export component AboutDialog inherits Window {
 
 // Modeless connection notice. Dismissal does not stop the controller's retry loop.
 export component RecoveryDialog inherits Window {
-    title: "UlanziDock VibeWare - Dock disconnected";
+    title: "UlanziDeck - Dock disconnected";
     preferred-width: 520px;
     min-width: 420px;
     min-height: 230px;
@@ -213,7 +213,7 @@ export component RecoveryDialog inherits Window {
         spacing: 16px;
         Text { text: "Dock disconnected"; color: Palette.blue; font-weight: 700; font-size: 20px; }
         Text {
-            text: "Check the USB cable and power. UlanziDock is waiting for your dock and will resume automatically when it is ready.";
+            text: "Check the USB cable and power. UlanziDeck is waiting for your dock and will resume automatically when it is ready.";
             color: Palette.ink;
             wrap: word-wrap;
         }
@@ -235,7 +235,7 @@ export struct AppPage {
 // saving and restart requests; selecting a theme here does not activate it directly.
 export component MainWindow inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
-    title: "UlanziDock VibeWare — Configuration";
+    title: "UlanziDeck — Configuration";
     preferred-width: 680px;
     preferred-height: body.preferred-height + footer.preferred-height;
     min-width: 520px;

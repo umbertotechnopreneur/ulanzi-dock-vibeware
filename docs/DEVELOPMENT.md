@@ -1,6 +1,6 @@
 <!-- VBWR B
 
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 
@@ -18,7 +18,7 @@ Required by the MIT License: retain the copyright and permission notice in all c
 
 VBWR E -->
 
-# Build and change UlanziDock
+# Build and change UlanziDeck
 
 The app is written in **Rust**. Rust turns source code into a fast, self-contained program. People using the app do not need Rust or Python installed.
 
