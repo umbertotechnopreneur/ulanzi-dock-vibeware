@@ -1,13 +1,25 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
+ *
  * VBWR E */
+
+//! Start the adjacent controller from an MSIX entry point or an owned startup shortcut.
+//! The Windows GUI subsystem keeps sign-in launches quiet. This helper resolves paths and
+//! spawns the controller; it does not own the HID session or run a second controller loop.
 
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 

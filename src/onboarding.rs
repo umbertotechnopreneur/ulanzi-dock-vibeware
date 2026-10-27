@@ -1,17 +1,26 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Show the terminal welcome flow and persist completion only after confirmation.
+//! Input comes from the attached console, with a numbered fallback for simple terminals.
+//! Redirected runs do not wait for input. This flow does not open or test the dock.
 
 use crate::{
     cli_pages::{self, Tone},
@@ -25,12 +34,14 @@ use std::{
 };
 
 #[derive(Clone, Copy)]
+/// A welcome-flow decision, independent of how the terminal encodes input.
 enum Choice {
     Next,
     Back,
     Exit,
 }
 
+/// One visible menu row and the decision it returns when selected.
 struct OptionRow {
     icon: &'static str,
     label: &'static str,
@@ -38,14 +49,18 @@ struct OptionRow {
     choice: Choice,
 }
 
+/// Restore cursor visibility even when menu drawing or input returns an error.
 struct MenuCursor;
 impl Drop for MenuCursor {
+    /// Restore cursor visibility even when the welcome flow exits early.
     fn drop(&mut self) {
         print!("\x1b[?25h");
         let _ = io::stdout().flush();
     }
 }
 
+/// Draw `options`, highlighting zero-based `selected`; `redraw` replaces existing rows.
+/// Writes only to stdout and propagates flushing errors.
 fn draw_menu(options: &[OptionRow], selected: usize, redraw: bool) -> Result<()> {
     if redraw {
         print!("\x1b[{}A\r", options.len() + 1);
@@ -68,6 +83,8 @@ fn draw_menu(options: &[OptionRow], selected: usize, redraw: bool) -> Result<()>
     Ok(())
 }
 
+/// Wait for a choice from nonempty `options`, using native keys or numbered input.
+/// EOF/cancel returns Exit; console I/O errors are reported to the caller.
 fn choose(options: &[OptionRow]) -> Result<Choice> {
     println!();
     let selected = if let Some(mut input) = console::MenuInput::open()? {
@@ -137,6 +154,9 @@ fn choose(options: &[OptionRow]) -> Result<Choice> {
 
 // Complete onboarding only after the owner has seen the essentials and chosen
 // to continue. A redirected run never blocks waiting for keyboard input.
+/// `config` receives the completion flag after `path` is saved successfully.
+/// `show_branding` controls repeated artwork. Return false for cancellation or a
+/// noninteractive terminal; propagate input and persistence failures.
 pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<bool> {
     cli_pages::print_setup_intro(show_branding);
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -153,7 +173,7 @@ pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<boo
             );
             cli_pages::setup_text(
                 &format!(
-                    "{} Nine pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel and Themes.",
+                    "{} Ten pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, OBS Creator and Themes.",
                     cli_pages::setup_icon("🎛️", ">")
                 ),
                 Tone::Primary,

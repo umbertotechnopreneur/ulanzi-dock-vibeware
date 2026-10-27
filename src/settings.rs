@@ -1,22 +1,36 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ *
+ * Modified with AI: OpenAI Codex; transactional persistence and theme entitlement checks and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+ * Evidence: docs/CODE-REVIEW.md; current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
+ * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Persist current-format preferences and small session/window sidecars.
+//! Settings snapshots reject stale dialogs; `persistence` supplies interprocess
+//! locking, backups and atomic replacement. This module preserves unknown JSON
+//! metadata and never rewrites the read-only application catalogue on normal saves.
 
 use crate::model::{Config, RuntimeSettings, Theme, PAGE_INDEX_NAME};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
+    fs,
     path::{Path, PathBuf},
 };
+use ulanzi_dock_vibeware::persistence::Transaction;
 
 /// Saves only the requested preferences, preserving custom keys and metadata.
 /// Snapshots prevent a dialog from overwriting edits made since it was opened.
@@ -27,6 +41,7 @@ pub struct SettingsStore {
     catalogue: Option<Vec<u8>>,
 }
 
+/// Read `path`; absence is `None`, while permission and other I/O failures propagate.
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(bytes) => Ok(Some(bytes)),
@@ -43,10 +58,13 @@ struct SessionState {
     page: String,
 }
 
+/// Derive a sibling session sidecar from the selected `settings` filename.
 fn session_path(settings: &Path) -> PathBuf {
     settings.with_extension("session.json")
 }
 
+/// Read the remembered regular page beside `settings` without altering preferences.
+/// Malformed state is an error; an absent sidecar leaves startup at the home page.
 pub fn load_last_page(settings: &Path) -> Result<Option<String>> {
     let path = session_path(settings);
     let Some(bytes) = read_optional(&path)? else {
@@ -61,31 +79,49 @@ pub fn load_last_page(settings: &Path) -> Result<Option<String>> {
     Ok(Some(session.page))
 }
 
+/// Save regular `page` beside `settings`; reject empty names and the temporary index.
+/// The shared transaction keeps backup/atomic-write behavior for this small sidecar.
 pub fn save_last_page(settings: &Path, page: &str) -> Result<()> {
     ensure!(
         !page.trim().is_empty() && page != PAGE_INDEX_NAME,
         "only a regular page can be remembered"
     );
     let path = session_path(settings);
-    let original = read_optional(&path)?;
     let mut bytes = serde_json::to_vec_pretty(&SessionState {
         page: page.to_owned(),
     })?;
     bytes.push(b'\n');
-    if original.as_deref() == Some(bytes.as_slice()) {
-        return Ok(());
-    }
-    let change = Change::stage(&path, original.clone(), bytes)?;
-    change.backup()?;
-    ensure!(
-        read_optional(&path)? == original,
-        "Session state changed before saving"
-    );
-    change.apply()
+    save_auxiliary_file(&path, bytes)
+}
+
+/// Save session or window state with the same backup and atomic replacement as preferences.
+pub(crate) fn save_auxiliary_file(path: &Path, bytes: Vec<u8>) -> Result<()> {
+    update_auxiliary_file(path, |_| Ok(bytes))
+}
+
+/// Hold the cross-process lock around reading, merging and writing one sidecar.
+/// `path`: destination; `update`: derives new bytes from the latest optional contents.
+/// Closure, lock and I/O failures leave the current file unchanged.
+pub(crate) fn update_auxiliary_file(
+    path: &Path,
+    update: impl FnOnce(Option<&[u8]>) -> Result<Vec<u8>>,
+) -> Result<()> {
+    let transaction = Transaction::begin(path)?;
+    let original = transaction.read()?;
+    let bytes = update(original.as_deref())?;
+    transaction.replace(original.as_deref(), &bytes)
 }
 
 impl SettingsStore {
+    /// Load `path` with a stable snapshot under its canonical transaction lock.
+    /// Return validation/I/O errors instead of substituting incompatible defaults.
     pub fn load(path: &Path) -> Result<Self> {
+        let transaction = Transaction::begin(path)?;
+        Self::load_unlocked(transaction.path())
+    }
+
+    /// Load `path` while the caller already owns its transaction (no nested lock).
+    fn load_unlocked(path: &Path) -> Result<Self> {
         let json = read_optional(path)?;
         let catalogue = read_optional(&path.with_file_name("applications.yaml"))?;
         let config = Config::load(path)?;
@@ -101,6 +137,7 @@ impl SettingsStore {
         Ok(settings)
     }
 
+    /// Reject JSON or catalogue changes since this editor snapshot was loaded.
     fn check_current(&self) -> Result<()> {
         let current_json = read_optional(&self.path)?;
         let current_catalogue = read_optional(&self.path.with_file_name("applications.yaml"))?;
@@ -112,6 +149,7 @@ impl SettingsStore {
         Ok(())
     }
 
+    /// Preserve original JSON extension fields, or serialize defaults for a new file.
     fn document(&self) -> Result<serde_json::Value> {
         match &self.json {
             Some(bytes) => Ok(serde_json::from_slice(bytes)?),
@@ -121,6 +159,7 @@ impl SettingsStore {
 
     /// Back up and atomically replace one file. The application catalogue is read-only here.
     fn save_document(&mut self, document: serde_json::Value) -> Result<()> {
+        let transaction = Transaction::begin(&self.path)?;
         self.check_current()?;
 
         let config: Config = serde_json::from_value(document.clone())?;
@@ -129,15 +168,15 @@ impl SettingsStore {
         let mut bytes = serde_json::to_vec_pretty(&document)?;
         bytes.push(b'\n');
 
-        let change = Change::stage(&self.path, self.json.clone(), bytes)?;
-        change.backup()?;
         self.check_current()?;
-        change.apply()?;
+        transaction.replace(self.json.as_deref(), &bytes)?;
 
-        *self = Self::load(&self.path)?;
+        *self = Self::load_unlocked(transaction.path())?;
         Ok(())
     }
 
+    /// Replace top-level `name` with `value`, retaining all unrelated JSON content.
+    /// Full validation and stale-file checks still run through `save_document`.
     fn save_field(&mut self, name: &str, value: serde_json::Value) -> Result<()> {
         let mut document = self.document()?;
         document[name] = value;
@@ -145,12 +184,15 @@ impl SettingsStore {
         self.save_document(document)
     }
 
+    /// Save `level` in the inclusive 0–100 range; this method does not write to HID.
     pub fn save_brightness(&mut self, level: u8) -> Result<()> {
         ensure!(level <= 100, "brightness must be 0-100");
         self.save_field("brightness", level.into())
     }
 
+    /// Persist explicitly selected `theme` only after the shared licensing policy allows it.
     pub fn save_theme(&mut self, theme: Theme) -> Result<()> {
+        crate::licensing::require(theme)?;
         self.save_field("theme", serde_json::to_value(theme)?)
     }
 
@@ -159,6 +201,16 @@ impl SettingsStore {
         self.save_field("setup_completed", true.into())
     }
 
+    /// Mark the graphical welcome as shown only after its native window is presented.
+    pub fn save_first_run_completed(&mut self) -> Result<()> {
+        self.save_field("is_first_run", false.into())
+    }
+
+    /// Persist configurator preferences without deleting shortcuts or rewriting YAML.
+    /// `theme`: desired appearance; a newly selected premium theme needs entitlement.
+    /// `runtime`: validated detection/polling settings.
+    /// `app_pages`: known application page names paired with their enabled flags.
+    /// Validation, stale-editor and write failures propagate to the dialog.
     pub fn save(
         &mut self,
         theme: Theme,
@@ -166,6 +218,11 @@ impl SettingsStore {
         app_pages: &[(String, bool)],
     ) -> Result<()> {
         runtime.validate()?;
+        // Keep a previously chosen theme on disk when changing unrelated settings.
+        // Runtime policy independently checks it before drawing, including hand-edited JSON.
+        if theme != self.config.theme {
+            crate::licensing::require(theme)?;
+        }
 
         for (name, _) in app_pages {
             let known_page = self
@@ -193,96 +250,6 @@ impl SettingsStore {
         }
 
         self.save_document(document)
-    }
-}
-
-/// A flushed replacement file kept beside its destination for an atomic rename.
-struct Change {
-    path: PathBuf,
-    temporary: PathBuf,
-    original: Option<Vec<u8>>,
-}
-
-impl Change {
-    // path: destination next to the temporary file, ensuring replacement stays on one volume.
-    // original: bytes captured when the dialog loaded, used for its backup.
-    // bytes: validated replacement content.
-    // Errors: creating, writing, or flushing the temporary file.
-    fn stage(path: &Path, original: Option<Vec<u8>>, bytes: Vec<u8>) -> Result<Self> {
-        let temporary = path.with_extension(format!("gui-{}.tmp", std::process::id()));
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-            .with_context(|| format!("staging {}", path.display()))?;
-        let change = Self {
-            path: path.to_owned(),
-            temporary,
-            original,
-        };
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-        Ok(change)
-    }
-
-    // Errors: writing the adjacent .gui.bak file before any destination is changed.
-    fn backup(&self) -> Result<()> {
-        if let Some(bytes) = &self.original {
-            fs::write(
-                self.path.with_extension(format!(
-                    "{}.gui.bak",
-                    self.path.extension().unwrap_or_default().to_string_lossy()
-                )),
-                bytes,
-            )?;
-        }
-        Ok(())
-    }
-
-    // Errors: atomically replacing the destination file.
-    fn apply(&self) -> Result<()> {
-        replace(&self.temporary, &self.path)
-    }
-}
-
-impl Drop for Change {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.temporary);
-    }
-}
-
-// source: completed temporary file in the destination's directory.
-// destination: settings file to create or replace.
-// Errors: OS replacement failure.
-fn replace(source: &Path, destination: &Path) -> Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Storage::FileSystem::{
-            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-        };
-        let source: Vec<_> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-        let destination: Vec<_> = destination
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect();
-        ensure!(
-            unsafe {
-                MoveFileExW(
-                    source.as_ptr(),
-                    destination.as_ptr(),
-                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-                )
-            } != 0,
-            "Replacing settings failed: {}",
-            std::io::Error::last_os_error()
-        );
-        Ok(())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        fs::rename(source, destination).context("replacing settings")
     }
 }
 
@@ -334,6 +301,8 @@ mod tests {
                 "settings.session.json.gui.bak",
                 "applications.yaml",
                 "settings.json.gui.bak",
+                "settings.json.lock",
+                "settings.session.json.lock",
             ] {
                 let _ = fs::remove_file(self.0.join(name));
             }
@@ -444,20 +413,17 @@ mod tests {
     }
 
     #[test]
-    fn staging_failure_preserves_settings_and_the_existing_temporary_file() -> Result<()> {
+    fn stale_temporary_file_does_not_block_saving_or_get_deleted() -> Result<()> {
         let fixture = Fixture::create()?;
         let path = fixture.0.join("settings.json");
         let mut settings = SettingsStore::load(&path)?;
-        let original = fs::read(&path)?;
         let temporary = fixture
             .0
             .join(format!("settings.gui-{}.tmp", std::process::id()));
         fs::write(&temporary, b"keep existing staging data")?;
 
-        assert!(settings
-            .save(Theme::Memphis, RuntimeSettings::default(), &[])
-            .is_err());
-        assert_eq!(fs::read(&path)?, original);
+        settings.save(Theme::Memphis, RuntimeSettings::default(), &[])?;
+        assert_eq!(Config::load(&path)?.theme, Theme::Memphis);
         assert_eq!(fs::read(&temporary)?, b"keep existing staging data");
         Ok(())
     }

@@ -1,16 +1,21 @@
 <!-- VBWR B
+
 Project: UlanziDock VibeWare version
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-VibeWare is Human intent, AI execution, and plenty of tokens
+
+VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-AI Versions: Tools and models may vary by contributor and execution environment.
-AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+
+Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
+Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
+Evidence: docs/CODE-REVIEW.md and current working-tree changes
+
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
 License: MIT - see LICENSE
 Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+
 VBWR E -->
 
 # Pictures and icons

@@ -4619,7 +4619,7 @@ dependencies = [
 
 [[package]]
 name = "ulanzi-dock-vibeware"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4635,6 +4635,8 @@ dependencies = [
  "serde_yaml_ng",
  "slint",
  "slint-build",
+ "windows 0.61.3",
+ "windows-collections",
  "windows-sys 0.61.2",
  "winresource",
  "zip",

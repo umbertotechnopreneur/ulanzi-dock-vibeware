@@ -1,13 +1,54 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI execution, and plenty of tokens
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+#
+# Modified with AI: OpenAI Codex; private Store configuration and unsigned source packaging and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+# Evidence: docs/CODE-REVIEW.md; current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
+# Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+#
 # VBWR E
+
+<#
+.SYNOPSIS
+Build Windows x64 MSIX packages from current source.
+.DESCRIPTION
+Local packages use the existing trusted signing certificate. -StoreConfig embeds
+licensing configuration from an external JSON file and produces an unsigned Store
+submission package. This script does not submit or publish to Partner Center.
+.PARAMETER StoreConfig
+Absolute path outside this repository to private Store identity and add-on JSON.
+Normal Store submission packages remain unsigned.
+.PARAMETER SignStoreTestPackage
+Sign a Store-identity Debug package with an already trusted matching local certificate.
+This enables local installation; it does not simulate a Store purchase or grant a license.
+.PARAMETER Configuration
+Debug or Release source compilation. Release is the distribution default.
+.PARAMETER PackageVersion
+Optional four-part MSIX version, independent of the source crate version. Store
+versions require a nonzero major and a final zero (for example 1.0.0.0).
+.PARAMETER PublisherSubject
+Certificate subject for a local package. StoreConfig supplies the Store publisher.
+.PARAMETER Install
+Install the locally signed package, closing the existing app when needed.
+.PARAMETER KeepStaging
+Retain generated manifest, executables and assets for inspection.
+.PARAMETER IconsOnly
+Generate MSIX logo assets without building or packaging the application.
+.PARAMETER DetailedPath
+Optional detailed source logo path used by icon generation.
+.PARAMETER CompactPath
+Optional compact source logo path used for small icon sizes.
+#>
 
 [CmdletBinding()]
 param(
@@ -18,7 +59,10 @@ param(
     [switch] $KeepStaging,
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
-    [string] $PublisherSubject = 'CN=umber'
+    [string] $PublisherSubject = 'CN=umber',
+    [string] $StoreConfig,
+    [string] $PackageVersion,
+    [switch] $SignStoreTestPackage
 )
 
 if ($PSBoundParameters.Count -eq 0) {
@@ -31,6 +75,28 @@ $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspacePrefix = $root.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 
+$packageName = 'VibeWare.UlanziDock'
+$publisherDisplayName = 'Umberto Giacobbi'
+if ($SignStoreTestPackage -and (!$StoreConfig -or $Configuration -ne 'Debug')) {
+    throw '-SignStoreTestPackage requires -StoreConfig and -Configuration Debug.'
+}
+if ($StoreConfig) {
+    if ($Install -and !$SignStoreTestPackage) { throw 'Store submissions are unsigned; use a signed Debug test package for local installation.' }
+    $StoreConfig = (Resolve-Path -LiteralPath $StoreConfig -ErrorAction Stop).ProviderPath
+    if ($StoreConfig.StartsWith($workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Keep Store identity configuration outside the repository.'
+    }
+    $storeIdentity = Get-Content -LiteralPath $StoreConfig -Raw | ConvertFrom-Json
+    foreach ($field in 'theme_product_id', 'package_family_name', 'package_name', 'publisher', 'publisher_display_name') {
+        if ([string]::IsNullOrWhiteSpace([string]$storeIdentity.$field)) { throw "Store configuration is missing $field." }
+    }
+    $packageName = [string]$storeIdentity.package_name
+    $PublisherSubject = [string]$storeIdentity.publisher
+    $publisherDisplayName = [string]$storeIdentity.publisher_display_name
+}
+
+# Path: candidate generated output; return its absolute path after workspace checks.
+# Errors: paths outside the checkout or existing reparse points are rejected.
 function Assert-WorkspacePath([string] $Path) {
     $full = [System.IO.Path]::GetFullPath($Path)
     if (-not $full.StartsWith($workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -45,6 +111,8 @@ function Assert-WorkspacePath([string] $Path) {
     return $full
 }
 
+# ToolName: SDK executable filename. Search installed SDK bin/x64 folders only.
+# Errors: a missing tool stops packaging; nothing is downloaded or installed here.
 function Get-WindowsSdkTool([string] $ToolName) {
     $roots = @(
         'C:\Program Files (x86)\Windows Kits\10\bin',
@@ -65,6 +133,11 @@ function Get-WindowsSdkTool([string] $ToolName) {
     return $tool.FullName
 }
 
+# Source: existing logo artwork; its pixels remain unchanged on disk.
+# Destination: generated PNG path inside staging.
+# Width: target canvas width in physical pixels.
+# Height: target canvas height in physical pixels.
+# Errors: image decoding/writing failures propagate; GDI resources are disposed.
 function Save-Logo([string] $Source, [string] $Destination, [int] $Width, [int] $Height) {
     Add-Type -AssemblyName System.Drawing
     $image = [System.Drawing.Image]::FromFile($Source)
@@ -90,10 +163,17 @@ function Save-Logo([string] $Source, [string] $Destination, [int] $Width, [int] 
     }
 }
 
+# Hex: HTML color string; return a System.Drawing color or propagate invalid input.
 function Get-Color([string] $Hex) {
     return [System.Drawing.ColorTranslator]::FromHtml($Hex)
 }
 
+# Graphics: caller-owned destination surface; this function only disposes its brush.
+# Hex: fill color.
+# X: logical left coordinate, scaled fourfold into pixels.
+# Y: logical top coordinate, scaled fourfold into pixels.
+# Width: logical block width.
+# Height: logical block height.
 function Paint-Block(
     [System.Drawing.Graphics] $Graphics,
     [string] $Hex,
@@ -113,6 +193,10 @@ function Paint-Block(
     }
 }
 
+# Graphics: caller-owned canvas receiving one beveled key motif.
+# X: logical key left; Y: logical key top.
+# Width: logical key width; Height: logical key height.
+# Face: main fill; Highlight: top edge; Shade: bottom edge; Sparkle: accent color.
 function Paint-Key(
     [System.Drawing.Graphics] $Graphics,
     [int] $X,
@@ -131,6 +215,7 @@ function Paint-Key(
     Paint-Block $Graphics $Sparkle ($X + 8) ($Y + 12) 7 7
 }
 
+# Graphics: caller-owned canvas receiving the fixed pixel-art frame.
 function Paint-Frame([System.Drawing.Graphics] $Graphics) {
     Paint-Block $Graphics '#07162f' 0 0 256 256
     # The pad itself is the mark. The light stepped bezel keeps the VibeWare
@@ -146,6 +231,9 @@ function Paint-Frame([System.Drawing.Graphics] $Graphics) {
     Paint-Block $Graphics '#06142d' 48 196 160 8
 }
 
+# Path: output PNG, never a source replacement unless explicitly selected by caller.
+# Compact: choose the reduced-detail icon for small Windows sizes.
+# Errors: image/file failures propagate; allocated drawing resources are disposed.
 function New-Icon([string] $Path, [bool] $Compact) {
     $directory = Split-Path -Parent $Path
     [System.IO.Directory]::CreateDirectory($directory) | Out-Null
@@ -185,6 +273,8 @@ function New-Icon([string] $Path, [bool] $Compact) {
     }
 }
 
+# Generate detailed and compact logo sources using optional script-level paths.
+# No compiler, package manager, certificate store or application process is invoked.
 function Write-MsixIcons {
     Add-Type -AssemblyName System.Drawing
     if (-not $DetailedPath) { $DetailedPath = Join-Path $root 'assets/brand/ulanzi-dock-msix-icon.png' }
@@ -201,18 +291,33 @@ if ($IconsOnly) {
 
 $cargo = Get-Command cargo -ErrorAction Stop
 $makeAppx = Get-WindowsSdkTool 'makeappx.exe'
-$signTool = Get-WindowsSdkTool 'signtool.exe'
+$signTool = if (!$StoreConfig -or $SignStoreTestPackage) { Get-WindowsSdkTool 'signtool.exe' }
 $cargoToml = Join-Path $root 'Cargo.toml'
 $versionMatch = Select-String -LiteralPath $cargoToml -Pattern '^version\s*=\s*"(?<version>[0-9]+\.[0-9]+\.[0-9]+)"' | Select-Object -First 1
 if ($null -eq $versionMatch) {
     throw 'Cargo.toml does not contain a three-part package version.'
 }
 $version = "$($versionMatch.Matches[0].Groups['version'].Value).0"
+if ($PackageVersion) {
+    if ($PackageVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+        throw 'PackageVersion must contain four integer sections, for example 1.0.0.0.'
+    }
+    $version = $PackageVersion
+}
+$parsedVersion = [version]$version
+if (@($parsedVersion.Major, $parsedVersion.Minor, $parsedVersion.Build, $parsedVersion.Revision) |
+    Where-Object { $_ -gt 65535 }) {
+    throw 'Each MSIX version section must be between 0 and 65535.'
+}
+if ($StoreConfig -and !$SignStoreTestPackage -and ($parsedVersion.Major -lt 1 -or $parsedVersion.Revision -ne 0)) {
+    throw 'Store packages require a nonzero major version and a final zero. Supply -PackageVersion, for example 1.0.0.0.'
+}
 
-$stage = Assert-WorkspacePath (Join-Path $root 'tmp/msix-x64')
+$configurationSuffix = if ($Configuration -eq 'Debug') { '-debug' } else { '' }
+$stage = Assert-WorkspacePath (Join-Path $root "tmp/msix-x64$configurationSuffix")
 $outputDir = Assert-WorkspacePath (Join-Path $root 'artifacts/msix')
-$output = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-x64.msix")
-$unsigned = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-x64.unsigned.msix")
+$output = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-x64$configurationSuffix.msix")
+$unsigned = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-x64$configurationSuffix.unsigned.msix")
 $certificateFile = Assert-WorkspacePath (Join-Path $outputDir 'ulanzi-dock-vibeware-local.cer')
 
 if (Test-Path -LiteralPath $stage) {
@@ -222,13 +327,19 @@ New-Item -ItemType Directory -Force -Path $stage, $outputDir | Out-Null
 
 try {
     Push-Location -LiteralPath $root
+    $previousStoreConfig = $env:ULANZI_STORE_CONFIG
     try {
         $buildArguments = @('build', '--locked', '--bins')
         if ($Configuration -eq 'Release') { $buildArguments += '--release' }
+        if ($StoreConfig) {
+            $env:ULANZI_STORE_CONFIG = $StoreConfig
+            $buildArguments += @('--features', 'store-licensing')
+        }
         & $cargo.Source @buildArguments
         if ($LASTEXITCODE -ne 0) { throw "Cargo build failed with exit code $LASTEXITCODE." }
     }
     finally {
+        $env:ULANZI_STORE_CONFIG = $previousStoreConfig
         Pop-Location
     }
 
@@ -243,6 +354,10 @@ try {
     # Ship clean defaults, never the developer's personal settings or completed setup.
     & (Join-Path $buildOutput 'ulanzi-dock-vibeware.exe') init --config (Join-Path $stage 'settings.json')
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the initial package settings.' }
+    # The seeding process has exited; its empty lock sidecar is runtime state,
+    # not package content. Remove only this known file within the staging folder.
+    $seedLock = Join-Path $stage 'settings.json.lock'
+    if (Test-Path -LiteralPath $seedLock) { Remove-Item -LiteralPath $seedLock }
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $stage 'LICENSE') -Force
     Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination (Join-Path $stage 'README.md') -Force
     $notices = Join-Path $stage 'Notices'
@@ -250,13 +365,18 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'docs/THIRD-PARTY.md') -Destination (Join-Path $notices 'THIRD-PARTY.md') -Force
     Copy-Item -LiteralPath (Join-Path $root 'docs/licenses/slint-royalty-free-2.0.md') -Destination (Join-Path $notices 'Slint-LICENSE.md') -Force
     Copy-Item -LiteralPath (Join-Path $root 'assets/fonts/bitstream-vera-license.txt') -Destination (Join-Path $notices 'Bitstream-Vera-LICENSE.txt') -Force
-    & python (Join-Path $PSScriptRoot 'tools.py') notices --mode cargo --target x86_64-pc-windows-msvc --output (Join-Path $notices 'dependencies')
+    $noticeArguments = @((Join-Path $PSScriptRoot 'tools.py'), 'notices', '--mode', 'cargo', '--target', 'x86_64-pc-windows-msvc', '--output', (Join-Path $notices 'dependencies'))
+    if ($StoreConfig) { $noticeArguments += @('--features', 'store-licensing') }
+    & python @noticeArguments
     if ($LASTEXITCODE -ne 0) { throw "Dependency notice collection failed with exit code $LASTEXITCODE." }
 
-    $manifest = (Get-Content -LiteralPath (Join-Path $root 'packaging/msix/Package.appxmanifest.template') -Raw).
-        Replace('__MSIX_VERSION__', $version).
-        Replace('__PUBLISHER__', $PublisherSubject)
-    Set-Content -LiteralPath (Join-Path $stage 'AppxManifest.xml') -Value $manifest -Encoding utf8NoBOM
+    # Set XML values through the DOM so publisher names are escaped correctly.
+    [xml]$manifest = Get-Content -LiteralPath (Join-Path $root 'packaging/msix/Package.appxmanifest.template') -Raw
+    $manifest.Package.Identity.SetAttribute('Name', $packageName)
+    $manifest.Package.Identity.SetAttribute('Version', $version)
+    $manifest.Package.Identity.SetAttribute('Publisher', $PublisherSubject)
+    $manifest.Package.Properties.PublisherDisplayName = $publisherDisplayName
+    $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
     $assets = Join-Path $stage 'Assets'
     New-Item -ItemType Directory -Force -Path $assets | Out-Null
     Write-MsixIcons
@@ -289,11 +409,18 @@ try {
         Save-Logo $compactLogo (Join-Path $assets "Square44x44Logo.targetsize-$targetSize.png") $targetSize $targetSize
     }
 
-    foreach ($path in $unsigned, $output) {
+    # A Store submission must not remove an existing locally signed installer.
+    $packageOutputs = if ($StoreConfig -and !$SignStoreTestPackage) { @($unsigned) } else { @($unsigned, $output) }
+    foreach ($path in $packageOutputs) {
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     }
     & $makeAppx pack /o /d $stage /p $unsigned
     if ($LASTEXITCODE -ne 0) { throw "MakeAppx failed with exit code $LASTEXITCODE." }
+
+    if ($StoreConfig -and !$SignStoreTestPackage) {
+        Write-Host "Unsigned Microsoft Store submission package: $unsigned"
+        return
+    }
 
     $certificate = Get-ChildItem -Path Cert:\CurrentUser\My |
         Where-Object { $_.Subject -eq $PublisherSubject -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date).AddDays(30) } |
@@ -319,7 +446,7 @@ try {
 
     if ($Install) {
         Add-AppxPackage -Path $output -ForceApplicationShutdown -ForceUpdateFromAnyVersion
-        $package = Get-AppxPackage -Name 'VibeWare.UlanziDock' -ErrorAction Stop
+        $package = Get-AppxPackage -Name $packageName -ErrorAction Stop
         if ($package.Status -ne 'Ok') { throw "Installed MSIX has status $($package.Status)." }
         Write-Host "Installed: $($package.PackageFullName)"
     }

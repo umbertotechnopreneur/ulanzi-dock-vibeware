@@ -1,16 +1,21 @@
 # VBWR B
+#
 # Project: UlanziDock VibeWare version
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-# VibeWare is Human intent, AI execution, and plenty of tokens
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
 # Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-# AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-# AI Versions: Tools and models may vary by contributor and execution environment.
-# AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+#
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
 # License: MIT - see LICENSE
 # Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+#
 # VBWR E
 
 """Build the three-page OBS guide and a physical-layout artwork preview.
@@ -48,12 +53,17 @@ pdfmetrics.registerFont(pdfmetrics.Font("Mono", "Courier", "WinAnsiEncoding"))
 
 
 def text(pdf, value, x, y, size=10, font="Body", color=INK):
+    """Draw value on pdf at top-origin x/y, in points; size/font/color select text style."""
     pdf.setFont(font, size)
     pdf.setFillColor(color)
     pdf.drawString(x, H - y, value)
 
 
 def paragraph(pdf, value, x, y, width, size=10, leading=15, color=MUTED):
+    """Wrap value into width points from x/y and return the next top-origin y.
+
+    pdf is the active canvas; size, leading and color control layout. Raise
+    ValueError if the paragraph would overlap the reserved footer."""
     lines = simpleSplit(value, "Body", size, width)
     for line in lines:
         text(pdf, line, x, y, size=size, color=color)
@@ -64,17 +74,20 @@ def paragraph(pdf, value, x, y, width, size=10, leading=15, color=MUTED):
 
 
 def box(pdf, x, y, width, height, fill=PANEL):
+    """Draw a rounded panel on pdf using top-origin x/y and point dimensions."""
     pdf.setFillColor(fill)
     pdf.roundRect(x, H - y - height, width, height, 9, fill=1, stroke=0)
 
 
 def rule(pdf, y):
+    """Draw the shared horizontal separator at top-origin y on pdf."""
     pdf.setStrokeColor(RULE)
     pdf.setLineWidth(0.7)
     pdf.line(36, H - y, W - 36, H - y)
 
 
 def frame(pdf, number, section, title, subtitle):
+    """Draw shared page furniture; number/section label the page and title/subtitle head it."""
     text(pdf, "ULANZIDOCK / OBS CREATOR", 36, 30, 8.5, "Bold", BLUE)
     pdf.setFont("Mono", 8)
     pdf.setFillColor(MUTED)
@@ -93,7 +106,11 @@ def frame(pdf, number, section, title, subtitle):
 
 
 def preview(artwork):
-    """Assemble original rendered tiles; the wide clock is clearly illustrative."""
+    """Assemble released tiles from artwork and return the saved preview path.
+
+    Validate native tile dimensions. The wide clock is an illustration, never a
+    device screenshot or live OBS status. Existing generated preview is replaced.
+    """
     side, gap, margin, top = 196, 14, 24, 90
     sheet = Image.new("RGB", (1084, 754), "#111b2b")
     draw = ImageDraw.Draw(sheet)
@@ -120,6 +137,7 @@ def preview(artwork):
 
 
 def cover(pdf, image_path):
+    """Draw page one on pdf using the already generated preview at image_path."""
     frame(pdf, 1, "THE DECK", "Your desk. Your little studio.",
           "An optional OBS Studio recording page for the Ulanzi D200H. Twelve clear actions, one take at a time.")
     pdf.drawImage(str(image_path), 36, H - 505, width=533, height=371, preserveAspectRatio=True)
@@ -139,6 +157,7 @@ def cover(pdf, image_path):
 
 
 def setup(pdf):
+    """Draw the static setup instructions on pdf; no OBS or controller commands run."""
     frame(pdf, 2, "SETUP", "Set it up once.",
           "Windows workflow. Fresh UlanziDock settings already include the OBS Creator page.")
     x, right, width = 36, 432, 373
@@ -175,6 +194,7 @@ def setup(pdf):
 
 
 def bindings(pdf, page):
+    """Draw shortcut rows from the preset page object, keeping labels/actions source-backed."""
     frame(pdf, 3, "FIRST TAKE", "Bind the keys. Then press REC.",
           "In OBS Settings > Hotkeys, assign these combinations manually. They are custom bindings, not OBS defaults.")
     x, width, right = 36, 442, 505
@@ -224,10 +244,16 @@ def bindings(pdf, page):
 
 
 def main(artwork: Path):
+    """Build the preview from artwork, then write the printable guide.
+
+    artwork contains offline key PNGs; missing files and rendering errors propagate."""
     build_pdf(preview(artwork))
 
 
 def build_pdf(image_path: Path):
+    """Write the three-page guide to OUTPUT using image_path and the bundled preset.
+
+    Overwrites the generated PDF; ReportLab, JSON and filesystem errors propagate."""
     page = json.loads((PACK / "page.json").read_text(encoding="utf-8-sig"))
     pdf = canvas.Canvas(str(OUTPUT), pagesize=landscape(A4), pageCompression=1, invariant=1)
     pdf.setTitle("OBS Creator - UlanziDock quick start")

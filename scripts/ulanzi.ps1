@@ -1,10 +1,63 @@
+# VBWR B
+#
+# Project: UlanziDock VibeWare version
+# Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+# Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+#
+# VibeWare: Human intent, AI execution, and plenty of tokens
+# Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+#
+# Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+# Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+# Evidence: docs/CODE-REVIEW.md and current working-tree changes
+#
 # Copyright (c) 2026 Umberto Giacobbi
 # SPDX-License-Identifier: MIT
+# License: MIT - see LICENSE
+#
+# VBWR E
+
 <#
 .SYNOPSIS
 Build UlanziDock or prepare its packages, pictures and notices.
 .DESCRIPTION
 Without parameters, show the menu. With -Command, run that task directly.
+Reject options that do not belong to the selected task. Work is delegated to the
+source-build, packaging or artwork scripts; there is no hidden test or publish step.
+.PARAMETER Command
+Select the task. Other parameters are forwarded only when that task accepts them.
+.PARAMETER StopRunning
+For build: explicitly allow stopping verified workspace controller processes.
+.PARAMETER KeepBuildCache
+For build: keep the dedicated Cargo cache/output directory.
+.PARAMETER Install
+For msix: install the newly built package on this PC.
+.PARAMETER KeepStaging
+For msix: retain the package staging directory for inspection.
+.PARAMETER Configuration
+For msix: choose Debug or Release source compilation.
+.PARAMETER PublisherSubject
+For msix: select the existing local signing certificate by subject.
+.PARAMETER StoreConfig
+For msix: private external Store identity JSON, enabling Store licensing.
+.PARAMETER PackageVersion
+For msix: explicit four-part package version, for example 1.0.0.0 for the Store.
+.PARAMETER SignStoreTestPackage
+For msix: sign a Debug Store-identity package with the existing trusted certificate.
+.PARAMETER Target
+For package or notices: Rust target triple whose outputs/dependencies are selected.
+.PARAMETER Label
+For package: supported platform label used in archive names.
+.PARAMETER Tag
+For package: output version label, without creating a Git tag.
+.PARAMETER Source
+For atlases: directory containing the complete exported key pictures.
+.PARAMETER Settings
+For atlases: JSON settings used to produce the exported pictures.
+.PARAMETER Output
+For atlases or notices: destination directory.
+.PARAMETER Artwork
+For obs-guide: folder containing the released OBS key pictures.
 .EXAMPLE
 pwsh -NoProfile -File scripts/ulanzi.ps1 -Command build -KeepBuildCache
 .EXAMPLE
@@ -20,6 +73,9 @@ param(
     [switch] $KeepStaging,
     [ValidateSet('Debug', 'Release')] [string] $Configuration,
     [string] $PublisherSubject,
+    [string] $StoreConfig,
+    [string] $PackageVersion,
+    [switch] $SignStoreTestPackage,
     [string] $Target,
     [ValidateSet('windows-x64', 'windows-arm64', 'linux-x64', 'macos-arm64')] [string] $Label,
     [string] $Tag,
@@ -34,7 +90,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'PowerShell 7 or newer is req
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $allowed = @{
     build = @('StopRunning', 'KeepBuildCache')
-    msix = @('Install', 'KeepStaging', 'Configuration', 'PublisherSubject')
+    msix = @('Install', 'KeepStaging', 'Configuration', 'PublisherSubject', 'StoreConfig', 'PackageVersion', 'SignStoreTestPackage')
     package = @('Target', 'Label', 'Tag')
     icons = @()
     'msix-icons' = @()
@@ -43,6 +99,8 @@ $allowed = @{
     notices = @('Target', 'Output')
 }
 
+# Name: validated task name. Options: only that task's accepted argument/value pairs.
+# Throws on unsupported options or a delegated command failure; does not swallow errors.
 function Invoke-Task([string] $Name, [hashtable] $Options) {
     $Name = $Name.ToLowerInvariant()
     foreach ($key in $Options.Keys) {
@@ -79,6 +137,8 @@ function Invoke-Task([string] $Name, [hashtable] $Options) {
     }
 }
 
+# Prompt: user-facing label. Default: optional value returned for an empty answer.
+# A required value is requested again until nonblank text is entered.
 function Read-Value([string] $Prompt, [string] $Default = '') {
     $label = if ($Default) { "$Prompt [$Default]" } else { $Prompt }
     do { $value = Read-Host $label } while (-not $value.Trim() -and -not $Default)

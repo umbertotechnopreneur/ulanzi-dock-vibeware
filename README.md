@@ -1,16 +1,21 @@
 <!-- VBWR B
+
 Project: UlanziDock VibeWare version
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-VibeWare is Human intent, AI execution, and plenty of tokens
+
+VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-AI Versions: Tools and models may vary by contributor and execution environment.
-AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+
+Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
+Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
+Evidence: docs/CODE-REVIEW.md and current working-tree changes
+
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
 License: MIT - see LICENSE
 Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+
 VBWR E -->
 
 # UlanziDock VibeWare version
@@ -140,19 +145,24 @@ Before adding an external library or binary, I require a targeted Microsoft Wind
 
 ---
 
+<p align="right">
+  <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
+    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="160">
+  </a><br>
+  <strong>VibeWare</strong><br>
+  <em>Human intent, AI execution, and plenty of tokens</em>
+</p>
+
 ### This is VibeWare · [Manifesto](https://umbertogiacobbi.biz/vibeware/manifesto)
 
-I built UlanziDock with AI help. I guide the work and am responsible for the result.
+This project participates in the **VibeWare initiative**, an open initiative for developers who build useful software with AI under human direction. VibeWare describes participation in the initiative; it is not the application's author or publisher.
 
-I started VibeWare for people making useful software with AI. Want to know more? [Read my manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).
+I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I define this project's purpose, guide its implementation, and remain responsible for checking functionality, performance, and security. Each project keeps its own identity, license, release status and validation evidence.
+
+To learn what VibeWare means and why I created it, read the [VibeWare manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).
 
 [UlanziDock on GitHub](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware) · [VibeWare on GitHub](https://github.com/umbertotechnopreneur/VibeWare) · [umbertogiacobbi.biz](https://umbertogiacobbi.biz)
 
-[Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)
+*You are welcome to explore, adapt and reuse the open-source VibeWare materials under the project license — my contribution to the developer community.*
 
-<p align="right">
-  <a href="https://umbertogiacobbi.biz/vibeware/manifesto">
-    <img src="assets/brand/vibeware-logo.png" alt="VibeWare floppy logo" width="200">
-  </a><br>
-  <em>Human Intent, AI Execution, Plenty of Token</em>
-</p>
+[Terms](https://umbertogiacobbi.biz/terms/) · [Privacy](https://umbertogiacobbi.biz/privacy/)

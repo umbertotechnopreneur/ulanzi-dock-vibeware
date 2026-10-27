@@ -1,140 +1,86 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Keep one controller instance per Windows user session for its entire lifetime.
+//! The owned mutex is released when the guard drops. This module never kills competing
+//! processes and does not arbitrate physical USB ownership across Windows sessions.
 
 use anyhow::Result;
 
+/// Held on the main thread until the controller, HID worker and tray have stopped.
+/// A second launch must never kill an editor or another installation by filename.
+pub struct Instance {
+    #[cfg(target_os = "windows")]
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(target_os = "windows")]
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
 #[cfg(target_os = "windows")]
-mod windows {
-    use anyhow::{bail, Context, Result};
-    use std::{io, mem::size_of, ptr};
-    use windows_sys::Win32::{
-        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_ABANDONED, WAIT_OBJECT_0},
-        System::{
-            Diagnostics::ToolHelp::{
-                CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-                TH32CS_SNAPPROCESS,
-            },
-            Threading::{
-                CreateMutexW, OpenProcess, ReleaseMutex, TerminateProcess, WaitForSingleObject,
-                INFINITE, PROCESS_TERMINATE,
-            },
-        },
-    };
-
-    struct Handle(HANDLE);
-
-    impl Drop for Handle {
-        fn drop(&mut self) {
-            unsafe { CloseHandle(self.0) };
+impl Drop for Instance {
+    /// Release mutex ownership and close its handle on the acquiring thread.
+    fn drop(&mut self) {
+        // SAFETY: acquire owns the mutex on this thread; Instance cannot be sent elsewhere.
+        unsafe {
+            windows_sys::Win32::System::Threading::ReleaseMutex(self.handle);
+            windows_sys::Win32::Foundation::CloseHandle(self.handle);
         }
-    }
-
-    pub(super) fn replace_existing() -> Result<()> {
-        // Serialize simultaneous takeovers. The mutex is released before opening HID.
-        let name: Vec<u16> = "Local\\UlanziDockVibeWareTakeover"
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        let mutex = unsafe { CreateMutexW(ptr::null(), 0, name.as_ptr()) };
-        if mutex.is_null() {
-            return Err(io::Error::last_os_error()).context("creating singleton takeover mutex");
-        }
-        let mutex = Handle(mutex);
-        match unsafe { WaitForSingleObject(mutex.0, INFINITE) } {
-            WAIT_OBJECT_0 | WAIT_ABANDONED => {}
-            _ => return Err(io::Error::last_os_error()).context("waiting for singleton takeover"),
-        }
-        let result = terminate_other_instances();
-        if unsafe { ReleaseMutex(mutex.0) } == 0 {
-            return Err(io::Error::last_os_error()).context("releasing singleton takeover mutex");
-        }
-        result
-    }
-
-    fn terminate_other_instances() -> Result<()> {
-        let executable = std::env::current_exe()?
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-        if snapshot == INVALID_HANDLE_VALUE {
-            return Err(io::Error::last_os_error()).context("listing running processes");
-        }
-        let snapshot = Handle(snapshot);
-        let mut entry = PROCESSENTRY32W {
-            dwSize: size_of::<PROCESSENTRY32W>() as u32,
-            ..Default::default()
-        };
-        if unsafe { Process32FirstW(snapshot.0, &mut entry) } == 0 {
-            return Err(io::Error::last_os_error()).context("reading running processes");
-        }
-        let mut replaced = 0;
-        loop {
-            let end = entry
-                .szExeFile
-                .iter()
-                .position(|&c| c == 0)
-                .unwrap_or(entry.szExeFile.len());
-            let name = String::from_utf16_lossy(&entry.szExeFile[..end]);
-            let pid = entry.th32ProcessID;
-            if pid != std::process::id() && name.eq_ignore_ascii_case(&executable) {
-                println!("Singleton: existing {name} process PID {pid}; terminating it...");
-                // SYNCHRONIZE is a standard access right (0x0010_0000).
-                let process = unsafe { OpenProcess(PROCESS_TERMINATE | 0x0010_0000, 0, pid) };
-                if process.is_null() {
-                    let error = io::Error::last_os_error();
-                    if error.raw_os_error() != Some(87) {
-                        return Err(error).with_context(|| format!("opening existing PID {pid}"));
-                    }
-                    println!("Singleton: PID {pid} already exited.");
-                } else {
-                    let process = Handle(process);
-                    if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_OBJECT_0 {
-                        if unsafe { TerminateProcess(process.0, 1) } == 0 {
-                            let error = io::Error::last_os_error();
-                            if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_OBJECT_0 {
-                                return Err(error)
-                                    .with_context(|| format!("terminating existing PID {pid}"));
-                            }
-                        }
-                        if unsafe { WaitForSingleObject(process.0, 5000) } != WAIT_OBJECT_0 {
-                            bail!("existing PID {pid} did not exit within five seconds");
-                        }
-                    }
-                    println!("Singleton: previous PID {pid} has exited.");
-                    replaced += 1;
-                }
-            }
-            if unsafe { Process32NextW(snapshot.0, &mut entry) } == 0 {
-                break;
-            }
-        }
-        if replaced == 0 {
-            println!("Singleton: no other {executable} process is running.");
-        } else {
-            println!("Singleton: replaced {replaced} previous instance(s).");
-        }
-        Ok(())
     }
 }
 
-pub fn replace_existing() -> Result<()> {
+/// Try to acquire the session guard without waiting.
+/// An existing controller or native mutex error is reported; other platforms return
+/// a no-op guard because this Windows-specific ownership rule is not implemented there.
+pub fn acquire() -> Result<Instance> {
     #[cfg(target_os = "windows")]
-    return windows::replace_existing();
-
+    {
+        use anyhow::Context;
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT},
+            System::Threading::{CreateMutexW, WaitForSingleObject},
+        };
+        let name: Vec<u16> = "Local\\UlanziDockVibeWareController"
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        // SAFETY: the name is terminated; the returned handle is checked and owned below.
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error()).context("creating controller mutex");
+        }
+        let wait = unsafe { WaitForSingleObject(handle, 0) };
+        match wait {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Instance {
+                handle,
+                _thread: std::marker::PhantomData,
+            }),
+            _ => {
+                let error = std::io::Error::last_os_error();
+                unsafe { CloseHandle(handle) };
+                if wait == WAIT_TIMEOUT {
+                    anyhow::bail!("UlanziDock is already running in this Windows session. Use its tray menu to configure, restart or exit it before starting another controller.");
+                }
+                Err(error).context("acquiring the controller mutex")
+            }
+        }
+    }
     #[cfg(not(target_os = "windows"))]
-    Ok(())
+    Ok(Instance {})
 }

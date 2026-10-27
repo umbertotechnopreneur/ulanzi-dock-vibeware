@@ -1,16 +1,21 @@
 <!-- VBWR B
+
 Project: UlanziDock VibeWare version
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
-VibeWare is Human intent, AI execution, and plenty of tokens
+
+VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
-AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
-AI Versions: Tools and models may vary by contributor and execution environment.
-AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+
+Modified with AI: OpenAI Codex; owner-confirmed ten default pages and readability; 2026-10-27
+Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+Evidence: docs/CODE-REVIEW.md; current working-tree changes
+
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
 License: MIT - see LICENSE
 Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+
 VBWR E -->
 
 # Working on this project
@@ -34,7 +39,7 @@ VBWR E -->
 
 ## Keep the controls working
 
-- Keep nine pages in this order: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, Themes. Keep thirteen themes and both pressed/released images.
+- Keep ten pages in this order: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, OBS Creator, Themes. Keep thirteen themes and both pressed/released images.
 - NEXT PAGE stays at physical index 4. It skips disabled pages and the page index.
 - The wide display at index 13 opens the page index from every page, even an inactive one. Pause automatic page switching while the index is open. Index choices open enabled pages directly.
 - Themes stays last and offers the twelve themes other than the active one.

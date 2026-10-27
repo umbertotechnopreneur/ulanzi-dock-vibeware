@@ -1,17 +1,26 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Inspect or change this app's Windows sign-in entry after an explicit startup command.
+//! Packaged apps use Windows startup settings; portable apps use the owned shortcut
+//! helper. This module does not install drivers, elevate privileges or start the dock.
 
 use anyhow::Result;
 
@@ -30,7 +39,9 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
         } else if enable {
             println!("MSIX startup is registered by the package. Enable UlanziDock VibeWare in Windows Startup apps if it is disabled.");
         } else {
-            println!("Launch at Windows sign-in: managed by the MSIX package and Windows Startup apps.");
+            println!(
+                "Launch at Windows sign-in: managed by the MSIX package and Windows Startup apps."
+            );
         }
         return Ok(());
     }
@@ -92,6 +103,7 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
 }
 
 #[cfg(not(windows))]
+/// Reject Windows startup changes on unsupported platforms; flags have no side effects.
 pub fn manage(_enable: bool, _disable: bool) -> Result<()> {
     anyhow::bail!("Windows sign-in startup is available only on Windows")
 }

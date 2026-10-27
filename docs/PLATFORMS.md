@@ -1,3 +1,23 @@
+<!-- VBWR B
+
+Project: UlanziDock VibeWare version
+Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+
+VibeWare: Human intent, AI execution, and plenty of tokens
+Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+
+Modified with AI: OpenAI Codex; Windows placement and singleton scope and readability; 2026-10-27
+Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+Evidence: docs/CODE-REVIEW.md; current working-tree changes
+
+Copyright (c) 2026 Umberto Giacobbi
+SPDX-License-Identifier: MIT
+License: MIT - see LICENSE
+Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+
+VBWR E -->
+
 <!-- Copyright (c) 2026 Umberto Giacobbi | MIT License: see LICENSE -->
 
 # Windows, Linux and macOS
@@ -45,6 +65,6 @@ I own and have physically tested only a D200H on Windows x64. Some features stil
 
 ## Where the platform differences live
 
-For contributors: `Cargo.toml` selects Windows, Linux and macOS HID backends. `src/actions.rs` provides Windows foreground detection and platform URL openers. `src/gui.rs` exposes standalone Slint windows on all platforms, but its resident event loop is Windows-only. `src/controller.rs`, `src/tray.rs`, `src/startup.rs` and `src/singleton.rs` contain the reconnect, tray, startup and process-replacement differences. The `enigo` 0.6.1 manifest in the local Cargo cache confirms the default `x11rb` input feature.
+For contributors: `Cargo.toml` selects Windows, Linux and macOS HID backends. `src/actions.rs` provides Windows foreground detection and delegates URL opening to `src/tray.rs`. `src/gui.rs` exposes standalone Slint windows on all platforms, but its resident event loop and saved monitor placement in `src/gui/placement.rs` are Windows-only. `src/controller.rs`, `src/tray.rs`, `src/startup.rs` and `src/singleton.rs` contain the reconnect, tray, startup and single-instance differences. The `enigo` 0.6.1 manifest in the local Cargo cache confirms the default `x11rb` input feature.
 
 The planned WinUI 3 editor is [a separate Windows-only design](design/README.md). It does not replace the portable controller or current Slint windows.

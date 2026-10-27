@@ -1,25 +1,35 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Read the application catalogue and merge its mappings into the current configuration.
+//! This layer validates names, key positions and artwork references. It neither launches
+//! applications nor writes the catalogue during ordinary preference saves.
 
 use crate::model::{Config, CLOCK_KEY, NEXT_KEY};
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{collections::HashSet, fs, io::Write, path::Path};
+use std::{collections::HashSet, fs, path::Path};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+/// Versioned collection of application-to-page mappings from one YAML document.
 pub struct Catalog {
     pub version: u32,
     pub applications: Vec<Application>,
@@ -27,6 +37,7 @@ pub struct Catalog {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+/// One named app mapping: executable filenames select its existing page.
 pub struct Application {
     pub name: String,
     pub page: String,
@@ -37,6 +48,7 @@ pub struct Application {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+/// Metadata and optional action replacement for a physical key on a mapped page.
 pub struct Command {
     pub key: usize,
     pub name: String,
@@ -47,6 +59,9 @@ pub struct Command {
 }
 
 impl Catalog {
+    /// Merge this catalogue into `config` in memory, preserving actions omitted by YAML.
+    /// Errors identify duplicate mappings, unknown pages, reserved keys or bad artwork.
+    /// The caller discards the partially updated configuration if validation fails.
     pub fn apply(self, config: &mut Config) -> Result<()> {
         anyhow::ensure!(self.version == 1, "unsupported applications.yaml version");
         let mut assigned_pages = HashSet::new();
@@ -116,6 +131,8 @@ impl Catalog {
     }
 }
 
+/// Parse `asset` as `family:key` and check that the renderer supports both parts.
+/// Return the borrowed family and physical icon index; no image is loaded here.
 pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
     let (family, index) = asset
         .split_once(':')
@@ -138,20 +155,20 @@ pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
     );
     let index: usize = index.parse().context("asset key must be a number")?;
     anyhow::ensure!(index < CLOCK_KEY, "asset key must be 0-12");
+    anyhow::ensure!(
+        family != "index" || index < 10,
+        "page index asset must be 0-9"
+    );
     Ok((family, index))
 }
 
 /// An explicit editor request can create the current catalogue, never replace one.
 pub fn create_default(path: &Path) -> Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .with_context(|| format!("creating {}", path.display()))?;
-    file.write_all(include_bytes!("../applications.yaml"))
-        .context("writing the application catalogue")
+    ulanzi_dock_vibeware::persistence::create_new(path, include_bytes!("../applications.yaml"))
 }
 
+/// Read the catalogue beside `settings`, or use the bundled current default if absent.
+/// Propagate file/parse errors; an invalid existing catalogue is never replaced.
 pub fn load(settings: &Path) -> Result<Catalog> {
     let path = settings.with_file_name("applications.yaml");
     let yaml = if path.exists() {

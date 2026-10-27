@@ -1,21 +1,357 @@
 <!doctype html>
+<!-- VBWR B
+
+Project: UlanziDock VibeWare version
+Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
+Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
+
+VibeWare: Human intent, AI execution, and plenty of tokens
+Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+
+Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+Evidence: docs/CODE-REVIEW.md and current working-tree changes
+
+Copyright (c) 2026 Umberto Giacobbi
+SPDX-License-Identifier: MIT
+License: MIT - see LICENSE
+
+VBWR E -->
+<!-- Static design gallery: filter and enlarge the saved concept images.
+     This page does not configure a dock, install software, or represent a working WinUI app. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UlanziDock — WinUI 3 concepts</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1020;--panel:#151d30;--line:#293249;--ink:#f2f4ff;--muted:#a8b4d2;--accent:#956aff}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 10% 0,#272047 0,transparent 42%),var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI Variable","Segoe UI",sans-serif}
-header{max-width:1800px;margin:auto;padding:42px 32px 24px}.brand{display:flex;align-items:center;gap:12px;font-weight:650;font-size:20px}.mark{display:grid;grid-template-columns:10px 10px;gap:3px}.mark i{width:10px;height:10px;background:#9960ff;border-radius:2px}.mark i:nth-child(2){background:#ff57a5}.mark i:nth-child(3){background:#79a9ff}.mark i:nth-child(4){background:#ffa474}.chip{font-size:11px;border:1px solid var(--line);border-radius:20px;color:var(--muted);padding:4px 10px;font-weight:400}
-h1{font-size:clamp(28px,3vw,46px);line-height:1.15;letter-spacing:-1px;margin:30px 0 12px}p{color:var(--muted);max-width:840px;margin:0}.tags{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}.tags span{padding:7px 12px;background:#1a253d;border:1px solid #2f405e;border-radius:8px;font-size:12px}.tags span:nth-child(2){background:linear-gradient(90deg,#365d62,#55376d,#65364a)}
-nav{position:sticky;top:0;z-index:2;background:#10172aee;backdrop-filter:blur(20px);border-block:1px solid var(--line)}.nav-inner{max-width:1800px;margin:auto;display:flex;justify-content:space-between;gap:16px;padding:10px 32px;flex-wrap:wrap}.links,.filters{display:flex;gap:6px;align-items:center;flex-wrap:wrap}a,button{color:inherit}nav a,button{border:1px solid transparent;background:transparent;text-decoration:none;font:inherit;font-size:13px;border-radius:8px;padding:10px 14px;cursor:pointer}nav a:hover,button:hover{background:#26314a}button[aria-pressed="true"]{background:#6d3ce0;border-color:#986dff;color:#fff}a:focus-visible,button:focus-visible{outline:2px solid #9bdfff;outline-offset:3px}
-main{max-width:1800px;margin:auto;padding:12px 32px 50px}section{scroll-margin-top:110px;padding-top:32px}section h2{font-size:22px;font-weight:600;margin:0 0 15px;display:flex;align-items:center;gap:12px}section h2 span{font-size:12px;color:var(--muted);font-weight:400}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}.card img{width:100%;height:auto;display:block}.card a{display:block}.card a:hover{filter:brightness(1.06)}figcaption{display:flex;justify-content:space-between;padding:12px 16px;align-items:center;font-size:13px}figcaption a{color:#bca2ff;font-size:12px;text-decoration:none}.appearance{display:flex;align-items:center;gap:8px}.appearance:before{content:"";width:9px;height:9px;background:#ac8bff;border-radius:50%}.light .appearance:before{background:#f2dec2}
-body[data-mode="dark"] .light,body[data-mode="light"] .dark{display:none}body[data-mode="dark"] .pair,body[data-mode="light"] .pair{grid-template-columns:minmax(0,1fr);max-width:1500px;margin:auto}
-footer{border-top:1px solid var(--line);padding:24px 32px;color:var(--muted);font-size:12px;max-width:1800px;margin:auto}footer a{color:#c4adff}
-dialog{width:min(98vw,2100px);max-width:none;max-height:98vh;background:#11182a;border:1px solid #485875;border-radius:14px;padding:10px;color:white}dialog::backdrop{background:#030612e8;backdrop-filter:blur(6px)}.dialog-header{display:flex;align-items:center;justify-content:space-between;padding:0 6px 10px}dialog img{display:block;width:100%;height:auto;max-height:calc(95vh - 70px);object-fit:contain}dialog button{border-color:var(--line)}@media(max-width:900px){.pair{grid-template-columns:1fr}header,main{padding-inline:16px}.nav-inner{padding-inline:16px}h1{font-size:30px}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+/* Theme tokens, gallery layout, modal preview and responsive overrides. */
+:root {
+    color-scheme:dark;
+    --bg:#0b1020;
+    --panel:#151d30;
+    --line:#293249;
+    --ink:#f2f4ff;
+    --muted:#a8b4d2;
+    --accent:#956aff
+}
+
+* {
+    box-sizing:border-box
+}
+
+html {
+    scroll-behavior:smooth
+}
+
+body {
+    margin:0;
+    background:radial-gradient(ellipse at 10% 0,#272047 0,transparent 42%),var(--bg);
+    color:var(--ink);
+    font:15px/1.5 "Segoe UI Variable","Segoe UI",sans-serif
+}
+
+header {
+    max-width:1800px;
+    margin:auto;
+    padding:42px 32px 24px
+}
+
+.brand {
+    display:flex;
+    align-items:center;
+    gap:12px;
+    font-weight:650;
+    font-size:20px
+}
+
+.mark {
+    display:grid;
+    grid-template-columns:10px 10px;
+    gap:3px
+}
+
+.mark i {
+    width:10px;
+    height:10px;
+    background:#9960ff;
+    border-radius:2px
+}
+
+.mark i:nth-child(2) {
+    background:#ff57a5
+}
+
+.mark i:nth-child(3) {
+    background:#79a9ff
+}
+
+.mark i:nth-child(4) {
+    background:#ffa474
+}
+
+.chip {
+    font-size:11px;
+    border:1px solid var(--line);
+    border-radius:20px;
+    color:var(--muted);
+    padding:4px 10px;
+    font-weight:400
+}
+
+h1 {
+    font-size:clamp(28px,3vw,46px);
+    line-height:1.15;
+    letter-spacing:-1px;
+    margin:30px 0 12px
+}
+
+p {
+    color:var(--muted);
+    max-width:840px;
+    margin:0
+}
+
+.tags {
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin:22px 0
+}
+
+.tags span {
+    padding:7px 12px;
+    background:#1a253d;
+    border:1px solid #2f405e;
+    border-radius:8px;
+    font-size:12px
+}
+
+.tags span:nth-child(2) {
+    background:linear-gradient(90deg,#365d62,#55376d,#65364a)
+}
+
+nav {
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:#10172aee;
+    backdrop-filter:blur(20px);
+    border-block:1px solid var(--line)
+}
+
+.nav-inner {
+    max-width:1800px;
+    margin:auto;
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    padding:10px 32px;
+    flex-wrap:wrap
+}
+
+.links,.filters {
+    display:flex;
+    gap:6px;
+    align-items:center;
+    flex-wrap:wrap
+}
+
+a,button {
+    color:inherit
+}
+
+nav a,button {
+    border:1px solid transparent;
+    background:transparent;
+    text-decoration:none;
+    font:inherit;
+    font-size:13px;
+    border-radius:8px;
+    padding:10px 14px;
+    cursor:pointer
+}
+
+nav a:hover,button:hover {
+    background:#26314a
+}
+
+button[aria-pressed="true"] {
+    background:#6d3ce0;
+    border-color:#986dff;
+    color:#fff
+}
+
+a:focus-visible,button:focus-visible {
+    outline:2px solid #9bdfff;
+    outline-offset:3px
+}
+
+main {
+    max-width:1800px;
+    margin:auto;
+    padding:12px 32px 50px
+}
+
+section {
+    scroll-margin-top:110px;
+    padding-top:32px
+}
+
+section h2 {
+    font-size:22px;
+    font-weight:600;
+    margin:0 0 15px;
+    display:flex;
+    align-items:center;
+    gap:12px
+}
+
+section h2 span {
+    font-size:12px;
+    color:var(--muted);
+    font-weight:400
+}
+
+.pair {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px
+}
+
+.card {
+    margin:0;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    overflow:hidden
+}
+
+.card img {
+    width:100%;
+    height:auto;
+    display:block
+}
+
+.card a {
+    display:block
+}
+
+.card a:hover {
+    filter:brightness(1.06)
+}
+
+figcaption {
+    display:flex;
+    justify-content:space-between;
+    padding:12px 16px;
+    align-items:center;
+    font-size:13px
+}
+
+figcaption a {
+    color:#bca2ff;
+    font-size:12px;
+    text-decoration:none
+}
+
+.appearance {
+    display:flex;
+    align-items:center;
+    gap:8px
+}
+
+.appearance:before {
+    content:"";
+    width:9px;
+    height:9px;
+    background:#ac8bff;
+    border-radius:50%
+}
+
+.light .appearance:before {
+    background:#f2dec2
+}
+
+body[data-mode="dark"] .light,body[data-mode="light"] .dark {
+    display:none
+}
+
+body[data-mode="dark"] .pair,body[data-mode="light"] .pair {
+    grid-template-columns:minmax(0,1fr);
+    max-width:1500px;
+    margin:auto
+}
+
+footer {
+    border-top:1px solid var(--line);
+    padding:24px 32px;
+    color:var(--muted);
+    font-size:12px;
+    max-width:1800px;
+    margin:auto
+}
+
+footer a {
+    color:#c4adff
+}
+
+dialog {
+    width:min(98vw,2100px);
+    max-width:none;
+    max-height:98vh;
+    background:#11182a;
+    border:1px solid #485875;
+    border-radius:14px;
+    padding:10px;
+    color:white
+}
+
+dialog::backdrop {
+    background:#030612e8;
+    backdrop-filter:blur(6px)
+}
+
+.dialog-header {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 6px 10px
+}
+
+dialog img {
+    display:block;
+    width:100%;
+    height:auto;
+    max-height:calc(95vh - 70px);
+    object-fit:contain
+}
+
+dialog button {
+    border-color:var(--line)
+}
+
+@media(max-width:900px) {
+    .pair {
+        grid-template-columns:1fr
+    }
+    header,main {
+        padding-inline:16px
+    }
+    .nav-inner {
+        padding-inline:16px
+    }
+    h1 {
+        font-size:30px
+    }
+}
+
+@media(prefers-reduced-motion:reduce) {
+    html {
+        scroll-behavior:auto
+    }
+}
+
 </style>
 </head>
 <body data-mode="both">
@@ -37,10 +373,43 @@ dialog{width:min(98vw,2100px);max-width:none;max-height:98vh;background:#11182a;
 <footer>I made these pictures with AI. They show a planned app, not working software. <a href="prompts.md">Original prompts</a> · <a href="../README.md">Screen notes</a> · <a href="../../README.md">All guides</a></footer>
 <dialog id="viewer" aria-labelledby="viewer-title"><div class="dialog-header"><span id="viewer-title"></span><button id="close-viewer" type="button" aria-label="Close full-size preview">Close ×</button></div><img id="viewer-image" alt=""></dialog>
 <script>
-const viewer=document.getElementById("viewer"),picture=document.getElementById("viewer-image"),heading=document.getElementById("viewer-title");
-document.querySelectorAll("[data-filter]").forEach(button=>button.addEventListener("click",()=>{document.body.dataset.mode=button.dataset.filter;document.querySelectorAll("[data-filter]").forEach(item=>item.setAttribute("aria-pressed",String(item===button)))}));
-document.querySelectorAll(".zoom").forEach(link=>link.addEventListener("click",event=>{if(typeof viewer.showModal!=="function")return;event.preventDefault();picture.src=link.getAttribute("href");picture.alt=link.dataset.title;heading.textContent=link.dataset.title;viewer.showModal()}));
-document.getElementById("close-viewer").addEventListener("click",()=>viewer.close());
-viewer.addEventListener("click",event=>{if(event.target===viewer)viewer.close()});
+// Resolve the shared preview once; each gallery link supplies its local image and label.
+const viewer = document.getElementById("viewer");
+const picture = document.getElementById("viewer-image");
+const heading = document.getElementById("viewer-title");
+
+// A filter changes presentation only; keep aria-pressed in sync for keyboard/screen-reader users.
+document.querySelectorAll("[data-filter]").forEach(button => {
+    button.addEventListener("click", () => {
+        document.body.dataset.mode = button.dataset.filter;
+        document.querySelectorAll("[data-filter]").forEach(item => {
+            const isSelected = item === button;
+            item.setAttribute("aria-pressed", String(isSelected));
+        });
+    });
+});
+
+// Preserve normal image navigation when the browser cannot provide a modal dialog.
+document.querySelectorAll(".zoom").forEach(link => {
+    link.addEventListener("click", event => {
+        if (typeof viewer.showModal !== "function") {
+            return;
+        }
+
+        event.preventDefault();
+        picture.src = link.getAttribute("href");
+        picture.alt = link.dataset.title;
+        heading.textContent = link.dataset.title;
+        viewer.showModal();
+    });
+});
+
+document.getElementById("close-viewer").addEventListener("click", () => viewer.close());
+viewer.addEventListener("click", event => {
+    // Clicking the image must not dismiss the preview; only the surrounding dialog does.
+    if (event.target === viewer) {
+        viewer.close();
+    }
+});
 </script>
 </body></html>

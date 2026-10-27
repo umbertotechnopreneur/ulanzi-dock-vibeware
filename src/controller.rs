@@ -1,13 +1,27 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
+ *
+ * Modified with AI: OpenAI Codex; shared entitlement checks and readable controller contracts and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
+ * Evidence: docs/CODE-REVIEW.md; current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
+ * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Own the dock event loop: connection recovery, page navigation, input release
+//! pairing, redraws, and settings polling. All HID writes stay on this worker.
+//! UI and Store calls are queued elsewhere; this module never displays purchase UI
+//! synchronously or reads global keyboard input/window titles.
 
 use crate::{
     actions::{self, ForegroundProcess},
@@ -53,6 +67,8 @@ struct Controller {
     page_changed_at: Instant,
 }
 
+/// Run validated `config` using resolved CLI `options` until `control` requests exit.
+/// Restores the last enabled page, applies licensing, and propagates fatal I/O errors.
 pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result<()> {
     let foreground = foreground_process(options.detect_applications);
     let last_saved_page = settings::load_last_page(&options.config_path)?;
@@ -63,7 +79,7 @@ pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result
         matches!(foreground, ForegroundProcess::Known(_)).then(|| foreground.clone());
 
     Controller {
-        theme: options.theme,
+        theme: crate::licensing::effective(options.theme),
         config,
         options,
         control,
@@ -81,6 +97,7 @@ pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result
 }
 
 // The page index is temporary. A disabled or removed saved page cannot be opened.
+/// Resolve saved `name` within `config`; missing/disabled/index pages use home.
 fn restored_page(config: &Config, name: Option<&str>) -> usize {
     config
         .pages
@@ -97,6 +114,7 @@ impl Drop for Controller {
     }
 }
 
+/// Query the foreground executable only when `detect_applications` is enabled.
 fn foreground_process(detect_applications: bool) -> ForegroundProcess {
     if detect_applications {
         actions::foreground_process()
@@ -106,6 +124,8 @@ fn foreground_process(detect_applications: bool) -> ForegroundProcess {
 }
 
 /// Disabled application pages must still allow NEXT PAGE.
+/// Check physical `index` against `page` availability; `page_is_active` does not
+/// disable NEXT PAGE. The wide display is handled separately before this check.
 fn can_press_key(page: &PageConfig, index: usize, page_is_active: bool) -> bool {
     let is_next_page = index == NEXT_KEY;
     let page_allows_press = page_is_active || is_next_page;
@@ -115,10 +135,12 @@ fn can_press_key(page: &PageConfig, index: usize, page_is_active: bool) -> bool 
 }
 
 impl Controller {
+    /// Borrow the current page from the controller's validated page collection.
     fn page(&self) -> &PageConfig {
         &self.config.pages[self.current_page]
     }
 
+    /// Combine the user exit request with the optional command-line duration limit.
     fn is_running(&self) -> bool {
         let within_deadline = self
             .options
@@ -128,14 +150,18 @@ impl Controller {
         self.control.is_running() && within_deadline
     }
 
+    /// The page index always replaces the wide-key clock with navigation context.
     fn uses_status_display(&self) -> bool {
         self.options.status_display || self.page().name == PAGE_INDEX_NAME
     }
 
+    /// Read focus using the resolved detection setting, without changing page state.
     fn foreground(&self) -> ForegroundProcess {
         foreground_process(self.options.detect_applications)
     }
 
+    /// Own connection sessions until shutdown. Recover only recognized connection
+    /// failures on Windows; configuration/protocol errors are returned to the caller.
     fn run(mut self) -> Result<()> {
         self.config.refresh_theme_selector(self.theme)?;
         let stop = Arc::clone(&self.control);
@@ -169,6 +195,8 @@ impl Controller {
         Ok(())
     }
 
+    /// Retry a missing Windows dock while the app remains running. `None` means
+    /// shutdown was requested before a connection, not that initialization succeeded.
     fn connect(&mut self) -> Result<Option<Dock>> {
         #[cfg(target_os = "windows")]
         let mut last_error = String::new();
@@ -201,7 +229,11 @@ impl Controller {
         Ok(None)
     }
 
+    /// Open the validated consumer interface, refresh persisted brightness and
+    /// entitlement, draw boot/current state, then discard stale input reports.
     fn connect_once(&mut self) -> Result<Dock> {
+        self.theme = crate::licensing::effective(self.options.theme);
+        self.config.refresh_theme_selector(self.theme)?;
         let (api, _) = dock::discover()?;
         let dock = Dock::open(&api)?;
         self.config.brightness = Config::load_brightness(&self.options.config_path)?;
@@ -245,6 +277,7 @@ impl Controller {
     }
 
     #[cfg(target_os = "windows")]
+    /// Back off for at most two seconds, checking shutdown every 100 ms.
     fn wait_for_connection_retry(&self) {
         for _ in 0..20 {
             if !self.is_running() {
@@ -254,6 +287,8 @@ impl Controller {
         }
     }
 
+    /// Draw current state through `dock` and queue the regular page for persistence.
+    /// A generated page index is transient and must never become the startup page.
     fn show_page(&mut self, dock: &Dock) -> Result<()> {
         dock.show_transition(
             self.page(),
@@ -274,6 +309,8 @@ impl Controller {
         Ok(())
     }
 
+    /// Debounce navigation writes; `force` flushes at shutdown. Saving errors are
+    /// reported without turning a functioning HID connection into a device failure.
     fn save_pending_page(&mut self, force: bool) {
         if !force && self.page_changed_at.elapsed() < Duration::from_millis(500) {
             return;
@@ -291,6 +328,9 @@ impl Controller {
         }
     }
 
+    /// Process input on connected `dock` before lower-priority polling/redraw work.
+    /// Poll license snapshots without network waits; connection errors bubble up
+    /// to recovery. Only a normal exit attempts the shutdown fade.
     fn session(&mut self, dock: &Dock) -> Result<()> {
         let mut last_clock = Instant::now();
         let mut last_focus = Instant::now();
@@ -318,6 +358,13 @@ impl Controller {
                 continue;
             }
             if last_brightness.elapsed() >= Duration::from_millis(500) {
+                let licensed_theme = crate::licensing::effective(self.options.theme);
+                if licensed_theme != self.theme {
+                    self.held_key = None;
+                    self.theme = licensed_theme;
+                    self.config.refresh_theme_selector(self.theme)?;
+                    self.show_page(dock)?;
+                }
                 // Keep disk writes away from a burst of navigation button events.
                 self.save_pending_page(false);
                 match Config::load_brightness(&self.options.config_path) {
@@ -374,6 +421,9 @@ impl Controller {
         Ok(())
     }
 
+    /// Select a page for `foreground` when automatic switching is enabled.
+    /// Returns whether navigation changed; leaves the page index undisturbed and
+    /// clears held input so a release cannot execute an action on a different page.
     fn follow_foreground(&mut self, foreground: &ForegroundProcess) -> bool {
         if !self.options.auto_page || self.page().name == PAGE_INDEX_NAME {
             return false;
@@ -391,6 +441,7 @@ impl Controller {
         true
     }
 
+    /// Detect executable changes and redraw `dock` only when page/availability changes.
     fn refresh_focus(&mut self, dock: &Dock) -> Result<()> {
         let foreground = self.foreground();
         let known_process_changed = matches!(foreground, ForegroundProcess::Known(_))
@@ -407,6 +458,8 @@ impl Controller {
         self.refresh_availability(dock, &foreground)
     }
 
+    /// Reconcile current page availability against `foreground` on `dock`.
+    /// A transition to inactive cancels held actions but preserves navigation input.
     fn refresh_availability(&mut self, dock: &Dock, foreground: &ForegroundProcess) -> Result<()> {
         let active = actions::page_available(self.page(), foreground);
         if active == self.page_is_active {
@@ -433,6 +486,8 @@ impl Controller {
         Ok(())
     }
 
+    /// Update the model and redraw boundary keys after `level` was sent to `dock`.
+    /// Cancel a held +/- key if the new 0/100 bound makes that action unavailable.
     fn apply_brightness(&mut self, dock: &Dock, level: u8) -> Result<()> {
         self.config.brightness = level;
         self.config.refresh_key_availability();
@@ -447,6 +502,8 @@ impl Controller {
         Ok(())
     }
 
+    /// Read the latest saved level, move ten points in the `increase` direction,
+    /// persist it, and write to `dock`. Propagate USB failures; report save conflicts.
     fn adjust_brightness(&mut self, dock: &Dock, increase: bool) -> Result<()> {
         let saved = (|| -> Result<u8> {
             let _lock = self.control.lock_settings()?;
@@ -475,6 +532,9 @@ impl Controller {
     }
 
     /// Execute only a release matching an accepted press on the current page.
+    /// `event` is a validated consumer-interface report; `dock` receives visual
+    /// feedback. Return true for a page transition. Locked themes open configuration
+    /// only; purchasing requires a separate explicit click in the desktop UI.
     fn handle_button(&mut self, dock: &Dock, event: ButtonEvent) -> Result<bool> {
         if event.index == CLOCK_KEY {
             if event.pressed {
@@ -533,6 +593,19 @@ impl Controller {
         } else if let Some(slug) = action.strip_prefix("theme:") {
             let selected = Theme::from_slug(slug)
                 .with_context(|| format!("unknown selected theme '{slug}'"))?;
+            if !crate::licensing::allows(selected) {
+                // A dock button only opens the theme manager; it never buys anything.
+                let _ = crate::gui::show_theme_pack();
+                dock.show_key(
+                    self.page(),
+                    self.theme,
+                    event.index,
+                    false,
+                    self.page_is_active,
+                )?;
+                return Ok(false);
+            }
+            self.options.theme = selected;
             self.theme = selected;
             self.config.theme = selected;
             self.config.refresh_theme_selector(selected)?;

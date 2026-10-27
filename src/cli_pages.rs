@@ -1,17 +1,26 @@
 /* VBWR B
+ *
  * Project: UlanziDock VibeWare version
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
- * VibeWare is Human intent, AI execution, and plenty of tokens
+ *
+ * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
- * AI Tooling: May include OpenAI Codex, GitHub Copilot and AI-assisted CI/CD pipelines.
- * AI Versions: Tools and models may vary by contributor and execution environment.
- * AI Traceability: Refer to Git history and CI/CD logs for recorded provenance.
+ *
+ * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
+ * Evidence: docs/CODE-REVIEW.md and current working-tree changes
+ *
  * Copyright (c) 2026 Umberto Giacobbi
  * SPDX-License-Identifier: MIT
  * License: MIT - see LICENSE
  * Required by the MIT License: retain the copyright and permission notice in all copies or substantial portions of the Software.
+ *
  * VBWR E */
+
+//! Render terminal help, branding and the interactive welcome text.
+//! Width and color helpers adapt output to the attached console. This module displays
+//! information only; command execution, setup persistence and device access live elsewhere.
 
 use image::imageops::FilterType;
 use std::io::{self, IsTerminal};
@@ -20,12 +29,14 @@ const LOGO: &[u8] = include_bytes!("../assets/brand/vibeware-logo.png");
 const NAME: &str = "ULANZI DOCK";
 const LOGO_COLUMNS: usize = 20;
 
+/// Honor redirected output and terminal color preferences before emitting ANSI codes.
 fn color_enabled() -> bool {
     io::stdout().is_terminal()
         && std::env::var_os("NO_COLOR").is_none()
         && std::env::var("TERM").map_or(true, |term| term != "dumb")
 }
 
+/// Return seven bitmap rows for a supported banner `letter`; unknown letters are blank.
 fn glyph(letter: char) -> [&'static str; 7] {
     match letter {
         'U' => [
@@ -62,6 +73,7 @@ fn glyph(letter: char) -> [&'static str; 7] {
     }
 }
 
+/// Assemble banner pixels into lines and retain their visible widths for alignment.
 fn banner_rows() -> Vec<(String, usize)> {
     if !color_enabled() {
         let name = "UlanziDock VibeWare";
@@ -106,6 +118,7 @@ fn banner_rows() -> Vec<(String, usize)> {
     rows
 }
 
+/// Print the generated banner without changing the current command or settings.
 fn print_banner() {
     println!();
     for (line, _) in banner_rows() {
@@ -113,6 +126,7 @@ fn print_banner() {
     }
 }
 
+/// Composite one logo pixel against the terminal background before ANSI conversion.
 fn blended(pixel: image::Rgba<u8>) -> (u8, u8, u8) {
     let alpha = u16::from(pixel[3]);
     let blend = |channel: u8, background: u8| {
@@ -125,6 +139,7 @@ fn blended(pixel: image::Rgba<u8>) -> (u8, u8, u8) {
     )
 }
 
+/// Decode and scale the embedded logo for terminal rows; omit it on decoding failure.
 fn logo_rows() -> Option<Vec<String>> {
     if !color_enabled() {
         return None;
@@ -155,6 +170,7 @@ fn logo_rows() -> Option<Vec<String>> {
     Some(rows)
 }
 
+/// Print author, project and license identity using the available terminal width.
 fn print_identity() {
     let banner = banner_rows();
     let logo = logo_rows();
@@ -189,6 +205,7 @@ fn print_identity() {
 }
 
 // help: Clap-generated usage text printed after the project's own identity.
+/// Display clap-generated `help` under the project identity; do not execute commands.
 pub fn print_help(help: &str) {
     print_banner();
     println!("\nControl your Ulanzi D200H from the terminal.\n");
@@ -208,6 +225,7 @@ pub fn print_help(help: &str) {
     println!("Manifesto https://umbertogiacobbi.biz/vibeware/manifesto");
 }
 
+/// Print the package version embedded at compile time.
 pub fn print_version() {
     print_identity();
     println!("\nVersion {}", env!("CARGO_PKG_VERSION"));
@@ -216,6 +234,7 @@ pub fn print_version() {
     println!("Manifesto https://umbertogiacobbi.biz/vibeware/manifesto");
 }
 
+/// Display the public project description and links without opening a browser.
 pub fn print_about() {
     print_identity();
     println!("\nA resident CLI controller for the Ulanzi D200H.");
@@ -230,6 +249,7 @@ pub fn print_about() {
     println!("Manifesto    https://umbertogiacobbi.biz/vibeware/manifesto");
 }
 
+/// Print the welcome introduction; `show_branding` avoids duplicate banners.
 pub fn print_setup_intro(show_branding: bool) {
     if show_branding {
         print_identity();
@@ -240,7 +260,7 @@ pub fn print_setup_intro(show_branding: bool) {
         Tone::Accent,
     );
     setup_text(
-        "Your shortcuts, one key away. Give your Ulanzi D200H nine pages of themed controls.",
+        "Your shortcuts, one key away. Give your Ulanzi D200H ten pages of themed controls.",
         Tone::Primary,
     );
     setup_text("Two short steps, then you can get started.", Tone::Muted);
@@ -267,6 +287,7 @@ pub fn print_setup_intro(show_branding: bool) {
 // Semantic colors and emoji-led sections follow PromptMeUp's first-run view,
 // using the VibeWare palette and copy rather than its product-specific screens.
 #[derive(Clone, Copy)]
+/// Semantic terminal emphasis, separated from the exact ANSI palette.
 pub(crate) enum Tone {
     Accent,
     Primary,
@@ -276,6 +297,7 @@ pub(crate) enum Tone {
     Warning,
 }
 
+/// Wrap `text` in the ANSI colors for `tone`, or leave it plain when unsupported.
 pub(crate) fn styled(text: &str, tone: Tone) -> String {
     if !color_enabled() {
         return text.to_owned();
@@ -294,6 +316,7 @@ pub(crate) fn styled(text: &str, tone: Tone) -> String {
     )
 }
 
+/// Choose `emoji` for interactive capable terminals, otherwise return `fallback`.
 pub(crate) fn setup_icon<'a>(emoji: &'a str, fallback: &'a str) -> &'a str {
     if io::stdout().is_terminal() && std::env::var("TERM").map_or(true, |term| term != "dumb") {
         emoji
@@ -302,6 +325,7 @@ pub(crate) fn setup_icon<'a>(emoji: &'a str, fallback: &'a str) -> &'a str {
     }
 }
 
+/// Approximate console cells for one Unicode scalar; this is not full grapheme layout.
 fn character_width(character: char) -> usize {
     match character as u32 {
         0xfe0e | 0xfe0f | 0x200d => 0,
@@ -315,10 +339,12 @@ fn character_width(character: char) -> usize {
     }
 }
 
+/// Sum the local character-width approximation for wrapping unstyled `text`.
 fn text_width(text: &str) -> usize {
     text.chars().map(character_width).sum()
 }
 
+/// Keep the longest prefix of `text` that fits the requested console-cell `width`.
 pub(crate) fn clipped(text: &str, width: usize) -> String {
     let mut used = 0;
     text.chars()
@@ -329,6 +355,7 @@ pub(crate) fn clipped(text: &str, width: usize) -> String {
         .collect()
 }
 
+/// Wrap unstyled `text` to the current viewport and print it using `tone`.
 pub(crate) fn setup_text(text: &str, tone: Tone) {
     let width = crate::console::columns()
         .unwrap_or(80)
@@ -354,6 +381,7 @@ pub(crate) fn setup_text(text: &str, tone: Tone) {
     println!("  {}", styled(&line, tone));
 }
 
+/// Print a section heading (`emoji`, `title`) followed by its explanatory `hint`.
 pub(crate) fn setup_section(emoji: &str, title: &str, hint: &str) {
     println!();
     setup_text(&format!("{} {title}", setup_icon(emoji, ">")), Tone::Accent);
@@ -376,6 +404,8 @@ pub(crate) fn setup_section(emoji: &str, title: &str, hint: &str) {
     println!();
 }
 
+/// Print a clickable terminal link when supported, plus visible `url` text.
+/// `emoji` and `label` describe the link; this function never launches it.
 fn setup_link(emoji: &str, label: &str, url: &str) {
     let label = format!("{} {label}", setup_icon(emoji, ">"));
     if color_enabled()
@@ -391,6 +421,7 @@ fn setup_link(emoji: &str, label: &str, url: &str) {
     setup_text(url, Tone::Muted);
 }
 
+/// Print one menu `label`, using `tone` and a highlight when `selected` is true.
 pub(crate) fn setup_choice(label: &str, tone: Tone, selected: bool) {
     let width = crate::console::columns().unwrap_or(80).saturating_sub(5);
     let label = clipped(label, width);
