@@ -27,6 +27,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Create a separate local log for one controller launch. No device access.
+/// Store logs beside the writable profile, never inside the installed package.
+pub fn controller_log(settings: &Path) -> Result<fs::File> {
+    use std::io::Write;
+    let directory = settings.parent().context("locating the log folder")?.join("logs");
+    fs::create_dir_all(&directory).context("creating the controller log folder")?;
+    let name = format!("controller-{}-{}.log", chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ"), std::process::id());
+    let mut file = fs::OpenOptions::new().create_new(true).append(true)
+        .open(directory.join(name)).context("opening the controller log")?;
+    writeln!(file, "Controller launch UTC={} executable={} settings={}",
+        chrono::Utc::now().to_rfc3339(), std::env::current_exe()?.display(), settings.display())?;
+    Ok(file)
+}
+
 /// Resolve the writable settings file for a normal launch.
 pub fn default_settings() -> Result<PathBuf> {
     let executable = std::env::current_exe().context("locating the executable")?;

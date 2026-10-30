@@ -41,7 +41,7 @@ Linux and macOS use a terminal. See [platform instructions](PLATFORMS.md).
 
 ## Change and back up settings
 
-On Windows, open **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the app you are using. **Save + Restart** applies the changes.
+On Windows, open **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the app you are using. Changes are saved and applied automatically.
 
 The settings buttons open two text files:
 
@@ -81,3 +81,11 @@ PC can compile the ARM64 package; this does not check its behavior on ARM64 hard
 Add `-Install` to install the package on this PC. This can close a running copy. Local signing does not publish the app to Microsoft Store.
 
 See [platform coverage](PLATFORMS.md) for what has been checked on real hardware.
+
+## Controller logs
+
+When started through the Windows launcher, each run writes a local log in the
+`logs/` folder beside settings.json. It includes errors, page/theme changes and
+dock button events. Share only the relevant excerpt when reporting a problem;
+the header includes your local settings path. USB write completion alone does
+not prove that the device screen changed.

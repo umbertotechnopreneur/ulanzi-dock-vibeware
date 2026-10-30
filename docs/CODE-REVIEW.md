@@ -50,11 +50,20 @@ The scripts and dependencies have not received an exhaustive security audit.
 
 ## Window behavior
 
-On Windows, About, Configuration and Dock disconnected save independent entries in
+On Windows, About and Configuration save independent entries in
 `settings.windows.json`, beside the selected settings file. Closing a dialog or
 shutting down normally saves its state. Forced termination cannot guarantee a save.
 The file uses the existing backup and atomic replacement mechanism. It does not
 change shortcuts, theme preferences or the remembered dock page.
+
+Dock disconnection and reconnection use native Windows tray notifications, with
+no dialog or focus change. A new notice clears the previous one. Notifications
+use `NIF_REALTIME` to avoid showing stale status later. Repeated retries do not
+repeat the notice. The retry delay is 250 ms; successful initialization publishes
+the reconnect notice after the page is ready and stale input has been discarded.
+The Windows x64 Release source build and local installation completed on
+30 October 2026. Notification display and physical reconnect behavior have not
+been tested with a device.
 
 On reopening, the saved monitor is located by its device interface identity when
 available. If it is absent, use the monitor under the mouse; if the pointer cannot
@@ -214,3 +223,53 @@ through its adapter fallback, rather than `Unavailable`. The bounded startup
 retry now covers both results. The owner took over further GUI verification.
 The large VibeWare information panels were removed from About and Configuration
 at the owner's request; the small initiative badge and legal links remain.
+
+## Theme access update — 29 October 2026
+
+The owner superseded the earlier theme-pack policy: all thirteen current themes
+are included. `PREMIUM_ENABLED` is false. Store entitlement code is retained for
+six future functions, whose scope is not yet implemented. Themes never depend on
+entitlement. No new software tests, Store purchases or dock trials were run.
+
+## Immediate configurator preferences — 29 October 2026
+
+Theme selection, detection controls and application-page toggles now save automatically.
+The HID loop reads saved preferences at 100 ms intervals and redraws changed themes
+and page availability on its own thread. Device theme actions never open a purchase
+window. GUI writes merge changed fields into the latest disk snapshot so an unrelated
+checkbox does not overwrite a theme selected on the dock. Atomic writes and backups
+remain. Reload, Save and Save + Restart controls are removed. Configuration starts
+at 820 x 900 logical pixels, bounded by the monitor work area. No live dock or UI
+trial was run for this change.
+
+## Controller logging and owner-observed theme change — 29 October 2026
+
+The launcher now preserves stdout/stderr in a per-launch log under the writable
+profile's `logs/` directory. Restarted controllers inherit those streams. Theme
+preference redraws and dock button press/release pairs include UTC timestamps.
+No global keyboard input is recorded. Logs remain local.
+
+The owner authorized a restart and one D200H theme-selection check. Local signed
+x64 Release 1.0.6.0 was source-built and installed. The log records page index,
+Themes, physical key 6 press/release, and `Theme: cyberpunk-neon`; settings.json
+contains the same theme. The owner confirmed the visible change from Manga.
+This establishes that observed device selection and save, not GUI combo behavior
+or other hardware/Store flows.
+
+Windows reported a 1.0.5.0 hang during package replacement. The prior controller
+had no persistent output, so the original failure cause is not established.
+
+## Local delivery — 30 October 2026
+
+The owner authorized delivery of all pending changes. Windows x64 Release MSIX
+1.0.7.0 was built from current source with `store-licensing` and Cargo offline.
+No new dependencies were downloaded. Compilation completed with three dead-code
+warnings (`is_free`, `allows`, `request_restart`). MakeAppx created the package.
+
+The local package was signed with the existing trusted certificate and installed
+over 1.0.6.0 after backing up profile settings. Windows reports version 1.0.7.0
+and status `Ok`. Both installed executable hashes match the current source build.
+The existing app is reopened after replacement. No software tests, disconnect/
+reconnect trials, Store purchases or publication were performed. ARM64, Linux
+and macOS were not rebuilt for this delivery. The delivery commit skips automatic
+CI because the current PR workflow includes tests requiring separate permission.

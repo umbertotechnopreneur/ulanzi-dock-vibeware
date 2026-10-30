@@ -173,7 +173,7 @@ def setup(pdf):
         text(pdf, line, x + 12, 235 + i * 15, 7.7, "Mono")
     paragraph(pdf, "For an existing setup without OBS Creator, the installer adds the page before Themes and makes a backup. Other pages and shortcuts stay in place. Start the controller with that settings file.", x, 316, width)
     text(pdf, "2  Keep OBS controls within reach", x, 385, 14, "Bold")
-    paragraph(pdf, "In UlanziDeck Configure, turn automatic page switching OFF, then Save + Restart. Application detection may stay ON. Press NEXT PAGE until OBS Creator appears.", x, 411, width)
+    paragraph(pdf, "In UlanziDeck Configure, turn automatic page switching OFF. The change is saved and applied automatically. Application detection may stay ON. Press NEXT PAGE until OBS Creator appears.", x, 411, width)
     paragraph(pdf, "In OBS Settings > Advanced > Hotkeys, choose Never disable hotkeys. Keep Studio Mode OFF so scene keys go directly to the recorded output.", x, 476, width, size=9.4, leading=14)
     text(pdf, "3  Build four OBS scenes", right, 145, 14, "Bold")
     scenes = [

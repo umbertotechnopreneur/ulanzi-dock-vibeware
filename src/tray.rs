@@ -75,17 +75,15 @@ impl Control {
         self.running.load(Ordering::SeqCst)
     }
 
-    // connection: USB lifecycle transition, published once to the tray and recovery dialog.
+    // connection: USB lifecycle transition, published once to the native tray.
     pub fn set_connection(&self, connection: ConnectionState) {
-        if self.connection.swap(connection as u8, Ordering::SeqCst) == connection as u8 {
+        let previous = self.connection.swap(connection as u8, Ordering::SeqCst);
+        if previous == connection as u8 {
             return;
         }
         #[cfg(target_os = "windows")]
         {
-            windows::notify_connection(self);
-            if let Err(error) = crate::gui::connection_changed(connection) {
-                eprintln!("Could not update the dock connection dialog: {error:#}");
-            }
+            windows::notify_connection(self, connection, previous);
         }
     }
 
@@ -179,7 +177,8 @@ mod windows {
             HiDpi::{SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2},
             Shell::{
                 ShellExecuteW, Shell_NotifyIconGetRect, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE,
-                NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETFOCUS,
+                NIF_INFO, NIF_REALTIME, NIF_SHOWTIP, NIF_TIP, NIIF_INFO, NIIF_NOSOUND,
+                NIIF_RESPECT_QUIET_TIME, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETFOCUS,
                 NIM_SETVERSION, NIN_SELECT, NOTIFYICONDATAW, NOTIFYICONDATAW_0,
                 NOTIFYICONIDENTIFIER, NOTIFYICON_VERSION_4,
             },
@@ -341,10 +340,50 @@ mod windows {
     }
 
     // control: shared connection state and the tray's currently registered window.
-    pub(super) fn notify_connection(control: &Control) {
+    pub(super) fn notify_connection(control: &Control, connection: ConnectionState, previous: u8) {
         let window = control.tray_window.load(super::Ordering::SeqCst);
         if window != 0 {
-            unsafe { PostMessageW(window as HWND, CONNECTION_CHANGED, 0, 0) };
+            if unsafe {
+                PostMessageW(
+                    window as HWND,
+                    CONNECTION_CHANGED,
+                    connection as usize,
+                    previous as isize,
+                )
+            } == 0 {
+                eprintln!("Could not queue the dock connection notification");
+            }
+        }
+    }
+
+    /// Replace the previous notice immediately. Never open or activate a window.
+    /// Real-time notices are discarded rather than queued for a later, stale state.
+    fn show_connection_notification(window: HWND, state: &State, reconnected: bool) {
+        let mut data = notification(window, state.icon.0);
+        data.uFlags = NIF_INFO;
+        // Empty szInfo removes the previous balloon before publishing the new state.
+        if unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) } == 0 {
+            eprintln!("Could not clear the previous dock connection notification");
+        }
+        let (title, message) = match state.control.connection() {
+            ConnectionState::Disconnected => (
+                "UlanziDeck - Dock disconnected",
+                "Your dock is disconnected. UlanziDeck will reconnect automatically. No action is needed.",
+            ),
+            ConnectionState::Connected if reconnected => (
+                "UlanziDeck - Dock reconnected",
+                "Your dock is reconnected and ready to use.",
+            ),
+            _ => return,
+        };
+        let title = wide(title);
+        let message = wide(message);
+        data.szInfoTitle[..title.len()].copy_from_slice(&title);
+        data.szInfo[..message.len()].copy_from_slice(&message);
+        data.uFlags = NIF_INFO | NIF_REALTIME;
+        data.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND | NIIF_RESPECT_QUIET_TIME;
+        if unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) } == 0 {
+            eprintln!("Could not show the dock connection notification");
         }
     }
 
@@ -623,6 +662,15 @@ mod windows {
             }
             if message == CONNECTION_CHANGED {
                 update_connection_tip(window, state);
+                // A fast reconnect may overtake a queued disconnect. Do not show
+                // an obsolete notice, and retain the transition's previous state.
+                if wparam == state.control.connection() as usize {
+                    show_connection_notification(
+                        window,
+                        state,
+                        lparam == ConnectionState::Disconnected as isize,
+                    );
+                }
                 return 0;
             }
             if message == CALLBACK {
@@ -852,8 +900,8 @@ mod windows {
             .current_dir(env::current_dir().context("locating the working directory for restart")?)
             .env(RESTART_PARENT, std::process::id().to_string())
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .context("restarting UlanziDeck")?;

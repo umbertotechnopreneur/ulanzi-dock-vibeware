@@ -12,7 +12,7 @@ I made UlanziDeck for my own D200H. Start with the guide for what you want to do
 | Record with the OBS Creator page | [OBS setup](../presets/obs-creator/README.md), or the [printable guide](obs-creator-quick-start.pdf) |
 | Build or change the source | [Development and tools](DEVELOPMENT.md) |
 | Prepare a download or release | [Packaging and releases](RELEASING.md) |
-| Upload the Windows package and artwork to Microsoft Store | [Store delivery](STORE-DELIVERY.md) |
+| Upload the Windows package and artwork to Microsoft Store | [Store delivery](STORE-DELIVERY.md), [English listing copy](STORE-LISTING.en-US.md) |
 | Find or rebuild button pictures | [Artwork](ARTWORK.md) |
 | Reuse the name, logo or code | [Branding](BRANDING.md) and [licenses](THIRD-PARTY.md) |
 

@@ -3,24 +3,29 @@ Created with AI: OpenAI Codex; owner-requested Store package and artwork; 2026-1
 
 # Microsoft Store delivery
 
-The delivery folder is `artifacts/store-upload/1.0.3.0`. The archive
-`UlanziDeck-Store-1.0.3.0-x64-arm64-kit.zip` beside it contains the same files.
+The delivery folder is `artifacts/store-upload/1.0.5.0`. The archive
+`UlanziDeck-Store-1.0.5.0-x64-arm64-kit.zip` beside it contains the same files.
 Both Windows packages are built from this repository's source with
 Store licensing enabled and the owner's existing Partner Center identity.
 
-The reserved public name is **UlanziDeck**. Version 1.0.3.0 corrects the
-package DisplayName and application/startup labels that caused the 1.0.2.0
-upload rejection. The private Store configuration supplies this name explicitly.
+The reserved public name is **UlanziDeck**. Version 1.0.5.0 includes all thirteen
+themes without a purchase. Theme and configurator preferences apply automatically without a restart.
+Premium is disabled; the licensing backend is retained
+for future functionality. Replace earlier package uploads with this version.
 
 ## Upload files
 
 | Partner Center field | File |
 | --- | --- |
-| Packages — x64 | `ulanzi-dock-vibeware-1.0.3.0-x64.unsigned.msix` |
-| Packages — ARM64 | `ulanzi-dock-vibeware-1.0.3.0-arm64.unsigned.msix` |
+| Packages — x64 | `ulanzi-dock-vibeware-1.0.5.0-x64.unsigned.msix` |
+| Packages — ARM64 | `ulanzi-dock-vibeware-1.0.5.0-arm64.unsigned.msix` |
 | App tile icon | `listing/app-tile-300x300.png` |
+| Store display image — 150 x 150 | `windows-icons/Square150x150Logo.png` |
+| Store display image — 71 x 71 | `windows-icons/Square71x71Logo.png` |
+| Poster art (optional for this Desktop app) | `listing/poster-art-1440x2160.png` |
+| Box art (optional for this Desktop app) | `listing/box-art-2160x2160.png` |
 | Super hero art | `listing/super-hero-3840x2160.png` or the 1920 x 1080 version |
-| Desktop screenshots | The four files in `screenshots/` |
+| Desktop screenshots | The three files in `screenshots/` |
 
 The MSIX files are unsigned for Store submission. Microsoft signs accepted packages.
 Upload both MSIX files in Packages, rather than the whole delivery ZIP. They use
@@ -39,16 +44,13 @@ The original VibeWare logo is preserved.
 
 ## Screenshot captions
 
-1. Configure themes, application detection and enabled shortcut pages.
-2. The CLI controller running on my D200H (version 0.2.0).
-3. A close view of the D200H theme buttons and wide display.
-4. The D200H on a clean desk with an ergonomic mouse and mousepad.
+1. The CLI controller running on my D200H (version 0.2.0).
+2. A close view of the D200H theme buttons and wide display.
+3. The D200H on a clean desk with an ergonomic mouse and mousepad.
 
-The first screenshot was captured from the current Release configurator, without
-connecting to the dock. It shows the Store-unavailable message because the EXE
-was launched outside an installed Store package. The CLI screenshot is the
-owner-selected 0.2.0 capture, unchanged. The two product photos were retouched
-with AI at the owner's request. Source photos remain unchanged in `docs/photos/`.
+The owner-selected CLI capture is unchanged. The two product photos were retouched
+with AI. The older configurator capture is omitted because it shows superseded
+theme-purchase controls. A fresh configurator capture has not been taken.
 
 ## What was checked
 
@@ -60,8 +62,7 @@ settings, included artwork and notices. See the delivery's `verification.json`
 and `inventory.json` for results and file dimensions.
 
 No installation, software test suite, Windows App Certification Kit run, purchase,
-restore, dock trial or Store submission was performed. Screenshot capture only
-opened the standalone configurator with a separate temporary settings file.
+restore, dock trial or Store submission was performed. No configurator screenshot was captured for this version.
 ARM64 was cross-compiled on this x64 PC; it was not run on ARM64 hardware.
 
 ## Rebuild
@@ -71,8 +72,8 @@ choose the next submission version in Partner Center.
 
 ```powershell
 $env:CARGO_NET_OFFLINE = 'true'
-pwsh -NoProfile -File scripts/build-msix.ps1 -Architecture x64 -Configuration Release -PackageVersion 1.0.3.0 -StoreConfig 'C:\Private\Product\store-build.json' -KeepStaging
-pwsh -NoProfile -File scripts/build-msix.ps1 -Architecture arm64 -Configuration Release -PackageVersion 1.0.3.0 -StoreConfig 'C:\Private\Product\store-build.json' -KeepStaging
+pwsh -NoProfile -File scripts/build-msix.ps1 -Architecture x64 -Configuration Release -PackageVersion 1.0.5.0 -StoreConfig 'C:\Private\Product\store-build.json' -KeepStaging
+pwsh -NoProfile -File scripts/build-msix.ps1 -Architecture arm64 -Configuration Release -PackageVersion 1.0.5.0 -StoreConfig 'C:\Private\Product\store-build.json' -KeepStaging
 pwsh -NoProfile -File scripts/prepare-store-artwork.ps1
 ```
 

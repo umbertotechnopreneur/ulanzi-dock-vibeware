@@ -41,7 +41,7 @@ Existing settings need the page added once. Close UlanziDeck and find the `setti
 
    The script makes a backup and prints its path. It keeps your other pages and shortcuts, and adds OBS Creator before Themes. It stops on invalid settings or duplicate page names. To replace an existing OBS Creator page, add `-Replace`; this also replaces that page's custom shortcuts.
 
-3. Start the updated app. Open **About → Configure**, keep app detection on and turn automatic page switching off. Choose **Save + Restart**. This keeps your manual page choice while the app checks which program is in front.
+3. Start the updated app. Open **About → Configure**, keep app detection on and turn automatic page switching off. Changes apply automatically. This keeps your manual page choice while the app checks which program is in front.
 4. Press **NEXT PAGE** until OBS Creator appears. Its actions show UNAVAILABLE unless OBS Studio (`obs64.exe`) is in front. With app detection off, the actions stay available.
 
 To undo this, close the app and restore the printed backup. Automatic switching is saved in `settings.json` under `runtime`; check it in Configure after restoring the file.

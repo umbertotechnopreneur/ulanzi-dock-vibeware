@@ -144,7 +144,7 @@ impl SettingsStore {
 
         ensure!(
             current_json == self.json && current_catalogue == self.catalogue,
-            "Settings changed outside this dialog. Click Reload before saving."
+            "Settings changed during saving. Please try again."
         );
         Ok(())
     }
@@ -207,7 +207,7 @@ impl SettingsStore {
     }
 
     /// Persist configurator preferences without deleting shortcuts or rewriting YAML.
-    /// `theme`: desired appearance; a newly selected premium theme needs entitlement.
+    /// `theme`: desired appearance; all thirteen themes are included.
     /// `runtime`: validated detection/polling settings.
     /// `app_pages`: known application page names paired with their enabled flags.
     /// Validation, stale-editor and write failures propagate to the dialog.

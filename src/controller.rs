@@ -277,13 +277,13 @@ impl Controller {
     }
 
     #[cfg(target_os = "windows")]
-    /// Back off for at most two seconds, checking shutdown every 100 ms.
+    /// Retry after 250 ms, checking shutdown every 50 ms.
     fn wait_for_connection_retry(&self) {
-        for _ in 0..20 {
+        for _ in 0..5 {
             if !self.is_running() {
                 break;
             }
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 
@@ -328,6 +328,50 @@ impl Controller {
         }
     }
 
+    /// Apply saved UI preferences on this HID thread, without restarting the app.
+    /// Malformed files leave the current configuration active.
+    fn apply_saved_preferences(&mut self, dock: &Dock) -> Result<()> {
+        let saved: Config = serde_json::from_slice(&std::fs::read(&self.options.config_path)?)?;
+        saved.validate()?;
+        let theme_changed = saved.theme != self.config.theme;
+        let runtime_changed = saved.runtime != self.config.runtime;
+        let mut pages_changed = false;
+        for page in &mut self.config.pages {
+            if let Some(updated) = saved.pages.iter().find(|p| p.name == page.name) {
+                if page.enabled != updated.enabled {
+                    page.enabled = updated.enabled;
+                    pages_changed = true;
+                }
+            }
+        }
+        if theme_changed {
+            self.options.theme = saved.theme;
+            self.theme = saved.theme;
+            self.config.theme = saved.theme;
+        }
+        if runtime_changed {
+            self.options.auto_page = saved.runtime.auto_switch;
+            self.options.detect_applications = saved.runtime.detect_applications;
+            self.options.focus_poll_seconds = saved.runtime.focus_poll_seconds;
+            self.config.runtime = saved.runtime;
+            self.last_known_process = None;
+        }
+        if theme_changed || runtime_changed || pages_changed {
+            println!("Preferences observed UTC={} theme={} theme_changed={} runtime_changed={} pages_changed={}",
+                chrono::Utc::now().to_rfc3339(), self.theme.slug(), theme_changed, runtime_changed, pages_changed);
+            self.held_key = None;
+            self.config.refresh_theme_selector(self.theme)?;
+            if !self.page().enabled {
+                self.current_page = self.config.home_page();
+            }
+            self.page_is_active = actions::page_available(self.page(), &self.foreground());
+            self.show_page(dock)?;
+            println!("Preferences redraw USB writes completed UTC={} theme={} page={}",
+                chrono::Utc::now().to_rfc3339(), self.theme.slug(), self.page().name);
+        }
+        Ok(())
+    }
+
     /// Process input on connected `dock` before lower-priority polling/redraw work.
     /// Poll license snapshots without network waits; connection errors bubble up
     /// to recovery. Only a normal exit attempts the shutdown fade.
@@ -335,6 +379,8 @@ impl Controller {
         let mut last_clock = Instant::now();
         let mut last_focus = Instant::now();
         let mut last_brightness = Instant::now();
+        let mut last_preferences = Instant::now();
+        let mut preferences_error = String::new();
         let mut brightness_error = String::new();
 
         println!(
@@ -356,6 +402,20 @@ impl Controller {
                     last_focus = Instant::now();
                 }
                 continue;
+            }
+            if last_preferences.elapsed() >= Duration::from_millis(100) {
+                match self.apply_saved_preferences(dock) {
+                    Ok(()) => preferences_error.clear(),
+                    Err(error) if dock::is_connection_error(&error) => return Err(error),
+                    Err(error) => {
+                        let message = format!("{error:#}");
+                        if message != preferences_error {
+                            eprintln!("Keeping current preferences: {message}");
+                            preferences_error = message;
+                        }
+                    }
+                }
+                last_preferences = Instant::now();
             }
             if last_brightness.elapsed() >= Duration::from_millis(500) {
                 let licensed_theme = crate::licensing::effective(self.options.theme);
@@ -536,6 +596,8 @@ impl Controller {
     /// feedback. Return true for a page transition. Locked themes open configuration
     /// only; purchasing requires a separate explicit click in the desktop UI.
     fn handle_button(&mut self, dock: &Dock, event: ButtonEvent) -> Result<bool> {
+        println!("Dock button UTC={} index={} pressed={} page={} theme={}",
+            chrono::Utc::now().to_rfc3339(), event.index, event.pressed, self.page().name, self.theme.slug());
         if event.index == CLOCK_KEY {
             if event.pressed {
                 self.held_key = Some(CLOCK_KEY);
@@ -593,18 +655,6 @@ impl Controller {
         } else if let Some(slug) = action.strip_prefix("theme:") {
             let selected = Theme::from_slug(slug)
                 .with_context(|| format!("unknown selected theme '{slug}'"))?;
-            if !crate::licensing::allows(selected) {
-                // A dock button only opens the theme manager; it never buys anything.
-                let _ = crate::gui::show_theme_pack();
-                dock.show_key(
-                    self.page(),
-                    self.theme,
-                    event.index,
-                    false,
-                    self.page_is_active,
-                )?;
-                return Ok(false);
-            }
             self.options.theme = selected;
             self.theme = selected;
             self.config.theme = selected;

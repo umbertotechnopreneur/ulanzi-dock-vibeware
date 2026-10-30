@@ -66,6 +66,8 @@ fn launch() -> anyhow::Result<()> {
         );
     };
 
+    let log = paths::controller_log(&settings)?;
+    let errors = log.try_clone().context("cloning the controller log handle")?;
     let mut command = Command::new(controller);
     command
         .args(["run", "--config"])
@@ -75,8 +77,8 @@ fn launch() -> anyhow::Result<()> {
         .env("ULANZI_DOCK_ERROR_DIALOG", "1")
         .current_dir(working_directory)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(errors))
         .creation_flags(CREATE_NO_WINDOW);
 
     if background {

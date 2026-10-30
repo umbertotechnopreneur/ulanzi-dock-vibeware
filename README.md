@@ -50,7 +50,7 @@ This is an independent, unofficial project. I do not work for Ulanzi, and I am n
 ## What it does
 
 - Ten pages: Windows / media, Utility, Codex, VS Code, Spotify, Word, PowerPoint, Excel, OBS Creator and Themes.
-- Thirteen themes, with different colors and button styles.
+- Thirteen included themes, with different colors and button styles. No theme purchase is required.
 - On Windows, optional page switching to follow the app you are using.
 - Optional dimming of buttons when their app is not active. Turn pages off without losing their shortcuts.
 - A clock or a large page-and-theme status display.
@@ -78,7 +78,7 @@ Want an installer and a Start-menu entry? See [installation and settings](docs/I
 
 ## Change your setup
 
-On Windows, right-click the tray icon near the Windows clock and choose **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the active app. Click **Save + Restart**.
+On Windows, right-click the tray icon near the Windows clock and choose **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the active app. Changes are saved and applied automatically.
 
 The settings buttons open the files for shortcuts and app assignments. See [settings and backups](docs/INSTALLATION.md#change-and-back-up-settings) for their locations and what to edit.
 
@@ -109,6 +109,8 @@ At the first dock connection, the UlanziDeck and VibeWare picture appears immedi
 On page changes, buttons fade in from left to right, top to bottom. The animation targets 100 ms in total; USB and device processing can add time. Button pictures are kept in a bounded memory cache for reuse, and overdue animation updates are combined. The wide panel returns after the buttons. Presses during a transition are discarded.
 
 When the app closes normally, the current dock screen fades to black over one second. This does not change the saved brightness. A forced termination, crash or USB disconnection cannot guarantee the closing animation.
+
+On Windows, a USB disconnection shows a system notification. No click is needed. The app waits 250 ms between reconnect attempts and shows another notification once the dock is ready again. The reconnect notice replaces the disconnect notice. Windows notification settings control whether these notices appear. This notification and automatic reconnect behavior is Windows-only.
 
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 

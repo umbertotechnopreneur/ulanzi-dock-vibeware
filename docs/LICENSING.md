@@ -19,53 +19,31 @@ Required by the MIT License: retain the copyright and permission notice in all c
 
 VBWR E -->
 
-# Microsoft Store theme licensing
+# Microsoft Store licensing
 
-The Store edition includes three permanent free themes: **MATRIX**, **IVORY BLUE**
-and **MINT TEAL**. One durable add-on unlocks the other ten. There is no trial,
-subscription, account system or payment processor operated by this application.
-Configure the add-on's Product lifetime as **Forever** in Partner Center.
+All thirteen current themes are included in both Store and community builds.
+Theme selection works without a purchase, a verified license or a Store connection.
 
-The ordinary MIT community source build retains all thirteen themes. Store builds
-must enable `store-licensing`; the Store packaging command below does this itself.
-Source availability means a modified community build can remove restrictions.
-This is Store entitlement enforcement, not an anti-tampering guarantee.
+`PREMIUM_ENABLED` in `src/licensing.rs` is currently `false`. This source switch
+keeps the existing Store infrastructure available for future premium functions.
+When disabled, no Store worker, catalog request, purchase or restore is started,
+and the configurator hides the purchase controls. It does not grant or fake a license.
 
-## Runtime responsibilities
+The owner plans to place six future functions under premium. Their scope is not
+implemented or advertised in this version. Before enabling the switch, define the
+functions and configure the correct Store product. The existing private add-on
+identifier is retained as build input; it must not automatically become an offer
+for different functionality. Themes must remain included when premium is enabled.
 
-| File | Responsibility |
-| --- | --- |
-| `src/licensing.rs` | Three-theme free policy and effective theme selection. |
-| `src/licensing/store.rs` | Windows Store worker, license changes, catalog and purchases. |
-| `src/gui/store_ui.rs` | Purchase/restore buttons, local price and status messages. |
-| `src/controller.rs` | Apply entitlement to JSON/CLI preferences and dock selections. |
-| `src/settings.rs` | Check new premium selections before saving preferences. |
-| `build.rs` | Require external identifiers when compiling the Store edition. |
+## Retained Store infrastructure
 
-`GetAppLicenseAsync` supplies valid durable licenses, matched by `InAppOfferToken`
-against the configured Product ID. Product discovery resolves that ID to the Store
-ID used for purchase. The UI uses the Store's formatted price, never a fixed dollar
-amount. No product IDs or publisher identities are checked into source control.
+The `store-licensing` Cargo feature still compiles the Windows Store backend.
+`Snapshot.owned` remains a real entitlement value for future functions, independent
+of theme availability. Purchases require an explicit UI gesture; Store owns the
+payment interface and offline license cache. Settings never contain an unlock flag.
 
-The worker initializes WinRT on its own thread. UI and dock threads only read a
-small shared snapshot. Purchases require an explicit desktop button click and
-associate native Store UI with that window's HWND. A locked theme button on the
-dock only opens Configuration. Success/already-owned purchase responses trigger a
-license reread; the payment result alone never grants themes. Cancellation and
-network/server errors leave preferences intact.
-
-Windows supplies cached licenses offline. The app does not save an editable
-`premium=true` flag or implement its own receipt cache. A failed query retains the
-last verified entitlement **within that process** and displays a retry message.
-A successful query without the add-on revokes premium access. At a fresh startup,
-only free themes are available until Windows returns a valid license.
-
-License-change notifications and a five-minute refresh catch external purchases
-and revocations. Restore purchases requests an immediate refresh. Entitlement
-changes reach the running controller on its next idle poll, without restart.
-When a saved premium theme is unavailable, MATRIX is displayed and the saved
-preference is retained. A later valid license restores that preferred theme.
-The developer artwork-export command is unavailable in Store builds.
+The shared `allows`, `require` and `effective` entry points now accept every theme
+and preserve the selected theme. No MATRIX fallback or theme-pack suffix is applied.
 
 ## Private build configuration
 
@@ -101,9 +79,8 @@ cargo build --locked --offline --bins --features store-licensing
 
 `build.rs` fails for a missing/invalid configuration, a path inside the repository,
 or a non-Windows Store build. The runtime also compares the OS-reported package
-family to the expected family before querying Store services. Starting this EXE
-outside the matching MSIX package leaves the three free themes available and
-explains why purchases cannot be used.
+family to the expected family before querying Store services. With premium disabled, starting this EXE
+outside the matching MSIX package keeps every theme available without Store queries.
 
 To prepare an unsigned x64 Store submission from source when packaging is authorized:
 
@@ -137,20 +114,14 @@ they do not execute the ARM64 application on an x64 PC. See [Store delivery](STO
 
 ## Validation boundary
 
-The Windows x64 Store source build is checked locally. On 27 October 2026, the
-owner requested a Store submission package: the Release x64 MSIX version 1.0.0.0
-was built from current source with `store-licensing`, the private identity file,
-and clean first-run settings. MakeAppx completed package validation. Static package
-inspection confirmed identity, version, architecture, matching Release binaries,
-feature selection, generated Store constants, and dependency notices.
+Source compilation and package inspection are separate from software tests,
+Store purchases, installation and dock trials. See [Store delivery](STORE-DELIVERY.md)
+for the current build results. The premium switch does not establish that future
+premium functionality or purchase flows have been tested.
 
-The owner authorized builds and packaging, not licensing unit tests, GUI sessions,
-Store purchases or device trials. The package has not been installed or submitted.
-
-Before distribution, use the Microsoft Store testing flow with the matching app
-identity and published add-on. Check free/owned accounts, an already-owned purchase,
-cancellation, offline launch, restore after reinstall, and entitlement removal.
-A successful Rust build does not validate any of those account or Store behaviors.
+Before enabling a new premium offer, obtain owner authorization for the specific
+Store checks, including owned/unowned accounts, cancellation, offline startup,
+restore and entitlement removal.
 
 ## API references
 

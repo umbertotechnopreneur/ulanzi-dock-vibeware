@@ -28,7 +28,6 @@
 pub(super) enum DialogKind {
     About,
     Configuration,
-    Recovery,
 }
 
 #[cfg(target_os = "windows")]
@@ -88,7 +87,6 @@ mod windows {
         match kind {
             DialogKind::About => "about",
             DialogKind::Configuration => "configuration",
-            DialogKind::Recovery => "recovery",
         }
     }
 
@@ -365,8 +363,10 @@ mod windows {
             let max_width = (available_width - 2 * margin).max(1);
             let max_height = (available_height - 2 * margin).max(1);
             if let Some(saved) = saved {
-                let width = scaled(saved.width, dpi, saved.dpi).clamp(1, available_width);
-                let height = scaled(saved.height, dpi, saved.dpi).clamp(1, available_height);
+                let minimum_width = if matches!(kind, DialogKind::Configuration) { scaled(820, dpi, 96) } else { 1 };
+                let minimum_height = if matches!(kind, DialogKind::Configuration) { scaled(900, dpi, 96) } else { 1 };
+                let width = scaled(saved.width, dpi, saved.dpi).max(minimum_width).clamp(1, max_width);
+                let height = scaled(saved.height, dpi, saved.dpi).max(minimum_height).clamp(1, max_height);
                 let x = if same_monitor {
                     scaled(saved.x, dpi, saved.dpi)
                 } else {

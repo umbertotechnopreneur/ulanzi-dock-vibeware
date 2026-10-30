@@ -11,7 +11,7 @@ dependencies or publish anything. Run build-msix.ps1 with -KeepStaging first.
 The abstract hero contains no text, app UI or device photograph.
 #>
 [CmdletBinding()]
-param([string] $OutputDirectory = 'artifacts/store-upload/1.0.3.0')
+param([string] $OutputDirectory = 'artifacts/store-upload/1.0.5.0')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -42,6 +42,19 @@ function Save-Art([string]$Name, [int]$Width, [int]$Height, [string]$Kind) {
         try { $g.FillRectangle($background, 0, 0, $Width, $Height) } finally { $background.Dispose() }
         if ($Kind -eq 'icon') {
             Draw-Icon $g $detailed 0 0 $Width
+        }
+        elseif ($Kind -eq 'cover') {
+            # Keep the name and icon in the top two-thirds for Store overlays.
+            $size = [int]([Math]::Min($Width * .58, $Height * .40))
+            Draw-Icon $g $detailed ([int](($Width - $size) / 2)) ([int]($Height * .07)) $size
+            $title = [Drawing.Font]::new('Segoe UI', [single]($Width * .09), [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Pixel)
+            $format = [Drawing.StringFormat]::new()
+            $format.Alignment = [Drawing.StringAlignment]::Center
+            $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+            try {
+                $box = [Drawing.RectangleF]::new(0, [single]($Height * .51), $Width, [single]($Height * .13))
+                $g.DrawString('UlanziDeck', $title, [Drawing.Brushes]::White, $box, $format)
+            } finally { $title.Dispose(); $format.Dispose() }
         }
         elseif ($Kind -eq 'hero') {
             $colors = @('#10cfc9','#2c62ff','#ff9e30','#d947b9','#a3d549','#8657e8','#00a9d6','#f05365','#f1c84a')
@@ -85,6 +98,8 @@ function Save-Art([string]$Name, [int]$Width, [int]$Height, [string]$Kind) {
 try {
     Save-Art 'app-tile-300x300' 300 300 'icon'
     Save-Art 'app-tile-600x600' 600 600 'icon'
+    Save-Art 'poster-art-1440x2160' 1440 2160 'cover'
+    Save-Art 'box-art-2160x2160' 2160 2160 'cover'
     Save-Art 'super-hero-1920x1080' 1920 1080 'hero'
     Save-Art 'super-hero-3840x2160' 3840 2160 'hero'
     Save-Art 'promotional-square-1080x1080' 1080 1080 'hero'
