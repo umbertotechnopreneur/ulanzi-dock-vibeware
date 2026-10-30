@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -31,7 +31,7 @@ use std::{cell::RefCell, time::Duration};
 /// Attach callbacks to `window` and return the timer its owner must retain.
 /// Weak window handles prevent the timer and callbacks from keeping closed UI alive.
 pub(super) fn bind(window: &MainWindow) -> slint::Timer {
-    window.set_store_edition(cfg!(feature = "store-licensing"));
+    window.set_store_edition(licensing::premium_enabled());
     let weak = window.as_weak();
     window.on_buy_themes(move || {
         if let Some(window) = weak.upgrade() {
@@ -71,13 +71,7 @@ fn apply(window: &MainWindow, snapshot: &licensing::Snapshot) {
     window.set_store_message(snapshot.message.clone().into());
     let themes: Vec<slint::SharedString> = Theme::ALL
         .into_iter()
-        .map(|theme| {
-            if licensing::is_free(theme) || snapshot.owned {
-                theme.label().into()
-            } else {
-                format!("{} (Theme pack)", theme.label()).into()
-            }
-        })
+        .map(|theme| theme.label().into())
         .collect();
     window.set_themes(slint::ModelRc::new(slint::VecModel::from(themes)));
 }

@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -283,7 +283,7 @@ pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<boo
     cli_pages::setup_section(
         "🎉",
         "You are ready!",
-        "Your setup is saved. Starting UlanziDock...",
+        "Your setup is saved. Starting UlanziDeck...",
     );
     Ok(true)
 }

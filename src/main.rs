@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -245,7 +245,7 @@ fn main() -> ExitCode {
                 }
                 ExitCode::from(error.exit_code() as u8)
             } else {
-                let message = format!("UlanziDock could not complete this operation:\n{error:#}");
+                let message = format!("UlanziDeck could not complete this operation:\n{error:#}");
                 if launcher_error_dialog || control.is_background() {
                     tray::show_error(&message);
                 } else {
@@ -288,7 +288,7 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
     let cli = if args.is_empty() {
         cli_pages::print_about();
         let config = paths::default_settings()?;
-        println!("\nStarting UlanziDock.");
+        println!("\nStarting UlanziDeck.");
         #[cfg(target_os = "windows")]
         println!("The controller will stay in the system tray after setup.");
         println!("Settings: {}", config.display());

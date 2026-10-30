@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -21,7 +21,7 @@
 // Visual structure of About, Configuration and reconnect windows. Callbacks request
 // Rust operations; this file does not access settings, HID or Store services itself.
 // Scrollable bodies provide preferred sizes while footers remain reachable.
-// Store properties are display-only snapshots; Rust enforces theme entitlement.
+// Store properties are display-only snapshots for future premium functionality.
 
 import { AboutSlint, CheckBox, ComboBox, ScrollView, SpinBox } from "std-widgets.slint";
 import { Palette as WidgetPalette } from "std-widgets.slint";
@@ -117,7 +117,7 @@ component ProductWordmark inherits Rectangle {
     Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/brand/ulanzi-dock-logo.png");
+        source: @image-url("../assets/brand/ulanzi-deck-logo.png");
         image-fit: contain;
     }
 }
@@ -125,7 +125,7 @@ component ProductWordmark inherits Rectangle {
 // Product/author links with a separate fixed footer for Configure and Close.
 export component AboutDialog inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
-    title: "About UlanziDock VibeWare";
+    title: "About UlanziDeck";
     preferred-width: 640px;
     preferred-height: body.preferred-height + footer.preferred-height;
     min-width: 420px;
@@ -164,7 +164,7 @@ export component AboutDialog inherits Window {
         Text { text: "I'm Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
         HorizontalLayout {
             spacing: 8px;
-            PixelButton { text: "UlanziDock"; clicked => { root.open-link("project"); } }
+            PixelButton { text: "UlanziDeck"; clicked => { root.open-link("project"); } }
             PixelButton { text: "VibeWare"; clicked => { root.open-link("vibeware"); } }
             PixelButton { text: "My website"; clicked => { root.open-link("website"); } }
         }
@@ -197,34 +197,6 @@ export component AboutDialog inherits Window {
     }
 }
 
-// Modeless connection notice. Dismissal does not stop the controller's retry loop.
-export component RecoveryDialog inherits Window {
-    title: "UlanziDock VibeWare - Dock disconnected";
-    preferred-width: 520px;
-    min-width: 420px;
-    min-height: 230px;
-    background: Palette.paper;
-    default-font-family: "Consolas";
-    default-font-size: 14px;
-    icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
-    callback dismiss();
-    VerticalLayout {
-        padding: 22px;
-        spacing: 16px;
-        Text { text: "Dock disconnected"; color: Palette.blue; font-weight: 700; font-size: 20px; }
-        Text {
-            text: "Check the USB cable and power. UlanziDock is waiting for your dock and will resume automatically when it is ready.";
-            color: Palette.ink;
-            wrap: word-wrap;
-        }
-        Text { text: "You can close this message. Reconnection continues in the background."; color: Palette.muted; wrap: word-wrap; }
-        HorizontalLayout {
-            alignment: end;
-            PixelButton { text: "Close"; clicked => { root.dismiss(); } }
-        }
-    }
-}
-
 // One application-page checkbox. Names identify pages; enabled flags preserve keys.
 export struct AppPage {
     name: string,
@@ -235,10 +207,10 @@ export struct AppPage {
 // saving and restart requests; selecting a theme here does not activate it directly.
 export component MainWindow inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
-    title: "UlanziDock VibeWare — Configuration";
-    preferred-width: 680px;
-    preferred-height: body.preferred-height + footer.preferred-height;
-    min-width: 520px;
+    title: "UlanziDeck — Configuration";
+    preferred-width: 820px;
+    preferred-height: 900px;
+    min-width: 720px;
     min-height: 360px;
     background: Palette.paper;
     default-font-family: "Consolas";
@@ -261,9 +233,9 @@ export component MainWindow inherits Window {
     in property <string> store-message;
     callback buy-themes();
     callback restore-purchases();
-    callback save(bool);
+    callback preferences-changed();
+    callback theme-changed();
     callback page-toggled(int, bool);
-    callback reload();
     callback open-file(bool);
     callback learn-vibeware();
     callback dismiss();
@@ -282,29 +254,14 @@ export component MainWindow inherits Window {
         }
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
         Text { text: "Dock theme"; color: Palette.ink; }
-        ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; }
-        if root.store-edition: VerticalLayout {
-            spacing: 8px;
-            Text { text: root.store-message; color: Palette.muted; wrap: word-wrap; }
-            HorizontalLayout {
-                spacing: 8px;
-                if !root.store-owned: PixelButton {
-                    text: root.store-price == "" ? "Unlock 10 themes" : "Unlock 10 themes · " + root.store-price;
-                    enabled: !root.store-busy && root.store-can-purchase;
-                    primary: true;
-                    clicked => { root.buy-themes(); }
-                }
-                PixelButton { text: "Restore purchases"; enabled: !root.store-busy; clicked => { root.restore-purchases(); } }
-            }
-            Text { text: "MATRIX, IVORY BLUE and MINT TEAL are free. The theme pack is a one-time purchase. No trial or subscription."; color: Palette.muted; wrap: word-wrap; }
-        }
-        CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; }
-        if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; }
+        ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; selected => { root.theme-changed(); } }
+        CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; toggled => { root.preferences-changed(); } }
+        if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; toggled => { root.preferences-changed(); } }
         if !root.detect-applications: Text { text: "Enabled pages stay available. Automatic switching is off."; color: Palette.muted; wrap: word-wrap; }
         HorizontalLayout {
             spacing: 12px;
             Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
-            SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; }
+            SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; edited => { root.preferences-changed(); } }
         }
         Rectangle { height: 2px; background: Palette.ink; }
         Text { text: "Application pages"; color: Palette.ink; font-weight: 700; }
@@ -341,7 +298,7 @@ export component MainWindow inherits Window {
             PixelButton { text: "applications.yaml"; clicked => { root.open-file(true); } }
         }
         Text {
-            text: "Saved changes apply when the controller restarts.\nExplicit command-line options still take precedence.";
+            text: "Changes are saved automatically and applied while the controller is running.";
             color: Palette.muted;
             wrap: word-wrap;
         }
@@ -353,9 +310,6 @@ export component MainWindow inherits Window {
         Text { text: root.message; color: Palette.blue; wrap: word-wrap; min-height: 42px; }
         HorizontalLayout {
             spacing: 8px;
-            PixelButton { text: "Reload"; clicked => { root.reload(); } }
-            PixelButton { text: "Save"; enabled: root.ready; primary: true; clicked => { root.save(false); } }
-            if root.resident: PixelButton { text: "Save + Restart"; enabled: root.ready; clicked => { root.save(true); } }
             PixelButton { text: "Close"; clicked => { root.dismiss(); } }
         }
      }

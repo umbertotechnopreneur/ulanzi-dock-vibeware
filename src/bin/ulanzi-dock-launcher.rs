@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -66,6 +66,8 @@ fn launch() -> anyhow::Result<()> {
         );
     };
 
+    let log = paths::controller_log(&settings)?;
+    let errors = log.try_clone().context("cloning the controller log handle")?;
     let mut command = Command::new(controller);
     command
         .args(["run", "--config"])
@@ -75,8 +77,8 @@ fn launch() -> anyhow::Result<()> {
         .env("ULANZI_DOCK_ERROR_DIALOG", "1")
         .current_dir(working_directory)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(errors))
         .creation_flags(CREATE_NO_WINDOW);
 
     if background {
@@ -92,11 +94,11 @@ fn main() -> std::process::ExitCode {
     {
         if let Err(error) = launch() {
             use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-            let message: Vec<u16> = format!("UlanziDock could not start:\n{error:#}")
+            let message: Vec<u16> = format!("UlanziDeck could not start:\n{error:#}")
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();
-            let title: Vec<u16> = "UlanziDock VibeWare"
+            let title: Vec<u16> = "UlanziDeck"
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();

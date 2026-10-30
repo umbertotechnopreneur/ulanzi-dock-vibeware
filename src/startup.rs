@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -35,9 +35,9 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
 
     if crate::paths::is_packaged()? {
         if disable {
-            println!("MSIX startup is controlled by Windows Startup apps. Disable UlanziDock VibeWare there.");
+            println!("MSIX startup is controlled by Windows Startup apps. Disable UlanziDeck there.");
         } else if enable {
-            println!("MSIX startup is registered by the package. Enable UlanziDock VibeWare in Windows Startup apps if it is disabled.");
+            println!("MSIX startup is registered by the package. Enable UlanziDeck in Windows Startup apps if it is disabled.");
         } else {
             println!(
                 "Launch at Windows sign-in: managed by the MSIX package and Windows Startup apps."

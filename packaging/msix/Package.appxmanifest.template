@@ -1,5 +1,5 @@
 <!-- VBWR B
-Project: UlanziDock VibeWare version
+Project: UlanziDeck
 Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare is Human intent, AI execution, and plenty of tokens
@@ -18,7 +18,7 @@ VBWR E -->
             Version="__MSIX_VERSION__"
             ProcessorArchitecture="x64" />
   <Properties>
-    <DisplayName>UlanziDock VibeWare</DisplayName>
+    <DisplayName>UlanziDeck</DisplayName>
     <PublisherDisplayName>Umberto Giacobbi</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -30,7 +30,7 @@ VBWR E -->
   </Dependencies>
   <Applications>
     <Application Id="App" Executable="ulanzi-dock-launcher.exe" EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="UlanziDock VibeWare"
+      <uap:VisualElements DisplayName="UlanziDeck"
                           Description="Ulanzi D200H controller"
                           BackgroundColor="transparent"
                           Square150x150Logo="Assets\Square150x150Logo.png"
@@ -46,7 +46,7 @@ VBWR E -->
                            EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask TaskId="UlanziDockStartup"
                                Enabled="true"
-                               DisplayName="UlanziDock VibeWare" />
+                               DisplayName="UlanziDeck" />
         </desktop:Extension>
         <uap3:Extension Category="windows.appExecutionAlias"
                         Executable="ulanzi-dock-vibeware.exe"

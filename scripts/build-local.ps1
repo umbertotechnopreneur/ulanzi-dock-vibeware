@@ -1,6 +1,6 @@
 # VBWR B
 #
-# Project: UlanziDock VibeWare version
+# Project: UlanziDeck
 # Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
 # Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 #
@@ -105,7 +105,7 @@ $running = Get-CimInstance Win32_Process -Filter "Name='ulanzi-dock-vibeware.exe
         )
     }
 if ($running -and -not $StopRunning) {
-    throw 'UlanziDock is running in this workspace. Stop it or pass -StopRunning before building.'
+    throw 'UlanziDeck is running in this workspace. Stop it or pass -StopRunning before building.'
 }
 foreach ($instance in $running) {
     $process = $null
@@ -117,16 +117,16 @@ foreach ($instance in $running) {
             if ($actualPath -ine $instance.ExecutablePath) {
                 throw "PID $($instance.ProcessId) changed executable; refusing to stop it."
             }
-            Write-Output "Stopping UlanziDock PID $($instance.ProcessId): $actualPath"
+            Write-Output "Stopping UlanziDeck PID $($instance.ProcessId): $actualPath"
             $process.Kill()
             if (-not $process.WaitForExit(5000)) {
-                throw "UlanziDock PID $($instance.ProcessId) did not exit within five seconds."
+                throw "UlanziDeck PID $($instance.ProcessId) did not exit within five seconds."
             }
         }
     }
     catch [System.ArgumentException] {
         # The selected instance may exit between the snapshot and opening its process handle.
-        Write-Output "UlanziDock PID $($instance.ProcessId) has already exited."
+        Write-Output "UlanziDeck PID $($instance.ProcessId) has already exited."
     }
     finally {
         if ($null -ne $process) {

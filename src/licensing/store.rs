@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -55,7 +55,7 @@ pub struct Service {
     commands: mpsc::Sender<Command>,
 }
 
-/// Lazily start the worker; startup failure leaves free themes usable with an error.
+/// Lazily start the worker; startup failure leaves all themes usable with an error.
 pub fn service() -> &'static Service {
     static INSTANCE: OnceLock<Service> = OnceLock::new();
     INSTANCE.get_or_init(|| {
@@ -75,7 +75,7 @@ pub fn service() -> &'static Service {
                 if let Err(error) = worker(&worker_state, incoming, events) {
                     let message = format!(
                         "Microsoft Store is unavailable: {error:#}. \
-                         The three free themes remain available."
+                         All 13 themes remain available."
                     );
                     update(&worker_state, |snapshot| {
                         snapshot.busy = false;
@@ -135,7 +135,7 @@ impl Service {
         let state = self.snapshot();
         ensure!(
             !state.owned && state.can_purchase,
-            "The theme pack is not currently available for purchase."
+            "Premium features is not currently available for purchase."
         );
         ensure!(owner != 0, "The purchase window is not ready.");
         self.send(Command::Purchase(owner))
@@ -187,7 +187,7 @@ fn worker(
                 update(state, |snapshot| {
                     snapshot.message = match outcome {
                         Ok(Purchase::Completed) if snapshot.owned => {
-                            "Theme pack purchased. All 13 themes are available.".into()
+                            "Premium purchase verified. All 13 themes remain included.".into()
                         }
                         Ok(Purchase::Completed) => {
                             "Purchase received. License confirmation is pending; \
@@ -216,9 +216,9 @@ fn refresh(context: &StoreContext, state: &Mutex<Snapshot>) {
         Ok(owned) => update(state, |s| {
             s.owned = owned;
             s.message = if owned {
-                "Theme pack owned. All 13 themes are available."
+                "Premium license verified. All 13 themes remain included."
             } else {
-                "3 free themes. Unlock the other 10 with a one-time purchase."
+                "All 13 themes are included. Premium features require a separate purchase."
             }
             .into();
         }),
@@ -281,7 +281,7 @@ fn product(context: &StoreContext) -> Result<StoreProduct> {
             return Ok(product);
         }
     }
-    anyhow::bail!("The theme pack is not published or is unavailable for this account/region")
+    anyhow::bail!("Premium features is not published or is unavailable for this account/region")
 }
 
 /// Purchase feedback is separate from entitlement; only a license reread unlocks.
@@ -319,7 +319,7 @@ fn purchase(context: &StoreContext, owner: isize) -> Result<Purchase> {
 }
 
 /// Compare OS-reported package identity to build-time configuration before any query.
-/// Portable or mismatched packages remain on the three free themes with an explanation.
+/// Portable or mismatched packages cannot query premium purchases; all themes remain available.
 fn verify_package() -> Result<()> {
     use windows_sys::Win32::{
         Foundation::ERROR_INSUFFICIENT_BUFFER,

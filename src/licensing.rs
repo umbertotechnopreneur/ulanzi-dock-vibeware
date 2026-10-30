@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -21,7 +21,7 @@
 
 //! One entitlement policy for the settings UI, controller and command line.
 //! Only Microsoft Store supplies entitlement; settings never contain an unlock flag.
-//! Community builds retain the MIT source's complete theme collection. Store builds
+//! All builds include every theme. Future premium builds
 //! delegate WinRT and networking to a worker; this module never blocks the UI on I/O.
 use crate::model::Theme;
 
@@ -39,60 +39,56 @@ pub struct Snapshot {
     pub message: String,
 }
 
-/// Return whether `theme` belongs to the permanent, three-theme free selection.
-pub fn is_free(theme: Theme) -> bool {
-    matches!(
-        theme,
-        Theme::DarkClassic | Theme::LightClassic | Theme::LightAbstract
-    )
+/// Reserved for future premium functionality. Themes are always included.
+/// Enable only when the new features and their Store product are ready.
+pub const PREMIUM_ENABLED: bool = false;
+
+pub fn premium_enabled() -> bool {
+    cfg!(feature = "store-licensing") && PREMIUM_ENABLED
 }
 
-/// Start the Store worker once if needed and return its current state immediately.
-/// The first Store snapshot grants only the free themes until a license is verified.
+/// Every current theme is free, independently of Store entitlement.
+pub fn is_free(_theme: Theme) -> bool {
+    true
+}
+
+/// Return the real Store entitlement only when premium functionality is enabled.
+/// Disabling premium does not fabricate an owned license or start a Store worker.
 pub fn snapshot() -> Snapshot {
     #[cfg(feature = "store-licensing")]
-    {
-        store::service().snapshot()
+    if premium_enabled() {
+        return store::service().snapshot();
     }
-    #[cfg(not(feature = "store-licensing"))]
-    {
-        Snapshot {
-            owned: true,
-            busy: false,
-            can_purchase: false,
-            price: String::new(),
-            message: "Community build: all themes are included.".into(),
-        }
+    Snapshot {
+        owned: false,
+        busy: false,
+        can_purchase: false,
+        price: String::new(),
+        message: "All 13 themes are included. No purchase is required.".into(),
     }
 }
 
-/// Check `theme` against current entitlement without trusting any saved preference.
+/// Theme selection never depends on the premium switch or Store state.
 pub fn allows(theme: Theme) -> bool {
-    is_free(theme) || snapshot().owned
+    is_free(theme)
 }
 
-/// Reject an explicit attempt to select an unowned premium `theme` with UI-ready text.
-pub fn require(theme: Theme) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        allows(theme),
-        "This theme needs the theme pack. Buy it or restore your purchase in Configuration."
-    );
+/// Retain the shared theme-selection entry point for settings and CLI callers.
+pub fn require(_theme: Theme) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Resolve a saved/CLI `theme` for rendering. A blocked preference stays saved,
-/// while MATRIX is used on the dock until entitlement becomes available again.
+/// Keep the user's selected theme, including when offline or without a license.
 pub fn effective(theme: Theme) -> Theme {
-    if allows(theme) {
-        theme
-    } else {
-        Theme::DarkClassic
-    }
+    theme
 }
 
 /// Queue a license/catalog refresh; repeated clicks while busy are coalesced.
 /// No purchase UI is shown and no account-specific data is saved by this app.
 pub fn refresh() {
+    if !premium_enabled() {
+        return;
+    }
     #[cfg(feature = "store-licensing")]
     store::service().refresh();
 }
@@ -100,6 +96,7 @@ pub fn refresh() {
 /// Begin a purchase only after a UI click. `window` owns the native Store dialog.
 /// Return setup/queue errors immediately; the snapshot receives the eventual result.
 pub fn purchase(window: &slint::Window) -> anyhow::Result<()> {
+    anyhow::ensure!(premium_enabled(), "Premium features are not available in this version.");
     #[cfg(feature = "store-licensing")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -113,6 +110,6 @@ pub fn purchase(window: &slint::Window) -> anyhow::Result<()> {
     #[cfg(not(feature = "store-licensing"))]
     {
         let _ = window;
-        anyhow::bail!("This build already includes all themes.")
+        anyhow::bail!("Premium purchases are unavailable in this build.")
     }
 }

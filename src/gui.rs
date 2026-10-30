@@ -1,6 +1,6 @@
 /* VBWR B
  *
- * Project: UlanziDock VibeWare version
+ * Project: UlanziDeck
  * Repository: https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware
  * Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
  *
@@ -24,7 +24,7 @@
 //! never discover HID devices; resident mode runs the controller on another thread.
 
 use crate::{
-    model::{RuntimeSettings, Theme},
+    model::Theme,
     settings::SettingsStore,
     tray::Control,
 };
@@ -40,7 +40,6 @@ use placement::DialogKind;
 
 thread_local! {
     static ABOUT: RefCell<Option<slint::Weak<AboutDialog>>> = const { RefCell::new(None) };
-    static RECOVERY: RefCell<Option<slint::Weak<RecoveryDialog>>> = const { RefCell::new(None) };
     static CONFIGURATOR: RefCell<Option<std::rc::Weak<Configurator>>> = const { RefCell::new(None) };
 }
 
@@ -56,7 +55,6 @@ enum Mode {
 struct Dialogs {
     about: AboutDialog,
     config: MainWindow,
-    recovery: Option<RecoveryDialog>,
     _store_timer: slint::Timer,
 }
 
@@ -67,12 +65,7 @@ impl Drop for Dialogs {
         placement::remember(self.about.window(), DialogKind::About);
         let _ = self.config.hide();
         let _ = self.about.hide();
-        if let Some(recovery) = &self.recovery {
-            placement::remember(recovery.window(), DialogKind::Recovery);
-            let _ = recovery.hide();
-        }
         ABOUT.with(|slot| *slot.borrow_mut() = None);
-        RECOVERY.with(|slot| *slot.borrow_mut() = None);
         CONFIGURATOR.with(|slot| *slot.borrow_mut() = None);
     }
 }
@@ -90,18 +83,6 @@ pub fn show_about() -> Result<()> {
         });
     })
     .context("opening the About dialog")
-}
-
-/// Queue configuration from a dock action. No payment starts on the device thread.
-pub fn show_theme_pack() -> Result<()> {
-    slint::invoke_from_event_loop(|| {
-        CONFIGURATOR.with(|slot| {
-            if let Some(state) = slot.borrow().as_ref().and_then(std::rc::Weak::upgrade) {
-                state.show();
-            }
-        });
-    })
-    .context("opening theme purchases")
 }
 
 // Use the same presentation path for tray requests and standalone UI commands.
@@ -202,29 +183,6 @@ fn show_first_welcome(about: &AboutDialog, path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-// connection: completed initialization or the start of a disconnected episode.
-// Errors: queuing a request while the Slint event loop is unavailable.
-#[cfg(target_os = "windows")]
-pub fn connection_changed(connection: crate::tray::ConnectionState) -> Result<()> {
-    // This modeless window leaves both the HID worker and the native tray thread free.
-    slint::invoke_from_event_loop(move || {
-        RECOVERY.with(|slot| {
-            if let Some(recovery) = slot.borrow().as_ref().and_then(slint::Weak::upgrade) {
-                let result = if connection == crate::tray::ConnectionState::Disconnected {
-                    present_dialog(&recovery, DialogKind::Recovery)
-                } else {
-                    placement::remember(recovery.window(), DialogKind::Recovery);
-                    recovery.hide().map_err(Into::into)
-                };
-                if let Err(error) = result {
-                    eprintln!("Could not update the dock connection dialog: {error}");
-                }
-            }
-        });
-    })
-    .context("updating the dock connection dialog")
-}
-
 /// Owns the editable settings, not the window. Callbacks hold this state without
 /// keeping a closed Slint window alive.
 struct Configurator {
@@ -233,7 +191,6 @@ struct Configurator {
     app_pages: Rc<slint::VecModel<AppPage>>,
     path: PathBuf,
     control: Arc<Control>,
-    mode: Mode,
 }
 
 impl Configurator {
@@ -266,7 +223,7 @@ impl Configurator {
                 window.set_auto_switch(loaded.config.runtime.auto_switch);
                 window.set_detect_applications(loaded.config.runtime.detect_applications);
                 window.set_poll_seconds(loaded.config.runtime.focus_poll_seconds as i32);
-                window.set_message("Choose your settings, then save.".into());
+                window.set_message("Changes are saved and applied automatically.".into());
                 window.set_ready(true);
                 *self.settings.borrow_mut() = Some(loaded);
             }
@@ -294,43 +251,42 @@ impl Configurator {
         }
     }
 
-    /// Save selected values and, if `restart` in resident mode, request a restart
-    /// only after persistence succeeds. Errors stay visible in the same dialog.
-    fn save(&self, restart: bool) {
+    /// Save a user gesture atomically; failures remain visible for retry.
+    fn save(&self, theme_changed: bool) {
         let Some(window) = self.window.upgrade() else {
             return;
         };
         let Some(&theme) = Theme::ALL.get(window.get_theme_index() as usize) else {
             return;
         };
-        let mut stored = self.settings.borrow_mut();
-        let Some(settings) = stored.as_mut() else {
-            return;
-        };
-
-        let selected_pages = self
-            .app_pages
-            .iter()
-            .map(|page| (page.name.to_string(), page.enabled))
-            .collect::<Vec<_>>();
-        let runtime = RuntimeSettings {
-            detect_applications: window.get_detect_applications(),
-            auto_switch: window.get_auto_switch(),
-            focus_poll_seconds: window.get_poll_seconds() as u64,
-        };
-        let result = self
-            .control
-            .lock_settings()
-            .and_then(|_lock| settings.save(theme, runtime, &selected_pages));
-
-        match result {
-            Ok(()) => {
-                window.set_message("Saved. Restart the controller to apply changes.".into());
-                if restart && self.mode == Mode::Resident {
-                    self.control.request_restart();
-                }
+        let stored = self.settings.borrow();
+        let Some(previous) = stored.as_ref() else { return; };
+        let selected_pages = self.app_pages.iter()
+            .filter(|page| previous.config.pages.iter().any(|old|
+                old.name == page.name.as_str() && old.enabled != page.enabled))
+            .map(|page| (page.name.to_string(), page.enabled)).collect::<Vec<_>>();
+        // Merge only changed fields into the latest disk snapshot. A dock theme
+        // selection must survive an unrelated checkbox change in this window.
+        let result = (|| -> Result<()> {
+            let _lock = self.control.lock_settings()?;
+            let mut latest = SettingsStore::load(&self.path)?;
+            let mut runtime = latest.config.runtime;
+            if window.get_detect_applications() != previous.config.runtime.detect_applications {
+                runtime.detect_applications = window.get_detect_applications();
             }
-            Err(error) => window.set_message(format!("{error:#}").into()),
+            if window.get_auto_switch() != previous.config.runtime.auto_switch {
+                runtime.auto_switch = window.get_auto_switch();
+            }
+            if window.get_poll_seconds() as u64 != previous.config.runtime.focus_poll_seconds {
+                runtime.focus_poll_seconds = window.get_poll_seconds() as u64;
+            }
+            let theme = if theme_changed { theme } else { latest.config.theme };
+            latest.save(theme, runtime, &selected_pages)
+        })();
+        drop(stored);
+        match result {
+            Ok(()) => self.reload(),
+            Err(error) => window.set_message(format!("Could not save changes: {error:#}").into()),
         }
     }
 
@@ -383,7 +339,6 @@ fn bind_configurator(
         app_pages,
         path,
         control,
-        mode,
     });
     CONFIGURATOR.with(|slot| *slot.borrow_mut() = Some(Rc::downgrade(&state)));
 
@@ -392,12 +347,13 @@ fn bind_configurator(
         if let Some(mut page) = toggled.app_pages.row_data(index as usize) {
             page.enabled = enabled;
             toggled.app_pages.set_row_data(index as usize, page);
+            toggled.save(false);
         }
     });
-    let reload = Rc::clone(&state);
-    window.on_reload(move || reload.reload());
     let save = Rc::clone(&state);
-    window.on_save(move |restart| save.save(restart));
+    window.on_preferences_changed(move || save.save(false));
+    let theme = Rc::clone(&state);
+    window.on_theme_changed(move || theme.save(true));
     let open = Rc::clone(&state);
     window.on_open_file(move |catalogue| open.open_file(catalogue));
 
@@ -477,27 +433,6 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
     });
 }
 
-/// Create a modeless reconnect notice whose close actions persist its placement.
-fn create_recovery() -> Result<RecoveryDialog> {
-    let recovery = RecoveryDialog::new().context("creating the recovery dialog")?;
-    let weak = recovery.as_weak();
-    recovery.on_dismiss(move || {
-        if let Some(recovery) = weak.upgrade() {
-            placement::remember(recovery.window(), DialogKind::Recovery);
-            let _ = recovery.hide();
-        }
-    });
-    let weak = recovery.as_weak();
-    recovery.window().on_close_requested(move || {
-        if let Some(recovery) = weak.upgrade() {
-            placement::remember(recovery.window(), DialogKind::Recovery);
-        }
-        slint::CloseRequestResponse::HideWindow
-    });
-    RECOVERY.with(|slot| *slot.borrow_mut() = Some(recovery.as_weak()));
-    Ok(recovery)
-}
-
 /// Construct and bind windows for `path` and `mode`, sharing lifecycle `control`.
 /// Return strong owners; UI creation failures occur before controller startup.
 fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
@@ -513,11 +448,6 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     bind_about_links(&about);
     bind_close_handlers(&about, &config, mode);
 
-    let recovery = if mode == Mode::Resident {
-        Some(create_recovery()?)
-    } else {
-        None
-    };
     ABOUT.with(|slot| *slot.borrow_mut() = Some(about.as_weak()));
     if mode == Mode::Configure {
         state.reload();
@@ -526,7 +456,6 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     Ok(Dialogs {
         about,
         config,
-        recovery,
         _store_timer: store_timer,
     })
 }
