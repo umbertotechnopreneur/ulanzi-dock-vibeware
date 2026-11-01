@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
-Evidence: docs/CODE-REVIEW.md and current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -103,6 +100,6 @@ python scripts/tools.py obs-guide
 
 `init` will not overwrite an existing file. Fresh settings already include OBS Creator, so do not run the preset installer on that file. OBS Creator is page 9 and Themes is page 10. The export makes both button states in all thirteen themes. The builder writes `preview.png` here and the PDF in `docs/`.
 
-See [platform coverage](../../docs/PLATFORMS.md) for build and physical-check evidence. These pictures do not show live OBS status.
+See [platform coverage](../../docs/PLATFORMS.md) for supported features. These pictures do not show live OBS status.
 
 I made this as [Umberto Giacobbi](https://umbertogiacobbi.biz). **VibeWare is Human intent, AI execution, and plenty of tokens.** [Manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).

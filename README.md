@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
-Evidence: docs/CODE-REVIEW.md and current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -163,7 +160,7 @@ Before adding an external library or binary, I require a targeted Microsoft Wind
 
 This project participates in the **VibeWare initiative**, an open initiative for developers who build useful software with AI under human direction. VibeWare describes participation in the initiative; it is not the application's author or publisher.
 
-I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I define this project's purpose, guide its implementation, and remain responsible for checking functionality, performance, and security. Each project keeps its own identity, license, release status and validation evidence.
+I am [Umberto Giacobbi](https://umbertogiacobbi.biz). I define this project's purpose, guide its implementation, and remain responsible for checking functionality, performance, and security. Each project keeps its own identity and license.
 
 To learn what VibeWare means and why I created it, read the [VibeWare manifesto](https://umbertogiacobbi.biz/vibeware/manifesto).
 

@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
-Evidence: docs/CODE-REVIEW.md and current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -35,9 +32,8 @@ VBWR E -->
 Most button pictures are 196 × 196 pixels. The page-index status panel is 400 × 200. The Rust drawing code in `src/art.rs` creates unavailable buttons from the normal pictures and a ribbon; there is no separate disabled-picture set.
 
 The current wordmark is `assets/brand/ulanzi-deck-logo.png`; the current boot master
-is `assets/boot/ulanzi-deck-boot-v2.png`. Older logo, banner and concept files are
-retained as design history. Use [Store delivery](STORE-DELIVERY.md) for the current
-upload icons and banners. The README opens with `dock-closeup-clean.png` and
+is `assets/boot/ulanzi-deck-boot-v2.png`. Use [Store delivery](STORE-DELIVERY.md)
+for upload icons and banners. The README opens with `dock-closeup-clean.png` and
 `desk-clean.png` from `docs/photos/`; the original photographs remain beside them.
 
 The startup master is not a ready-made set of key files. During a source build, `build.rs` resizes and slices it for the thirteen square keys and wide panel. The controller joins those slices into one picture across the dock.
@@ -77,4 +73,4 @@ Keep the original [VibeWare floppy](../assets/brand/vibeware-logo.png) unchanged
 
 Some early symbols came from AI-made sheets. The drawing code adds labels, theme colors and original Utility, Office, Themes and OBS symbols. Office and OBS symbols are not official logos. Labels use Bitstream Vera Bold; keep its [font license](../assets/fonts/bitstream-vera-license.txt).
 
-Preview sheets show the artwork, not a live device. The [platform guide](PLATFORMS.md) separates software builds from physical checks.
+Preview sheets show the artwork. See the [platform guide](PLATFORMS.md) for supported features.

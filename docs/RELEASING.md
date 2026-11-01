@@ -34,7 +34,7 @@ Public versions increase by minor number: **0.1.0, 0.2.0, 0.3.0**, and so on. Up
 
 Builds on `main` and pull requests save downloadable build artifacts; they do not publish a release. For an authorized release, run the manual Release workflow with `draft=true` and `prerelease=false`. Review all four platform archives and checksums before publishing the draft.
 
-A built package proves that packaging completed. Real-dock checks are recorded separately in [platform coverage](PLATFORMS.md).
+See [platform coverage](PLATFORMS.md) for supported features and device limitations.
 
 The workflow normally runs hardware-free unit tests. When the owner explicitly
 requests builds without tests, dispatch it with `run_tests=false` and record that

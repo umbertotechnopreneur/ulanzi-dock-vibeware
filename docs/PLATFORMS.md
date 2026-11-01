@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; Windows placement and singleton scope and readability; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
-Evidence: docs/CODE-REVIEW.md; current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -22,7 +19,7 @@ VBWR E -->
 
 # Windows, Linux and macOS
 
-The controller shares its Rust code across these systems. The Windows desktop integration has more features. Building a package and using it on a real dock are separate checks.
+The controller shares its Rust code across these systems. Windows has tray integration, automatic reconnect and active-application matching.
 
 ## What is available
 
@@ -47,7 +44,7 @@ Extract the whole archive into a writable folder. In a terminal, enter that fold
 ./ulanzi-dock-vibeware run
 ```
 
-Keep the terminal open. Press Ctrl+C to stop the controller. Settings use the executable folder unless you pass a different `--config` path. Run one controller at a time; the Windows process-replacement behavior is not implemented here.
+Keep the terminal open. Press Ctrl+C to stop the controller. Settings use the executable folder unless you pass a different `--config` path. Run one controller at a time; the Windows single-instance behavior is not implemented here.
 
 The standalone settings window can be opened with `configure`; `about --gui` opens About. They are built on all three platforms, but Linux/macOS interaction has not been confirmed on a real desktop. Save settings, then restart the controller manually to apply them.
 
@@ -55,13 +52,14 @@ The Linux archive is built on Ubuntu 24.04. It needs a compatible glibc system, 
 
 The macOS archive is built on macOS 15 for Apple Silicon. Older macOS versions are not validated, and there is no Intel package. It is a terminal program, without app signing or notarization. Input permissions and the foreground application's shortcut choices still apply.
 
-## Build evidence
+## Current build
 
-Checked on 25 October 2026: the latest completed [Build run, 21 October](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/actions/runs/39552455782) built and packaged all four targets successfully: Windows x64, Windows ARM64, Linux x64 and macOS ARM64. It used commit `0a3373a2459031a1696e15a3bd8e67455d6e968d`. The committed changes after that run, up to `7a4986575942b1a431ca31745076727da1391295`, only changed the README.
+The latest local package is Windows x64 Release 1.0.8.0, built from source and installed.
+ARM64, Linux and macOS were not rebuilt for this package. No dock trial was run.
 
-That CI run does not validate later working-folder changes, including the 100 ms page fade, picture cache, startup picture and remembered-page changes, or prove device behavior. On 25 October 2026, the current working source completed a local optimized Windows x64 build. No software test or dock trial was run, and the other platforms were not rebuilt from these changes.
-
-I own and have physically tested only a D200H on Windows x64. Some features still need a physical check there, too. Windows ARM64, Linux, macOS and other dock models need owner reports. Other models may also need changes to device detection. [Tell me what you find](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues), including your model, operating system and processor type.
+I own and use only a D200H on Windows x64. Other models and platforms need owner
+reports. [Tell me what you find](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues),
+including your model, operating system and processor type.
 
 ## Where the platform differences live
 
