@@ -44,6 +44,11 @@ impl Transaction {
     /// Resolve `path` and acquire its persistent sidecar lock, waiting at most two seconds.
     /// The parent must exist. Lock/canonicalization errors leave the target untouched.
     pub fn begin(path: &Path) -> Result<Self> {
+        Self::begin_with_timeout(path, Duration::from_secs(2))
+    }
+
+    // Tests can allow slower disks more time without changing the user-facing timeout.
+    fn begin_with_timeout(path: &Path, timeout: Duration) -> Result<Self> {
         let path = match fs::canonicalize(path) {
             Ok(path) => path,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -72,7 +77,7 @@ impl Transaction {
         loop {
             match lock.try_lock() {
                 Ok(()) => return Ok(Self { path, _lock: lock }),
-                Err(TryLockError::WouldBlock) if started.elapsed() < Duration::from_secs(2) => {
+                Err(TryLockError::WouldBlock) if started.elapsed() < timeout => {
                     std::thread::sleep(Duration::from_millis(10));
                 }
                 Err(TryLockError::WouldBlock) => {
@@ -322,7 +327,7 @@ mod tests {
             "worker requires an isolated fixture"
         );
         for _ in 0..8 {
-            let transaction = Transaction::begin(&path)?;
+            let transaction = Transaction::begin_with_timeout(&path, Duration::from_secs(30))?;
             let original = transaction.read()?.context("missing counter")?;
             let count: u32 = std::str::from_utf8(&original)?.parse()?;
             std::thread::sleep(Duration::from_millis(3));
