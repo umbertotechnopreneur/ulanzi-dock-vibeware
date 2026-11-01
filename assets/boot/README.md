@@ -11,5 +11,3 @@ The original VibeWare logo remains in `assets/brand/vibeware-logo.png`. Image ge
 Made with the built-in ImageGen tool. The generation prompt is in `boot-v2.prompt.txt`.
 
 Copyright (c) 2026 Umberto Giacobbi. MIT License: see the repository LICENSE.
-
-The earlier `ulanzi-dock-boot-v1.png` and its prompt are retained as source history.

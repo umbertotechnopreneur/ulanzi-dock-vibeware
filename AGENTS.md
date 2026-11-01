@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; owner-confirmed ten default pages and readability; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
-Evidence: docs/CODE-REVIEW.md; current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -24,6 +21,7 @@ VBWR E -->
 
 - Talk to me in Italian. Write repository docs in English.
 - Use short sentences and normal words. Explain what someone needs to do. Skip repeated warnings, formal labels and image hashes in everyday docs.
+- Document current behavior and instructions. Keep only the latest build status. Do not add historical validation reports, CI run logs, commit hashes or PR numbers to guides. Keep any release history in one changelog. Preserve required dependency-import records.
 - Support only the current settings and startup formats. Do not add migrations or fallback behavior for older versions. Keep backups, atomic writes and device safety checks.
 - Write public copy as me: Umberto Giacobbi. Use "I", not "we". This is my weekend project. VibeWare is my initiative, not the app's author or publisher.
 - Keep my name, the original logo and MIT notices. See [branding](docs/BRANDING.md).

@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
-Evidence: docs/CODE-REVIEW.md and current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
