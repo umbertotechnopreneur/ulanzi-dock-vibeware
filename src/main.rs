@@ -400,7 +400,17 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             } else {
                 None
             };
-            let _instance = singleton::acquire()?;
+            let Some(_instance) = singleton::acquire()? else {
+                #[cfg(target_os = "windows")]
+                if !background {
+                    if let Err(error) = tray::activate_existing() {
+                        eprintln!("Could not activate UlanziDeck: {error:#}");
+                    }
+                }
+                // A duplicate launch succeeds silently, without a console close prompt.
+                control.enter_background();
+                return Ok(());
+            };
             let mut settings = Config::load(&config)?;
             // MSIX launches have redirected handles. Automatic console onboarding
             // returned false there, silently ending the app before its GUI existed.

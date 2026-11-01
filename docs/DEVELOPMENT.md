@@ -150,7 +150,7 @@ The `build`, `msix` and `msix-icons` tasks use Windows tools. Other systems can 
 
 `settings.json` stores pages, shortcuts and runtime preferences. `applications.yaml` maps apps to pages and can provide app commands. Keep preferences such as automatic switching in the JSON file. The app accepts the current formats; it does not convert older ones.
 
-Windows dialogs save their size, position, monitor and DPI in `settings.windows.json` beside the selected settings file. If a saved monitor is disconnected, the dialog uses the monitor under the mouse, or the primary monitor if the pointer is unavailable. A second controller in the same Windows session reports that one is already running; it does not terminate it. Use the tray menu to restart or exit the existing controller.
+Windows dialogs save their size, position, monitor and DPI in `settings.windows.json` beside the selected settings file. If a saved monitor is disconnected, the dialog uses the monitor under the mouse, or the primary monitor if the pointer is unavailable. A second interactive launch in the same Windows session brings the existing Configuration window forward if it is open, or shows About otherwise. It preserves the current window size and does not force maximization. The second process exits successfully without a dialog or console prompt. A duplicate background launch exits silently without opening a window.
 
 `is_first_run` starts true for a profile that has not seen the graphical welcome.
 The first Windows launch opens About on the primary display and clears the flag

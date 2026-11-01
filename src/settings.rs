@@ -211,6 +211,9 @@ impl SettingsStore {
     #[cfg(target_os = "linux")]
     pub fn save_linux_application(&mut self, page: &str, id: Option<&str>) -> Result<()> {
         let mut document = self.document()?;
+        if document.get("linux_applications").is_none() {
+            document["linux_applications"] = serde_json::json!({});
+        }
         let choices = document["linux_applications"].as_object_mut()
             .context("Linux applications must be an object")?;
         if let Some(id) = id {
@@ -425,6 +428,44 @@ mod tests {
         assert!(!loaded.pages[5].enabled);
         assert_eq!(loaded.next_enabled_page(1), 3);
         assert_eq!(loaded.next_enabled_page(4), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn linux_keys_survive_preference_saves_without_replacing_shared_keys() -> Result<()> {
+        let fixture = Fixture::create()?;
+        let path = fixture.0.join("settings.json");
+        let mut document: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+        let shared_keys = document["pages"][5]["keys"].clone();
+        let mut linux_keys = shared_keys.clone();
+        linux_keys[12]["action"] = "hotkey:ctrl+shift+s".into();
+        linux_keys[12]["label"] = "WRITER SAVE AS".into();
+        linux_keys[12]["owner_key_metadata"] = "keep".into();
+        document["linux_applications"] = serde_json::json!({
+            "Word": {
+                "application": "libreoffice-writer",
+                "keys": linux_keys,
+                "owner_profile_metadata": "keep"
+            }
+        });
+        fs::write(&path, serde_json::to_vec(&document)?)?;
+        let original = fs::read(&path)?;
+        let catalogue = fs::read(path.with_file_name("applications.yaml"))?;
+        let mut settings = SettingsStore::load(&path)?;
+        let effective = &settings.config.pages[5].keys[12];
+        if cfg!(target_os = "linux") {
+            assert_eq!(effective.action, "hotkey:ctrl+shift+s");
+            assert_eq!(effective.label, "WRITER SAVE AS");
+        } else {
+            assert_eq!(effective.action, "hotkey:f12");
+        }
+        settings.save(settings.config.theme, settings.config.runtime, &[("Word".into(), false)])?;
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+        assert_eq!(saved["pages"][5]["keys"], shared_keys);
+        assert_eq!(saved["linux_applications"], document["linux_applications"]);
+        assert!(!Config::load(&path)?.pages[5].enabled);
+        assert_eq!(fs::read(path.with_file_name("applications.yaml"))?, catalogue);
+        assert_eq!(fs::read(fixture.0.join("settings.json.gui.bak"))?, original);
         Ok(())
     }
 

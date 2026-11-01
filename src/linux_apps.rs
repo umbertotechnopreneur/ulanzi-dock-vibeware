@@ -372,3 +372,121 @@ fn executable_file(path: &Path) -> Result<bool> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn every_profile_preset_preserves_navigation_and_has_valid_actions() {
+        for profile in PROFILES {
+            let preset = shortcuts::for_profile(profile.id);
+            assert!(!preset.is_empty(), "missing preset for {}", profile.id);
+            let mut assigned = std::collections::HashSet::new();
+            for shortcut in preset {
+                assert!(
+                    shortcut.key < crate::model::CLOCK_KEY
+                        && shortcut.key != crate::model::NEXT_KEY,
+                    "reserved or invalid key {} in {}",
+                    shortcut.key,
+                    profile.id
+                );
+                assert!(
+                    assigned.insert(shortcut.key),
+                    "duplicate key {} in {}",
+                    shortcut.key,
+                    profile.id
+                );
+                crate::actions::validate(shortcut.action).unwrap_or_else(|error| {
+                    panic!("invalid preset action in {}: {error}", profile.id)
+                });
+            }
+        }
+    }
+
+    struct Fixture(PathBuf);
+
+    impl Fixture {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = env::temp_dir().join(format!(
+                "ulanzi-linux-apps-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn directory(&self, name: &str) -> PathBuf {
+            let path = self.0.join(name);
+            fs::create_dir_all(&path).unwrap();
+            path
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn hidden_override_blocks_lower_entry_and_path_command() {
+        let fixture = Fixture::new();
+        let user = fixture.directory("user");
+        let system = fixture.directory("system");
+        let bin = fixture.directory("bin");
+        fs::write(user.join("code.desktop"), "[Desktop Entry]\nHidden=true\n").unwrap();
+        fs::write(
+            system.join("code.desktop"),
+            "[Desktop Entry]\nType=Application\nExec=code %F\n",
+        )
+        .unwrap();
+        fs::write(bin.join("code"), "fixture only; never executed").unwrap();
+        fs::set_permissions(bin.join("code"), fs::Permissions::from_mode(0o755)).unwrap();
+        let paths = SearchPaths {
+            applications: vec![user, system],
+            commands: vec![bin],
+        };
+        assert!(!is_installed(profile("code").unwrap(), &paths).unwrap());
+    }
+
+    #[test]
+    fn desktop_actions_and_links_are_not_application_evidence() {
+        let action_only = DesktopEntry::parse(
+            "[Desktop Entry]\nType=Application\n[Desktop Action Open]\nExec=code\n",
+        )
+        .unwrap();
+        assert!(!action_only.available);
+        assert!(!DesktopEntry::parse("[Desktop Entry]\nType=Link\nExec=code\n")
+            .unwrap()
+            .available);
+        assert!(DesktopEntry::parse("[Desktop Entry]\nHidden=maybe\n").is_err());
+    }
+
+    #[test]
+    fn libreoffice_shared_command_does_not_imply_all_modules() {
+        let fixture = Fixture::new();
+        let apps = fixture.directory("applications");
+        let bin = fixture.directory("bin");
+        fs::write(bin.join("soffice"), "fixture only; never executed").unwrap();
+        fs::set_permissions(bin.join("soffice"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(
+            apps.join("org.libreoffice.LibreOffice.writer.desktop"),
+            "[Desktop Entry]\nType=Application\nExec=flatpak run org.libreoffice.LibreOffice --writer\n",
+        )
+        .unwrap();
+        let paths = SearchPaths {
+            applications: vec![apps],
+            commands: vec![bin],
+        };
+        assert!(is_installed(profile("libreoffice-writer").unwrap(), &paths).unwrap());
+        assert!(!is_installed(profile("libreoffice-calc").unwrap(), &paths).unwrap());
+        assert!(!is_installed(profile("libreoffice-impress").unwrap(), &paths).unwrap());
+    }
+}

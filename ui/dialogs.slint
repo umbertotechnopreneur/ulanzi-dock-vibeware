@@ -18,7 +18,7 @@
  *
  * VBWR E */
 
-// Visual structure of About, Configuration and reconnect windows. Callbacks request
+// Visual structure of About and Configuration windows. Callbacks request
 // Rust operations; this file does not access settings, HID or Store services itself.
 // Scrollable bodies provide preferred sizes while footers remain reachable.
 // Store properties are display-only snapshots for future premium functionality.
@@ -71,7 +71,39 @@ component PixelButton inherits Rectangle {
     }
 }
 
-// Fixed-size initiative badge. Its caller chooses the manifesto navigation action.
+// Plain, keyboard-accessible navigation link.
+component TextLink inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    min-width: caption.preferred-width;
+    height: 28px;
+    background: transparent;
+    border-width: focus.has-focus ? 1px : 0px;
+    border-color: Palette.blue;
+    accessible-role: button;
+    accessible-label: root.text;
+    forward-focus: focus;
+    caption := Text {
+        text: root.text;
+        color: Palette.blue;
+        vertical-alignment: center;
+    }
+    focus := FocusScope {
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { focus.focus(); root.clicked(); }
+        }
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// Fixed-size initiative badge. Its caller chooses the VibeWare link.
 component VibeWareLink inherits Rectangle {
     callback clicked();
     width: 64px;
@@ -81,7 +113,7 @@ component VibeWareLink inherits Rectangle {
     border-width: focus.has-focus ? 2px : 0px;
     border-color: Palette.blue;
     accessible-role: button;
-    accessible-label: "Participates in VibeWare. Read the manifesto";
+    accessible-label: "VibeWare";
     forward-focus: focus;
     Image {
         width: parent.width;
@@ -147,13 +179,9 @@ export component AboutDialog inherits Window {
       body := VerticalLayout {
         padding: 22px;
         spacing: 12px;
-        HorizontalLayout {
-            spacing: 12px;
-            ProductWordmark { }
-            VibeWareLink { clicked => { root.open-link("manifesto"); } }
-        }
+        ProductWordmark { }
         Text { text: "Open dock driver · v" + root.version; color: Palette.muted; horizontal-alignment: center; }
-        Text { text: "Lightweight. Free. An alternative to the official Ulanzi app."; color: Palette.ink; horizontal-alignment: center; wrap: word-wrap; }
+        Text { text: "I built UlanziDeck for my D200H: shortcuts, media controls and app pages, right on my desk."; color: Palette.ink; horizontal-alignment: center; wrap: word-wrap; }
         Text {
             text: "I provide this software independently and as-is, without warranty. Use it at your own risk.";
             color: Palette.muted;
@@ -164,9 +192,9 @@ export component AboutDialog inherits Window {
         Text { text: "I'm Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
         HorizontalLayout {
             spacing: 8px;
-            PixelButton { text: "UlanziDeck"; clicked => { root.open-link("project"); } }
-            PixelButton { text: "VibeWare"; clicked => { root.open-link("vibeware"); } }
-            PixelButton { text: "My website"; clicked => { root.open-link("website"); } }
+            TextLink { text: "My website"; clicked => { root.open-link("website"); } }
+            TextLink { text: "Source on GitHub"; clicked => { root.open-link("project"); } }
+            Rectangle { horizontal-stretch: 1; background: transparent; }
         }
         Rectangle {
             min-height: 130px;
@@ -178,8 +206,9 @@ export component AboutDialog inherits Window {
         Text { text: root.message; color: Palette.muted; wrap: word-wrap; visible: root.message != ""; }
         HorizontalLayout {
             spacing: 8px;
-            PixelButton { text: "Terms"; clicked => { root.open-link("terms"); } }
-            PixelButton { text: "Privacy"; clicked => { root.open-link("privacy"); } }
+            TextLink { text: "Terms"; clicked => { root.open-link("terms"); } }
+            TextLink { text: "Privacy"; clicked => { root.open-link("privacy"); } }
+            Rectangle { horizontal-stretch: 1; background: transparent; }
         }
       }
      }
@@ -192,6 +221,8 @@ export component AboutDialog inherits Window {
             spacing: 8px;
             PixelButton { text: "Configure"; primary: true; clicked => { root.configure(); } }
             PixelButton { text: "Close"; clicked => { root.dismiss(); } }
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+            VibeWareLink { clicked => { root.open-link("vibeware"); } }
         }
      }
     }
