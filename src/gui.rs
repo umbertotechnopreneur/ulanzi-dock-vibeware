@@ -7,7 +7,7 @@
  * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  *
- * Modified with AI: OpenAI Codex; dialog placement, Store bindings and callback contracts and readability; 2026-10-27
+ * Modified with AI: OpenAI Codex; dialog placement, Store bindings and installed Linux app choices; 2026-11-02
  * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
  * Evidence: docs/CODE-REVIEW.md; current working-tree changes
  *
@@ -183,12 +183,22 @@ fn show_first_welcome(about: &AboutDialog, path: PathBuf) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+struct LinuxPageChoices {
+    page: String,
+    ids: Vec<Option<String>>,
+}
+
 /// Owns the editable settings, not the window. Callbacks hold this state without
 /// keeping a closed Slint window alive.
 struct Configurator {
     window: slint::Weak<MainWindow>,
     settings: RefCell<Option<SettingsStore>>,
     app_pages: Rc<slint::VecModel<AppPage>>,
+    #[cfg(target_os = "linux")]
+    linux_app_pages: Rc<slint::VecModel<LinuxAppPage>>,
+    #[cfg(target_os = "linux")]
+    linux_choices: RefCell<Vec<LinuxPageChoices>>,
     path: PathBuf,
     control: Arc<Control>,
 }
@@ -223,14 +233,114 @@ impl Configurator {
                 window.set_auto_switch(loaded.config.runtime.auto_switch);
                 window.set_detect_applications(loaded.config.runtime.detect_applications);
                 window.set_poll_seconds(loaded.config.runtime.focus_poll_seconds as i32);
-                window.set_message("Changes are saved and applied automatically.".into());
+                window.set_message(window.get_save_hint());
                 window.set_ready(true);
+                #[cfg(target_os = "linux")]
+                if let Err(error) = self.reload_linux_apps(&loaded.config) {
+                    self.linux_app_pages.set_vec(Vec::new());
+                    self.linux_choices.borrow_mut().clear();
+                    window.set_message(format!("Could not read installed applications: {error:#}").into());
+                }
                 *self.settings.borrow_mut() = Some(loaded);
             }
             Err(error) => {
                 window.set_ready(false);
                 window.set_message(format!("{error:#}").into());
                 *self.settings.borrow_mut() = None;
+            }
+        }
+    }
+
+    /// Refresh known native, Flatpak and Snap launchers without running commands.
+    #[cfg(target_os = "linux")]
+    fn reload_linux_apps(&self, config: &crate::model::Config) -> Result<()> {
+        let installed = crate::linux_apps::installed()?;
+        let mut rows = Vec::new();
+        let mut choices = Vec::new();
+        for page in &config.pages {
+            if !crate::linux_apps::PROFILES.iter().any(|profile| profile.page == page.name) {
+                continue;
+            }
+            let selected = config.linux_applications.get(&page.name).map(|choice| &choice.application);
+            let mut labels: Vec<slint::SharedString> = vec!["Use applications.yaml mapping".into()];
+            let mut ids = vec![None];
+            let mut selected_index = 0;
+            let mut available = false;
+            for profile in installed.iter().filter(|profile| profile.page == page.name) {
+                labels.push(profile.name.into());
+                ids.push(Some(profile.id.to_owned()));
+                if selected.is_some_and(|id| id == profile.id) {
+                    selected_index = (ids.len() - 1) as i32;
+                    available = true;
+                }
+            }
+            let status = if let Some(id) = selected {
+                if available {
+                    "Installed. Suggested shortcuts can be applied to this page.".to_owned()
+                } else {
+                    let profile = crate::linux_apps::profile(id).context("Unknown Linux application")?;
+                    labels.push(format!("{} (not found)", profile.name).into());
+                    ids.push(Some(id.clone()));
+                    selected_index = (ids.len() - 1) as i32;
+                    "The selected app was not found. Your choice and shortcuts are saved.".to_owned()
+                }
+            } else if labels.len() == 1 {
+                "No supported app found for this page.".to_owned()
+            } else {
+                "Choose an installed app. Current shortcuts will be kept.".to_owned()
+            };
+            rows.push(LinuxAppPage {
+                page: page.name.clone().into(),
+                choices: slint::ModelRc::new(slint::VecModel::from(labels)),
+                selected: selected_index,
+                available,
+                status: status.into(),
+            });
+            choices.push(LinuxPageChoices { page: page.name.clone(), ids });
+        }
+        self.linux_app_pages.set_vec(rows);
+        *self.linux_choices.borrow_mut() = choices;
+        Ok(())
+    }
+
+    /// Persist only an explicit app selection or request for suggested shortcuts.
+    #[cfg(target_os = "linux")]
+    fn save_linux_choice(&self, row: i32, selection: Option<i32>) {
+        let (page, id) = {
+            let choices = self.linux_choices.borrow();
+            let Some(choice) = usize::try_from(row).ok().and_then(|index| choices.get(index)) else { return; };
+            let id = match selection {
+                Some(index) => {
+                    let Some(id) = usize::try_from(index).ok().and_then(|index| choice.ids.get(index)) else { return; };
+                    id.clone()
+                }
+                None => None,
+            };
+            (choice.page.clone(), id)
+        };
+        let expected_app = self.settings.borrow().as_ref().and_then(|settings|
+            settings.config.linux_applications.get(&page).map(|choice| choice.application.clone()));
+        let result = (|| -> Result<()> {
+            let _lock = self.control.lock_settings()?;
+            let mut latest = SettingsStore::load(&self.path)?;
+            if selection.is_none() {
+                let current = latest.config.linux_applications.get(&page).map(|choice| &choice.application);
+                anyhow::ensure!(current == expected_app.as_ref(),
+                    "The selected application changed. Refresh the list before applying shortcuts.");
+            }
+            match selection {
+                Some(_) => latest.save_linux_application(&page, id.as_deref()),
+                None => latest.save_linux_shortcuts(&page),
+            }
+        })();
+        match result {
+            Ok(()) => self.reload(),
+            Err(error) => {
+                // Restore the saved selection so a failed save cannot look successful.
+                self.reload();
+                if let Some(window) = self.window.upgrade() {
+                    window.set_message(format!("Could not save changes: {error:#}").into());
+                }
             }
         }
     }
@@ -325,6 +435,14 @@ fn bind_configurator(
     mode: Mode,
 ) -> Rc<Configurator> {
     window.set_resident(mode == Mode::Resident);
+    window.set_foreground_supported(cfg!(target_os = "windows"));
+    window.set_save_hint(if cfg!(target_os = "windows") {
+        "Changes are saved and applied automatically."
+    } else {
+        "Changes are saved automatically. Restart the controller after changing apps or shortcuts."
+    }.into());
+    #[cfg(target_os = "linux")]
+    window.set_linux_app_selection(true);
     let themes = Theme::ALL
         .iter()
         .map(|theme| theme.label().into())
@@ -333,10 +451,18 @@ fn bind_configurator(
 
     let app_pages = Rc::new(slint::VecModel::<AppPage>::default());
     window.set_app_pages(slint::ModelRc::from(Rc::clone(&app_pages)));
+    #[cfg(target_os = "linux")]
+    let linux_app_pages = Rc::new(slint::VecModel::<LinuxAppPage>::default());
+    #[cfg(target_os = "linux")]
+    window.set_linux_app_pages(slint::ModelRc::from(Rc::clone(&linux_app_pages)));
     let state = Rc::new(Configurator {
         window: window.as_weak(),
         settings: RefCell::new(None),
         app_pages,
+        #[cfg(target_os = "linux")]
+        linux_app_pages,
+        #[cfg(target_os = "linux")]
+        linux_choices: RefCell::new(Vec::new()),
         path,
         control,
     });
@@ -350,6 +476,15 @@ fn bind_configurator(
             toggled.save(false);
         }
     });
+    #[cfg(target_os = "linux")]
+    {
+        let select = Rc::clone(&state);
+        window.on_linux_app_selected(move |row, index| select.save_linux_choice(row, Some(index)));
+        let shortcuts = Rc::clone(&state);
+        window.on_linux_shortcuts_requested(move |row| shortcuts.save_linux_choice(row, None));
+        let refresh = Rc::clone(&state);
+        window.on_refresh_linux_apps(move || refresh.reload());
+    }
     let save = Rc::clone(&state);
     window.on_preferences_changed(move || save.save(false));
     let theme = Rc::clone(&state);

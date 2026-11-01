@@ -7,7 +7,7 @@
  * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  *
- * Modified with AI: OpenAI Codex; command routing and Store edition boundaries and readability; 2026-10-27
+ * Modified with AI: OpenAI Codex; command routing, Store boundaries and Linux application choices; 2026-11-02
  * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
  * Evidence: docs/CODE-REVIEW.md; current working-tree changes
  *
@@ -32,6 +32,8 @@ mod controller;
 mod dock;
 mod gui;
 mod licensing;
+#[cfg(target_os = "linux")]
+mod linux_apps;
 mod model;
 mod onboarding;
 mod settings;

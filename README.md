@@ -74,6 +74,8 @@ Download the right package from [Releases](https://github.com/umbertotechnoprene
 
 Linux and macOS Apple Silicon use `./ulanzi-dock-vibeware run`. Features differ by system; see [Windows, Linux and macOS](docs/PLATFORMS.md).
 
+Linux source builds also offer `./ulanzi-dock-vibeware configure` to choose supported installed apps, including LibreOffice. Choosing an app keeps its current shortcuts; suggested Linux shortcuts are a separate choice. See [Linux application choices](docs/PLATFORMS.md#linux-application-choices). Linux support is in development.
+
 Want an installer and a Start-menu entry? See [installation and settings](docs/INSTALLATION.md). Want to build or change the app? See [development and the tools menu](docs/DEVELOPMENT.md). [All guides](docs/README.md) lists the other topics.
 
 ## Change your setup

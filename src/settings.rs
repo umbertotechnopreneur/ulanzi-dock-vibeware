@@ -7,7 +7,7 @@
  * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  *
- * Modified with AI: OpenAI Codex; transactional persistence and theme entitlement checks and readability; 2026-10-27
+ * Modified with AI: OpenAI Codex; transactional persistence and explicit Linux app choices; 2026-11-02
  * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
  * Evidence: docs/CODE-REVIEW.md; current working-tree changes
  *
@@ -204,6 +204,54 @@ impl SettingsStore {
     /// Mark the graphical welcome as shown only after its native window is presented.
     pub fn save_first_run_completed(&mut self) -> Result<()> {
         self.save_field("is_first_run", false.into())
+    }
+
+    /// Select an installed app while keeping the effective keys in a Linux-only profile.
+    /// Existing Linux key metadata and all shared Windows pages remain unchanged.
+    #[cfg(target_os = "linux")]
+    pub fn save_linux_application(&mut self, page: &str, id: Option<&str>) -> Result<()> {
+        let mut document = self.document()?;
+        let choices = document["linux_applications"].as_object_mut()
+            .context("Linux applications must be an object")?;
+        if let Some(id) = id {
+            let profile = crate::linux_apps::profile(id).context("Unknown Linux application")?;
+            ensure!(profile.page == page, "Application does not belong to this page");
+            ensure!(crate::linux_apps::installed()?.iter().any(|entry| entry.id == id),
+                "This application is no longer installed. Refresh the list.");
+            let effective = self.config.pages.iter().find(|entry| entry.name == page)
+                .context("Application page is missing")?;
+            let selection = choices.entry(page.to_owned()).or_insert_with(||
+                serde_json::json!({ "keys": effective.keys }));
+            selection["application"] = id.into();
+        } else {
+            // Returning to the shared catalogue is an explicit separate choice.
+            choices.remove(page);
+        }
+        self.save_document(document)
+    }
+
+    /// Replace only the selected Linux profile's action keys after an explicit UI request.
+    /// Navigation, artwork, enabled flags, shared pages and extension fields survive.
+    #[cfg(target_os = "linux")]
+    pub fn save_linux_shortcuts(&mut self, page: &str) -> Result<()> {
+        let selection = self.config.linux_applications.get(page).context("Choose an application first")?;
+        let id = &selection.application;
+        ensure!(crate::linux_apps::installed()?.iter().any(|entry| entry.id == id),
+            "This application is no longer installed. Refresh the list.");
+        let shortcuts = crate::linux_apps::shortcuts::for_profile(id);
+        ensure!(!shortcuts.is_empty(), "No suggested shortcuts for this application");
+        let mut document = self.document()?;
+        let keys = document["linux_applications"][page]["keys"].as_array_mut()
+            .context("Selected Linux application needs keys")?;
+        for shortcut in shortcuts {
+            ensure!(shortcut.key < keys.len() && shortcut.key != crate::model::NEXT_KEY
+                && shortcut.key != crate::model::CLOCK_KEY, "Invalid suggested shortcut position");
+            let key = &mut keys[shortcut.key];
+            key["label"] = shortcut.label.into();
+            key["action"] = shortcut.action.into();
+            key["description"] = shortcut.description.into();
+        }
+        self.save_document(document)
     }
 
     /// Persist configurator preferences without deleting shortcuts or rewriting YAML.

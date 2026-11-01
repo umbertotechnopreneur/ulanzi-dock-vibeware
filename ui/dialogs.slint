@@ -7,7 +7,7 @@
  * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  *
- * Modified with AI: OpenAI Codex; content sizing and Store theme controls and readability; 2026-10-27
+ * Modified with AI: OpenAI Codex; Linux application choices and platform-aware configuration; 2026-11-02
  * Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
  * Evidence: docs/CODE-REVIEW.md; current working-tree changes
  *
@@ -203,6 +203,49 @@ export struct AppPage {
     enabled: bool,
 }
 
+// Installed choices and the saved selection for one existing Linux application page.
+export struct LinuxAppPage {
+    page: string,
+    choices: [string],
+    selected: int,
+    available: bool,
+    status: string,
+}
+
+// Slint 1.13 resets ComboBox selection when its model changes. Restore the saved
+// index after those model notifications, without emitting a user-selection callback.
+component SavedApplicationComboBox inherits Rectangle {
+    in property <[string]> model;
+    in property <bool> enabled: true;
+    in property <int> saved-index: 0;
+    callback selection-requested(int);
+    min-width: combo.min-width;
+    preferred-width: combo.preferred-width;
+    min-height: combo.min-height;
+    preferred-height: combo.preferred-height;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    forward-focus: combo;
+    init => { selection-sync.start(); }
+    changed model => { selection-sync.restart(); }
+    changed saved-index => { selection-sync.restart(); }
+    combo := ComboBox {
+        width: parent.width;
+        height: parent.height;
+        model: root.model;
+        enabled: root.enabled;
+        selected => { root.selection-requested(self.current-index); }
+    }
+    selection-sync := Timer {
+        interval: 1ms;
+        running: false;
+        triggered => {
+            self.stop();
+            combo.current-index = root.saved-index;
+        }
+    }
+}
+
 // Editable preferences plus Store status. Rust owns stale-write checks, licensing,
 // saving and restart requests; selecting a theme here does not activate it directly.
 export component MainWindow inherits Window {
@@ -218,6 +261,10 @@ export component MainWindow inherits Window {
     icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
     in property <[string]> themes;
     in property <[AppPage]> app-pages;
+    in property <bool> linux-app-selection: false;
+    in property <[LinuxAppPage]> linux-app-pages;
+    in property <bool> foreground-supported: true;
+    in property <string> save-hint: "Changes are saved automatically and applied while the controller is running.";
     in-out property <int> theme-index;
     in-out property <bool> auto-switch;
     in-out property <bool> detect-applications;
@@ -236,6 +283,9 @@ export component MainWindow inherits Window {
     callback preferences-changed();
     callback theme-changed();
     callback page-toggled(int, bool);
+    callback linux-app-selected(int, int);
+    callback linux-shortcuts-requested(int);
+    callback refresh-linux-apps();
     callback open-file(bool);
     callback learn-vibeware();
     callback dismiss();
@@ -255,13 +305,21 @@ export component MainWindow inherits Window {
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
         Text { text: "Dock theme"; color: Palette.ink; }
         ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; selected => { root.theme-changed(); } }
-        CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; toggled => { root.preferences-changed(); } }
-        if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; toggled => { root.preferences-changed(); } }
-        if !root.detect-applications: Text { text: "Enabled pages stay available. Automatic switching is off."; color: Palette.muted; wrap: word-wrap; }
-        HorizontalLayout {
-            spacing: 12px;
-            Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
-            SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; edited => { root.preferences-changed(); } }
+        if root.foreground-supported: VerticalLayout {
+            spacing: 14px;
+            CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; toggled => { root.preferences-changed(); } }
+            if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; toggled => { root.preferences-changed(); } }
+            if !root.detect-applications: Text { text: "Enabled pages stay available. Automatic switching is off."; color: Palette.muted; wrap: word-wrap; }
+            HorizontalLayout {
+                spacing: 12px;
+                Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
+                SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; edited => { root.preferences-changed(); } }
+            }
+        }
+        if !root.foreground-supported: Text {
+            text: "Choose pages manually. Active application detection is unavailable on this system.";
+            color: Palette.muted;
+            wrap: word-wrap;
         }
         Rectangle { height: 2px; background: Palette.ink; }
         Text { text: "Application pages"; color: Palette.ink; font-weight: 700; }
@@ -290,6 +348,41 @@ export component MainWindow inherits Window {
             }
         }
         Text { text: "Disabled pages are skipped. Your shortcuts stay saved."; color: Palette.muted; wrap: word-wrap; }
+        if root.linux-app-selection: VerticalLayout {
+            spacing: 14px;
+            Rectangle { height: 2px; background: Palette.ink; }
+            HorizontalLayout {
+                spacing: 12px;
+                Text { text: "Installed Linux applications"; color: Palette.ink; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; }
+                PixelButton { text: "Refresh"; enabled: root.ready; clicked => { root.refresh-linux-apps(); } }
+            }
+            Text {
+                text: "Choosing an installed app keeps your shortcuts. Use suggested shortcuts to replace this page’s action keys. Return to applications.yaml mapping to use the shared shortcuts again.";
+                color: Palette.muted;
+                wrap: word-wrap;
+            }
+            for row in root.linux-app-pages.length: VerticalLayout {
+                spacing: 6px;
+                Text { text: root.linux-app-pages[row].page; color: Palette.ink; font-weight: 600; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    SavedApplicationComboBox {
+                        min-width: 0px;
+                        horizontal-stretch: 1;
+                        enabled: root.ready;
+                        model: root.linux-app-pages[row].choices;
+                        saved-index: root.linux-app-pages[row].selected;
+                        selection-requested(index) => { root.linux-app-selected(row, index); }
+                    }
+                    PixelButton {
+                        text: "Use suggested shortcuts";
+                        enabled: root.ready && root.linux-app-pages[row].available;
+                        clicked => { root.linux-shortcuts-requested(row); }
+                    }
+                }
+                Text { text: root.linux-app-pages[row].status; color: Palette.muted; wrap: word-wrap; }
+            }
+        }
         Rectangle { height: 2px; background: Palette.ink; }
         Text { text: "Shortcuts and application mappings"; color: Palette.ink; }
         HorizontalLayout {
@@ -298,7 +391,7 @@ export component MainWindow inherits Window {
             PixelButton { text: "applications.yaml"; clicked => { root.open-file(true); } }
         }
         Text {
-            text: "Changes are saved automatically and applied while the controller is running.";
+            text: root.save-hint;
             color: Palette.muted;
             wrap: word-wrap;
         }
