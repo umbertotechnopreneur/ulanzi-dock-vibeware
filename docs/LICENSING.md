@@ -7,10 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Created with AI: OpenAI Codex; Store theme policy, private build inputs and validation limits; 2026-10-27
-Modified with AI: OpenAI Codex; Store theme policy, private build inputs and validation limits and readability; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
-Evidence: docs/CODE-REVIEW.md; current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -42,7 +38,7 @@ The `store-licensing` Cargo feature still compiles the Windows Store backend.
 of theme availability. Purchases require an explicit UI gesture; Store owns the
 payment interface and offline license cache. Settings never contain an unlock flag.
 
-The shared `allows`, `require` and `effective` entry points now accept every theme
+The shared `allows`, `require` and `effective` entry points accept every theme
 and preserve the selected theme. No MATRIX fallback or theme-pack suffix is applied.
 
 ## Private build configuration
@@ -112,16 +108,8 @@ The MSIX script supports `-Architecture x64` (the default) and `-Architecture ar
 Cross-builds use a host-native build of the same source to generate clean settings;
 they do not execute the ARM64 application on an x64 PC. See [Store delivery](STORE-DELIVERY.md).
 
-## Validation boundary
-
-Source compilation and package inspection are separate from software tests,
-Store purchases, installation and dock trials. See [Store delivery](STORE-DELIVERY.md)
-for the current build results. The premium switch does not establish that future
-premium functionality or purchase flows have been tested.
-
-Before enabling a new premium offer, obtain owner authorization for the specific
-Store checks, including owned/unowned accounts, cancellation, offline startup,
-restore and entitlement removal.
+Before enabling a premium offer, check owned and unowned accounts, cancellation,
+offline startup, restore and entitlement removal with the owner's authorization.
 
 ## API references
 

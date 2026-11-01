@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; separate Linux dependency preparation and offline build guidance; 2026-11-02
-Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
-Evidence: docs/CODE-REVIEW.md; current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -161,8 +158,6 @@ only after native presentation succeeds. Later left-clicks on the tray icon open
 About using its remembered placement; right-clicks open the tray menu. Windows
 startup never depends on the terminal welcome, which remains available through
 the explicit `run --oobe` command.
-
-See the [27 October code review](CODE-REVIEW.md) for the source findings, changes and outstanding validation.
 
 Each writable state file has a persistent `.lock` sidecar. Its OS handle serializes
 application transactions; the empty sidecar is not a stale lock after a crash.

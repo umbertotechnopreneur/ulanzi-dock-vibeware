@@ -6,7 +6,6 @@ I made UlanziDeck for my own D200H. Start with the guide for what you want to do
 
 | I want to… | Read this |
 | --- | --- |
-| Browse the archived artwork | [Artwork atlas PDF](ulanzi-dock-vibeware-guide-v2.pdf) (earlier six-page set) |
 | Install the app, change settings or update it | [Installation and settings](INSTALLATION.md) |
 | Know what works on my operating system | [Windows, Linux and macOS](PLATFORMS.md) |
 | Record with the OBS Creator page | [OBS setup](../presets/obs-creator/README.md), or the [printable guide](obs-creator-quick-start.pdf) |

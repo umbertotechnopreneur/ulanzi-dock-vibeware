@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
-Evidence: docs/CODE-REVIEW.md and current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -19,7 +16,7 @@ VBWR E -->
 
 # Ideas for a future Windows editor
 
-The archived v1 renders show the former UlanziDock name. They are design history; the current public name is UlanziDeck.
+The mockups are design proposals. The public app name is UlanziDeck.
 
 These twelve AI-made pictures show an idea I want to build. The current settings windows use **Slint**, a toolkit that draws desktop controls. The proposed editor would use **WinUI 3**, Microsoft's Windows interface toolkit. It would be Windows-only; the Rust controller would stay portable.
 

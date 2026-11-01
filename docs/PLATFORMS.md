@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; Linux application selection, shortcut presets and validation scope; 2026-11-02
-Human guidance: Umberto Giacobbi; AGENTS.md and owner-directed implementation/documentation
-Evidence: docs/CODE-REVIEW.md; current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -22,7 +19,7 @@ VBWR E -->
 
 # Windows, Linux and macOS
 
-The controller shares its Rust code across these systems. The Windows desktop integration has more features. Building a package and using it on a real dock are separate checks.
+The controller shares its Rust code across these systems. Windows has tray integration, automatic reconnect and active-application matching.
 
 ## What is available
 
@@ -48,7 +45,7 @@ Extract the whole archive into a writable folder. In a terminal, enter that fold
 ./ulanzi-dock-vibeware run
 ```
 
-Keep the terminal open. Press Ctrl+C to stop the controller. Settings use the executable folder unless you pass a different `--config` path. Run one controller at a time; the Windows process-replacement behavior is not implemented here.
+Keep the terminal open. Press Ctrl+C to stop the controller. Settings use the executable folder unless you pass a different `--config` path. Run one controller at a time; the Windows single-instance behavior is not implemented here.
 
 The standalone settings window can be opened with `configure`; `about --gui` opens About. Standalone Slint windows are available in the source for all three platforms. Save settings, then restart the controller manually to apply them.
 
@@ -95,11 +92,14 @@ The OBS preset keeps the project's existing shortcut chords. Assign them manuall
 
 These selections do not change the input backend. Shortcut output still uses X11. Native Wayland input, active-application matching, automatic page switching and dimming inactive actions remain unimplemented on Linux. Desktop shortcut assignments and application keymaps can also intercept configured keys.
 
-## Current support
+## Current build
 
-Linux support is in development. The table above describes the implemented features and current desktop limitations.
+The latest local package is Windows x64 Release 1.0.8.0, built from source and installed.
+ARM64, Linux and macOS were not rebuilt for this package. No dock trial was run.
 
-My hardware is a D200H on Windows x64. Other dock models are unverified and may need changes to device detection. Owners of Windows ARM64, Linux, macOS or another model are welcome to [report their experience](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues), including the dock model, operating system and processor type.
+I own and use only a D200H on Windows x64. Other models and platforms need owner
+reports. [Tell me what you find](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues),
+including your model, operating system and processor type.
 
 ## Where the platform differences live
 

@@ -7,9 +7,6 @@ Creator: Umberto Giacobbi | https://umbertogiacobbi.biz
 VibeWare: Human intent, AI execution, and plenty of tokens
 Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
 
-Modified with AI: OpenAI Codex; documentation and VibeWare attribution; 2026-10-27
-Human guidance: Umberto Giacobbi; AGENTS.md; readability and VibeWare template request
-Evidence: docs/CODE-REVIEW.md and current working-tree changes
 
 Copyright (c) 2026 Umberto Giacobbi
 SPDX-License-Identifier: MIT
@@ -38,12 +35,13 @@ The README footer shows the floppy, my name, a [manifesto link](https://umbertog
 
 **Human intent, AI execution, and plenty of tokens**
 
-For the planned Windows interface:
+For the app's About window:
 
-- Put a small floppy at the top right. It opens the manifesto.
-- At the bottom, show **About UlanziDeck · Terms · Privacy** and **This is VibeWare · Manifesto**.
-- Show the footer for 30 seconds, then fade it over 3 seconds. Bring it back on hover or keyboard focus. Do not hide it while someone uses it.
-- About shows the version, my name and site, project links and a Close button. Say: "I made this software with AI help. I am responsible for it."
-- About must open centered and in front. Images must fit the window.
+- Put my website first, then the repository, as simple text links.
+- Keep Terms, Privacy, the version and MIT attribution easy to find.
+- Put the original VibeWare icon at the bottom right, at 64 x 64 pixels.
+- Make the icon clickable. Do not add a Manifesto label or explanatory VibeWare text.
+- Keep Configure and Close available. Images must fit the window.
+- A second launch brings the existing window forward without forcing maximization.
 
 Keep links to [UlanziDeck](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware), [VibeWare](https://github.com/umbertotechnopreneur/VibeWare), [my site](https://umbertogiacobbi.biz), [Terms](https://umbertogiacobbi.biz/terms/) and [Privacy](https://umbertogiacobbi.biz/privacy/).
