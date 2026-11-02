@@ -85,6 +85,39 @@ pub fn show_about() -> Result<()> {
     .context("opening the About dialog")
 }
 
+/// Reuse the resident window without restoring saved geometry or maximizing it.
+#[cfg(target_os = "windows")]
+pub fn activate_existing() -> Result<()> {
+    slint::invoke_from_event_loop(|| {
+        let config = CONFIGURATOR.with(|slot| slot.borrow().as_ref().and_then(std::rc::Weak::upgrade));
+        if let Some(window) = config.and_then(|state| state.window.upgrade()) {
+            if window.window().is_visible() {
+                activate_dialog(&window, DialogKind::Configuration);
+                return;
+            }
+        }
+        ABOUT.with(|slot| {
+            if let Some(about) = slot.borrow().as_ref().and_then(slint::Weak::upgrade) {
+                activate_dialog(&about, DialogKind::About);
+            }
+        });
+    })
+    .context("activating the existing window")
+}
+
+#[cfg(target_os = "windows")]
+fn activate_dialog<T: ComponentHandle + 'static>(dialog: &T, kind: DialogKind) {
+    dialog.window().set_minimized(false);
+    if let Err(error) = dialog.show() {
+        eprintln!("Could not show the existing window: {error}");
+        return;
+    }
+    let weak = dialog.as_weak();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+        present_native_dialog(weak, kind, false, 32);
+    });
+}
+
 // Use the same presentation path for tray requests and standalone UI commands.
 // Defer native placement until Slint has created the window in its event loop.
 fn present_dialog<T: ComponentHandle + 'static>(dialog: &T, kind: DialogKind) -> Result<()> {
@@ -494,7 +527,7 @@ fn bind_configurator(
 
     let weak = window.as_weak();
     window.on_learn_vibeware(move || {
-        let result = crate::tray::open_browser("https://umbertogiacobbi.biz/vibeware/manifesto");
+        let result = crate::tray::open_browser("https://github.com/umbertotechnopreneur/VibeWare");
         if let (Err(error), Some(window)) = (result, weak.upgrade()) {
             window.set_message(format!("{error:#}").into());
         }
@@ -510,7 +543,6 @@ fn bind_about_links(about: &AboutDialog) {
         let url = match target.as_str() {
             "project" => env!("CARGO_PKG_REPOSITORY"),
             "vibeware" => "https://github.com/umbertotechnopreneur/VibeWare",
-            "manifesto" => "https://umbertogiacobbi.biz/vibeware/manifesto",
             "website" => "https://umbertogiacobbi.biz",
             "terms" => "https://umbertogiacobbi.biz/terms/",
             "privacy" => "https://umbertogiacobbi.biz/privacy/",
@@ -519,8 +551,8 @@ fn bind_about_links(about: &AboutDialog) {
         let result = crate::tray::open_browser(url);
         if let Some(about) = weak.upgrade() {
             about.set_message(match result {
-                Ok(()) => "Opened in your default browser.".into(),
-                Err(error) => format!("{error:#}").into(),
+                Ok(()) => "".into(),
+                Err(error) => format!("Could not open the link: {error:#}").into(),
             });
         }
     });

@@ -183,9 +183,9 @@ mod windows {
                 NOTIFYICONIDENTIFIER, NOTIFYICON_VERSION_4,
             },
             WindowsAndMessaging::{
-                AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
+                AllowSetForegroundWindow, AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
                 DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, EndMenu, GetCursorPos,
-                GetMessageW, GetSystemMetrics, GetWindowLongPtrW, MessageBoxW, PostMessageW,
+                FindWindowW, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowThreadProcessId, MessageBoxW, PostMessageW,
                 PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow,
                 SetWindowLongPtrW, TrackPopupMenu, TranslateMessage, UnregisterClassW,
                 CREATESTRUCTW, GWLP_USERDATA, HICON, HMENU, ICONINFO, MB_ICONERROR, MB_OK,
@@ -199,6 +199,8 @@ mod windows {
 
     const CALLBACK: u32 = WM_APP + 1;
     const CONNECTION_CHANGED: u32 = WM_APP + 2;
+    const ACTIVATE_EXISTING: u32 = WM_APP + 3;
+    const TRAY_CLASS: &str = "UlanziDockVibeWareTray";
     const OPEN_CLI: i32 = 10;
     const RESTART_APP: i32 = 11;
     const GITHUB: i32 = 12;
@@ -206,6 +208,33 @@ mod windows {
     const ABOUT: i32 = 14;
     const EXIT_APP: i32 = 15;
     const RESTART_PARENT: &str = "ULANZIDOCK_VIBEWARE_RESTART_PARENT";
+
+    /// Hand a user launch to the resident UI without starting another controller.
+    pub fn activate_existing() -> Result<()> {
+        let name = wide(TRAY_CLASS);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let window = unsafe { FindWindowW(name.as_ptr(), ptr::null()) };
+            if !window.is_null() {
+                let mut process_id = 0;
+                unsafe {
+                    GetWindowThreadProcessId(window, &mut process_id);
+                    if process_id != 0 {
+                        // Transfer the user launch's foreground permission, if available.
+                        AllowSetForegroundWindow(process_id);
+                    }
+                }
+                if unsafe { PostMessageW(window, ACTIVATE_EXISTING, 0, 0) } != 0 {
+                    return Ok(());
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                anyhow::bail!("the resident window is not available");
+            }
+            // The first launch can still be creating its tray window.
+            thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
 
     /// Owned icon handle, destroyed exactly once when its guard is dropped.
     struct Icon(HICON);
@@ -571,7 +600,7 @@ mod windows {
             taskbar_created,
         });
         let instance = unsafe { GetModuleHandleW(ptr::null()) };
-        let name = wide(&format!("UlanziDockVibeWareTray-{}", std::process::id()));
+        let name = wide(TRAY_CLASS);
         let class = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: instance,
@@ -653,6 +682,12 @@ mod windows {
         }
         let state = GetWindowLongPtrW(window, GWLP_USERDATA) as *const State;
         if let Some(state) = state.as_ref() {
+            if message == ACTIVATE_EXISTING {
+                if let Err(error) = crate::gui::activate_existing() {
+                    eprintln!("Could not activate the existing window: {error:#}");
+                }
+                return 0;
+            }
             if message == state.taskbar_created {
                 if let Err(error) = add_icon(window, state.icon.0) {
                     show_error(&format!("Could not restore the tray icon:\n{error:#}"));
@@ -923,7 +958,7 @@ mod windows {
 
 #[cfg(target_os = "windows")]
 pub use windows::{
-    open_browser, open_file, restart_current_process, show_error, wait_for_restart_parent, Tray,
+    activate_existing, open_browser, open_file, restart_current_process, show_error, wait_for_restart_parent, Tray,
 };
 
 #[cfg(not(target_os = "windows"))]

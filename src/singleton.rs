@@ -46,9 +46,9 @@ impl Drop for Instance {
 }
 
 /// Try to acquire the session guard without waiting.
-/// An existing controller or native mutex error is reported; other platforms return
+/// An existing controller returns None; native mutex errors are reported. Other platforms return
 /// a no-op guard because this Windows-specific ownership rule is not implemented there.
-pub fn acquire() -> Result<Instance> {
+pub fn acquire() -> Result<Option<Instance>> {
     #[cfg(target_os = "windows")]
     {
         use anyhow::Context;
@@ -67,20 +67,20 @@ pub fn acquire() -> Result<Instance> {
         }
         let wait = unsafe { WaitForSingleObject(handle, 0) };
         match wait {
-            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Instance {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Some(Instance {
                 handle,
                 _thread: std::marker::PhantomData,
-            }),
+            })),
             _ => {
                 let error = std::io::Error::last_os_error();
                 unsafe { CloseHandle(handle) };
                 if wait == WAIT_TIMEOUT {
-                    anyhow::bail!("UlanziDeck is already running in this Windows session. Use its tray menu to configure, restart or exit it before starting another controller.");
+                    return Ok(None);
                 }
                 Err(error).context("acquiring the controller mutex")
             }
         }
     }
     #[cfg(not(target_os = "windows"))]
-    Ok(Instance {})
+    Ok(Some(Instance {}))
 }

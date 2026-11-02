@@ -195,6 +195,7 @@ pub struct Config {
     pub is_first_run: bool,
     pub runtime: RuntimeSettings,
     /// Linux app choices keep their keys apart from the shared Windows pages.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub linux_applications: BTreeMap<String, LinuxApplication>,
 }
 
@@ -783,6 +784,25 @@ fn validate_page_keys(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn linux_profiles_cannot_replace_reserved_controls_or_hide_invalid_actions() {
+        let mut config = Config::default();
+        let keys = config.pages[5].keys.clone();
+        config.linux_applications.insert("Word".into(), LinuxApplication {
+            application: "libreoffice-writer".into(),
+            keys,
+        });
+        assert!(config.validate().is_ok());
+        config.linux_applications.get_mut("Word").unwrap().keys[CLOCK_KEY].action = "hotkey:ctrl+s".into();
+        assert!(config.validate().is_err());
+        config.linux_applications.get_mut("Word").unwrap().keys[CLOCK_KEY].action = "none".into();
+        config.linux_applications.get_mut("Word").unwrap().keys[NEXT_KEY].action = "none".into();
+        assert!(config.validate().is_err());
+        config.linux_applications.get_mut("Word").unwrap().keys[NEXT_KEY].action = "page:next".into();
+        config.linux_applications.get_mut("Word").unwrap().keys[0].action = "hotkey:unsupported".into();
+        assert!(config.validate().is_err());
+    }
 
     #[test]
     fn invalid_custom_actions_and_assets_fail_before_controller_start() {
