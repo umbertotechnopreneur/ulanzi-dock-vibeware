@@ -7,7 +7,7 @@
  * VibeWare: Human intent, AI execution, and plenty of tokens
  * Manifesto: https://umbertogiacobbi.biz/vibeware/manifesto
  *
- * Modified with AI: OpenAI Codex; comments and readability; 2026-10-27
+ * Modified with AI: OpenAI Codex; separate Linux application keys and shared validation; 2026-11-02
  * Human guidance: Umberto Giacobbi; AGENTS.md; readability/documentation request
  * Evidence: docs/CODE-REVIEW.md and current working-tree changes
  *
@@ -24,7 +24,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
 pub const KEY_COUNT: usize = 14;
 pub const NEXT_KEY: usize = 4;
@@ -175,6 +175,13 @@ impl RuntimeSettings {
     }
 }
 
+/// One explicit Linux app choice and its independent, editable action keys.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct LinuxApplication {
+    pub application: String,
+    pub keys: Vec<KeyConfig>,
+}
+
 /// Saved dock settings plus availability calculated for the running controller.
 #[derive(Clone, Serialize, Deserialize)]
 /// Current on-disk preferences plus generated page and availability state.
@@ -187,6 +194,8 @@ pub struct Config {
     #[serde(default = "first_run_default")]
     pub is_first_run: bool,
     pub runtime: RuntimeSettings,
+    /// Linux app choices keep their keys apart from the shared Windows pages.
+    pub linux_applications: BTreeMap<String, LinuxApplication>,
 }
 
 /// Initial percentage for a genuinely new profile, not a migration fallback.
@@ -234,6 +243,7 @@ impl Default for Config {
             setup_completed: false,
             is_first_run: true,
             runtime: RuntimeSettings::default(),
+            linux_applications: BTreeMap::new(),
             pages: vec![
                 page(
                     "Windows / media",
@@ -605,6 +615,15 @@ impl Config {
         config.validate()?;
         config.refresh_theme_selector(config.theme)?;
         crate::applications::load(path)?.apply(&mut config)?;
+        #[cfg(target_os = "linux")]
+        for (name, selection) in &config.linux_applications {
+            let profile = crate::linux_apps::profile(&selection.application)
+                .context("Unknown Linux application")?;
+            let page = config.pages.iter_mut().find(|page| page.name == *name)
+                .context("Linux application page is missing")?;
+            page.keys = selection.keys.clone();
+            page.executables = profile.executables.iter().map(|name| (*name).to_owned()).collect();
+        }
         config.refresh_key_availability();
         config.validate()?;
 
@@ -643,6 +662,20 @@ impl Config {
     /// Reject unsupported values before callers use this configuration.
     pub fn validate(&self) -> Result<()> {
         self.runtime.validate()?;
+        for (page, selection) in &self.linux_applications {
+            anyhow::ensure!(self.pages.iter().any(|entry| entry.name == *page),
+                "Linux application page '{page}' is missing");
+            #[cfg(target_os = "linux")]
+            {
+                let id = &selection.application;
+                let profile = crate::linux_apps::profile(id)
+                    .with_context(|| format!("unknown Linux application '{id}'"))?;
+                anyhow::ensure!(profile.page == page,
+                    "Linux application '{id}' does not use page '{page}'");
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = selection;
+        }
         anyhow::ensure!(
             self.pages
                 .iter()
@@ -690,47 +723,60 @@ impl Config {
         }
 
         for page in &self.pages {
-            anyhow::ensure!(
-                page.keys.len() == KEY_COUNT,
-                "page '{}' must have 14 keys",
-                page.name
-            );
-            for (index, key) in page.keys.iter().enumerate() {
-                let action = key.action.as_str();
-                let valid = if matches!(action, "page:next" | "brightness:up" | "brightness:down") {
-                    Ok(())
-                } else if let Some(target) = action.strip_prefix("page:go:") {
-                    anyhow::ensure!(
-                        names.contains(target),
-                        "unknown page target '{target}' on '{}' key {index}",
-                        page.name
-                    );
-                    Ok(())
-                } else if let Some(theme) = action.strip_prefix("theme:") {
-                    Theme::from_slug(theme)
-                        .context("unknown theme action")
-                        .map(|_| ())
-                } else {
-                    crate::actions::validate(action)
-                };
-                valid.with_context(|| format!("invalid action on '{}' key {index}", page.name))?;
-                if !key.asset.is_empty() {
-                    crate::applications::validate_asset(&key.asset).with_context(|| {
-                        format!("invalid artwork on '{}' key {index}", page.name)
-                    })?;
-                }
-            }
-            anyhow::ensure!(
-                page.keys[NEXT_KEY].action == "page:next",
-                "key 4 must remain page:next"
-            );
-            anyhow::ensure!(
-                page.keys[CLOCK_KEY].action == "none",
-                "key 13 is reserved for the clock"
-            );
+            validate_page_keys(&page.name, &page.keys, &names)?;
+        }
+        for (name, selection) in &self.linux_applications {
+            validate_page_keys(name, &selection.keys, &names)?;
         }
         Ok(())
     }
+}
+
+/// Validate both shared and Linux-specific keys before any platform can use them.
+fn validate_page_keys(
+    name: &str,
+    keys: &[KeyConfig],
+    names: &std::collections::HashSet<&str>,
+) -> Result<()> {
+    anyhow::ensure!(
+        keys.len() == KEY_COUNT,
+        "page '{}' must have 14 keys",
+        name
+    );
+    for (index, key) in keys.iter().enumerate() {
+        let action = key.action.as_str();
+        let valid = if matches!(action, "page:next" | "brightness:up" | "brightness:down") {
+            Ok(())
+        } else if let Some(target) = action.strip_prefix("page:go:") {
+            anyhow::ensure!(
+                names.contains(target),
+                "unknown page target '{target}' on '{}' key {index}",
+                name
+            );
+            Ok(())
+        } else if let Some(theme) = action.strip_prefix("theme:") {
+            Theme::from_slug(theme)
+                .context("unknown theme action")
+                .map(|_| ())
+        } else {
+            crate::actions::validate(action)
+        };
+        valid.with_context(|| format!("invalid action on '{}' key {index}", name))?;
+        if !key.asset.is_empty() {
+            crate::applications::validate_asset(&key.asset).with_context(|| {
+                format!("invalid artwork on '{}' key {index}", name)
+            })?;
+        }
+    }
+    anyhow::ensure!(
+        keys[NEXT_KEY].action == "page:next",
+        "key 4 must remain page:next"
+    );
+    anyhow::ensure!(
+        keys[CLOCK_KEY].action == "none",
+        "key 13 is reserved for the clock"
+    );
+    Ok(())
 }
 
 #[cfg(test)]

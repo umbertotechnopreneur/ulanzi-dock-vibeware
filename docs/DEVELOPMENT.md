@@ -35,6 +35,80 @@ This makes a Debug build in `target/debug/`. Add `--release` for an optimized bu
 
 Before introducing a new external library or binary, scan its downloaded archive and extracted files with Microsoft Windows Defender. Keep the source, version or SHA-256, command and clean result. Reuse that evidence for unchanged files. Do not add antivirus scans to builds or tests.
 
+## Build on Linux
+
+Prepare Rust 1.90 or newer, a C compiler and linker, C library headers,
+`pkg-config` and the xkbcommon development files. On Ubuntu, the baseline native
+packages are `gcc`, `libc6-dev`, `pkg-config` and `libxkbcommon-dev`.
+The [build workflow](../.github/workflows/build.yml) installs a broader library
+set; that list is not a confirmed minimum for the current enabled features.
+Prepare and scan missing toolchain or system packages before installing them.
+The build script does not install prerequisites.
+
+Keep downloaded dependencies outside the repository. Reuse an existing scanned
+Cargo cache where possible. On a live USB with persistence, use another mounted
+disk for the cache, temporary files and build output. Check its mount, free space
+and filesystem first. The settings writer needs hard-link support. Avoid making
+a second copy of a cache that is already available.
+
+Choose absolute paths appropriate for your machine. For example, set these to
+writable directories on the selected disk:
+
+```sh
+export CARGO_HOME="/path/to/cargo-cache"
+export CARGO_TARGET_DIR="/path/to/build-output"
+export TMPDIR="/path/to/temporary-files"
+```
+
+Prepare dependencies separately from compilation. From the repository folder,
+fetch the locked Linux x64 dependencies into that external cache:
+
+```sh
+cargo fetch --locked --target x86_64-unknown-linux-gnu
+```
+
+[`cargo fetch`](https://doc.rust-lang.org/cargo/commands/cargo-fetch.html)
+downloads dependency material without compiling it or executing dependency
+`build.rs` scripts. It can extract crate sources into the cache. Before any
+build, scan the downloaded `.crate` archives in `$CARGO_HOME/registry/cache` with
+ClamAV using current signatures, then scan the extracted sources in
+`$CARGO_HOME/registry/src`. Include any Git dependency checkouts under
+`$CARGO_HOME/git` and any separately downloaded tools. Preserve the source,
+versions and clean scan results. Scan errors, skipped files or scan limits must
+be resolved before proceeding; they are not a clean result. Do not execute
+installers or dependency build scripts before this scan is complete.
+
+Once the toolchain, native libraries and cached dependencies are ready and
+scanned, build from the repository folder:
+
+```sh
+bash scripts/build-linux.sh
+```
+
+The script runs only `cargo build --frozen --release --bins`. It inherits the
+cache, output and temporary directories above. It also prevents rustup from
+automatically installing a missing toolchain. Cargo's
+[`--frozen`](https://doc.rust-lang.org/cargo/commands/cargo-build.html#manifest-options)
+combines `--locked` and `--offline`: the build keeps `Cargo.lock` unchanged and
+Cargo does not download missing dependencies. An incomplete cache causes an
+error. Fetch and scan the missing material separately before trying again.
+
+The script builds optimized binaries without running the app, software tests or
+dock checks. It leaves the cache and build output available for reuse. With the
+example output directory above, the controller is at
+`$CARGO_TARGET_DIR/release/ulanzi-dock-vibeware`. To open its configurator without
+connecting to the dock:
+
+```sh
+"$CARGO_TARGET_DIR/release/ulanzi-dock-vibeware" configure
+```
+
+The configurator lists supported installed Linux apps and saves explicit choices.
+See [Linux application choices](PLATFORMS.md#linux-application-choices) for
+profiles, shortcut editing and current desktop limitations. Start the controller
+with `run` only when ready for an authorized dock trial. A successful build does
+not prove that HID access or desktop shortcuts work.
+
 ## One menu for the tools
 
 From the repository folder, run:
