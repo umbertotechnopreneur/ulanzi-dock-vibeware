@@ -367,7 +367,7 @@ pub fn render_status(theme: Theme, page: &PageConfig, enabled: bool) -> Result<V
             }
         }
     }
-    draw_panel_text(&mut canvas, &page.name, 24, 79, 32.0, foreground);
+    draw_panel_text(&mut canvas, page.display_name(), 24, 79, 32.0, foreground);
     draw_panel_text(
         &mut canvas,
         &format!("THEME: {}", theme.label()),

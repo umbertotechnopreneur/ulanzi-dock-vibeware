@@ -22,6 +22,15 @@
 //! Foreground matching uses executable names only. This module never hooks global input;
 //! the controller decides whether a physical dock release is allowed to execute an action.
 
+#[cfg(target_os = "linux")]
+mod mpris;
+#[cfg(target_os = "linux")]
+mod audio;
+#[cfg(target_os = "linux")]
+mod wayland;
+#[cfg(target_os = "linux")]
+pub(crate) mod desktop;
+
 use anyhow::Result;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
@@ -111,26 +120,174 @@ pub fn foreground_process() -> ForegroundProcess {
     ForegroundProcess::Unsupported
 }
 
-// action: one configured action, excluding page navigation.
-// Errors: invalid action or failed OS input/open operation.
-pub fn execute(action: &str) -> Result<()> {
+/// Validated desktop action. Parsing a profile has no desktop side effects.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ActionPlan<'a> {
+    None,
+    Hotkey(Vec<Key>),
+    MediaKey(Key),
+    #[cfg(target_os = "linux")]
+    Mpris(&'static str),
+    #[cfg(target_os = "linux")]
+    ToggleMute,
+    #[cfg(target_os = "linux")]
+    Volume(bool),
+    #[cfg(target_os = "linux")]
+    Desktop(desktop::DesktopAction),
+    OpenUrl(&'a str),
+}
+
+pub(crate) fn plan(action: &str) -> Result<ActionPlan<'_>> {
     if action == "none" {
-        return Ok(());
+        return Ok(ActionPlan::None);
     }
-    if let Some(keys) = action.strip_prefix("hotkey:") {
-        return hotkey(keys);
+    #[cfg(target_os = "linux")]
+    if let Some(token) = action.strip_prefix("desktop:") {
+        return Ok(ActionPlan::Desktop(desktop::DesktopAction::parse(token)?));
+    }
+    if let Some(chord) = action.strip_prefix("hotkey:") {
+        return Ok(ActionPlan::Hotkey(hotkey_keys(chord)?));
     }
     if let Some(media) = action.strip_prefix("media:") {
-        let key = media_key(media)?;
-        return Enigo::new(&Settings::default())?
-            .key(key, Direction::Click)
-            .map_err(Into::into);
+        #[cfg(target_os = "linux")]
+        match media {
+            "play-pause" => return Ok(ActionPlan::Mpris("PlayPause")),
+            "next" => return Ok(ActionPlan::Mpris("Next")),
+            "previous" => return Ok(ActionPlan::Mpris("Previous")),
+            "mute" => return Ok(ActionPlan::ToggleMute),
+            "volume-down" => return Ok(ActionPlan::Volume(false)),
+            "volume-up" => return Ok(ActionPlan::Volume(true)),
+            _ => {}
+        }
+        return Ok(ActionPlan::MediaKey(media_key(media)?));
     }
     if let Some(url) = action.strip_prefix("open:") {
         validate_url(url)?;
-        return crate::tray::open_browser(url);
+        return Ok(ActionPlan::OpenUrl(url));
     }
     anyhow::bail!("unsupported action: {action}")
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Output {
+    Key(Key, Direction),
+    #[cfg(target_os = "linux")]
+    Mpris(&'static str),
+    #[cfg(target_os = "linux")]
+    ToggleMute,
+    #[cfg(target_os = "linux")]
+    Volume(bool),
+    #[cfg(target_os = "linux")]
+    Desktop(desktop::DesktopAction),
+    OpenUrl(String),
+}
+
+/// Send the plan to the selected output. If a press fails, release keys already held.
+/// Attempt every release even if an earlier release reports an error.
+fn dispatch(plan: ActionPlan<'_>, mut send: impl FnMut(Output) -> Result<()>) -> Result<()> {
+    match plan {
+        ActionPlan::None => Ok(()),
+        ActionPlan::OpenUrl(url) => send(Output::OpenUrl(url.to_owned())),
+        ActionPlan::MediaKey(key) => send(Output::Key(key, Direction::Click)),
+        #[cfg(target_os = "linux")]
+        ActionPlan::Mpris(method) => send(Output::Mpris(method)),
+        #[cfg(target_os = "linux")]
+        ActionPlan::ToggleMute => send(Output::ToggleMute),
+        #[cfg(target_os = "linux")]
+        ActionPlan::Volume(up) => send(Output::Volume(up)),
+        #[cfg(target_os = "linux")]
+        ActionPlan::Desktop(action) => send(Output::Desktop(action)),
+        ActionPlan::Hotkey(keys) => {
+            for (index, key) in keys.iter().enumerate() {
+                if let Err(error) = send(Output::Key(*key, Direction::Press)) {
+                    for held in keys[..index].iter().rev() {
+                        let _ = send(Output::Key(*held, Direction::Release));
+                    }
+                    return Err(error);
+                }
+            }
+            let mut result = Ok(());
+            for key in keys.into_iter().rev() {
+                if let Err(error) = send(Output::Key(key, Direction::Release)) {
+                    result = Err(error);
+                }
+            }
+            result
+        }
+    }
+}
+
+thread_local! {
+    // Keep one input connection for the controller thread and its portal authorization.
+    #[cfg(target_os = "linux")]
+    static WAYLAND_KEYBOARD: std::cell::RefCell<Option<wayland::Keyboard>> = const { std::cell::RefCell::new(None) };
+    static KEYBOARD: std::cell::RefCell<Option<Enigo>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Keep input teardown inside the controller stack, before thread-local destruction.
+pub(crate) struct InputSession;
+
+impl Drop for InputSession {
+    fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        let _ = WAYLAND_KEYBOARD.try_with(|slot| {
+            let input = slot.borrow_mut().take();
+            drop(input);
+        });
+        let _ = KEYBOARD.try_with(|slot| {
+            let input = slot.borrow_mut().take();
+            drop(input);
+        });
+    }
+}
+
+pub fn execute(action: &str) -> Result<()> {
+    dispatch(plan(action)?, |event| match event {
+        Output::Key(key, direction) => {
+            #[cfg(target_os = "linux")]
+            if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                return WAYLAND_KEYBOARD.with(|keyboard| {
+                    let mut keyboard = keyboard.borrow_mut();
+                    let input = match &mut *keyboard {
+                        Some(input) => input,
+                        slot @ None => slot.insert(wayland::Keyboard::new()?),
+                    };
+                    input.key(key, direction)
+                });
+            }
+            KEYBOARD.with(|keyboard| {
+                let mut keyboard = keyboard.borrow_mut();
+                let input = match &mut *keyboard {
+                    Some(input) => input,
+                    slot @ None => slot.insert(Enigo::new(&Settings::default())?),
+                };
+                Ok(input.key(key, direction)?)
+            })
+        },
+        #[cfg(target_os = "linux")]
+        Output::Mpris(method) => mpris::dispatch(method),
+        #[cfg(target_os = "linux")]
+        Output::ToggleMute => audio::toggle_mute(),
+        #[cfg(target_os = "linux")]
+        Output::Volume(up) => audio::volume(up),
+        #[cfg(target_os = "linux")]
+        Output::Desktop(action) => desktop::execute(action),
+        Output::OpenUrl(url) => crate::tray::open_browser(&url),
+    })
+}
+
+#[cfg(test)]
+pub(crate) use self::Output as RecordedOutput;
+
+/// Exercise the same parsing and dispatch as a live action using an in-memory sink.
+#[cfg(test)]
+pub(crate) fn simulate(action: &str) -> Result<Vec<RecordedOutput>> {
+    let mut events = Vec::new();
+    dispatch(plan(action)?, |event| {
+        events.push(event);
+        Ok(())
+    })?;
+    Ok(events)
 }
 
 /// Translate a configured media token to an input-library key without sending it.
@@ -165,21 +322,7 @@ fn validate_url(url: &str) -> Result<()> {
 
 /// Validate without constructing an input injector or launching an application.
 pub fn validate(action: &str) -> Result<()> {
-    if action == "none" {
-        return Ok(());
-    }
-    if let Some(chord) = action.strip_prefix("hotkey:") {
-        hotkey_keys(chord)?;
-        return Ok(());
-    }
-    if let Some(media) = action.strip_prefix("media:") {
-        media_key(media)?;
-        return Ok(());
-    }
-    if let Some(url) = action.strip_prefix("open:") {
-        return validate_url(url);
-    }
-    anyhow::bail!("unsupported action: {action}")
+    plan(action).map(|_| ())
 }
 
 // chord: plus-separated modifiers and final key, e.g. ctrl+shift+p.
@@ -187,7 +330,11 @@ pub fn validate(action: &str) -> Result<()> {
 /// Parse `chord` into ordered keys before any injection begins.
 /// Reject unknown tokens so malformed shortcuts cannot leave a partial chord pressed.
 fn hotkey_keys(chord: &str) -> Result<Vec<Key>> {
+    #[cfg(target_os = "linux")]
+    anyhow::ensure!(chord.len() <= 64, "hotkey is too long");
     let mut keys = Vec::new();
+    #[cfg(target_os = "linux")]
+    let mut has_final_key = false;
     for token in chord.split('+') {
         let key = match token.to_ascii_lowercase().as_str() {
             "ctrl" | "control" => Key::Control,
@@ -202,41 +349,110 @@ fn hotkey_keys(chord: &str) -> Result<Vec<Key>> {
             "f2" => Key::F2,
             "f5" => Key::F5,
             "f7" => Key::F7,
+            "f9" => Key::F9,
             "f12" => Key::F12,
             single if single.chars().count() == 1 => Key::Unicode(single.chars().next().unwrap()),
             _ => anyhow::bail!("unsupported hotkey token: {token}"),
         };
+        #[cfg(target_os = "linux")]
+        {
+            anyhow::ensure!(!has_final_key, "only modifiers may precede the final key");
+            if matches!(key, Key::Control | Key::Alt | Key::Shift | Key::Meta) {
+                anyhow::ensure!(!keys.contains(&key), "duplicate hotkey modifier: {token}");
+            } else {
+                anyhow::ensure!(
+                    !matches!(key, Key::Unicode(c) if c.is_control()),
+                    "use a named hotkey key instead of a control character"
+                );
+                has_final_key = true;
+            }
+        }
         keys.push(key);
     }
+    #[cfg(target_os = "linux")]
+    anyhow::ensure!(has_final_key, "hotkey requires a final key");
     anyhow::ensure!(!keys.is_empty(), "empty hotkey");
     Ok(keys)
 }
 
-/// Inject validated `chord` in order, then release held keys in reverse order.
-/// Propagate input-library errors and attempt cleanup after partial injection.
-fn hotkey(chord: &str) -> Result<()> {
-    let keys = hotkey_keys(chord)?;
-    let mut enigo = Enigo::new(&Settings::default())?;
-    let mut pressed = Vec::new();
-    for key in keys {
-        if let Err(error) = enigo.key(key, Direction::Press) {
-            for prior in pressed.into_iter().rev() {
-                let _ = enigo.key(prior, Direction::Release);
-            }
-            return Err(error.into());
+#[cfg(test)]
+mod offline_actions {
+    use super::*;
+    use Direction::{Click, Press, Release};
+
+    #[test]
+    fn desktop_routes_preserve_payloads_and_chord_order() {
+        let chord = simulate("hotkey:super+shift+s").unwrap();
+        assert_eq!(chord, [
+            Output::Key(Key::Meta, Press),
+            Output::Key(Key::Shift, Press),
+            Output::Key(Key::Unicode('s'), Press),
+            Output::Key(Key::Unicode('s'), Release),
+            Output::Key(Key::Shift, Release),
+            Output::Key(Key::Meta, Release),
+        ]);
+        let url = "https://example.com/search?q=rust&lang=fr";
+        assert_eq!(simulate(&format!("open:{url}")).unwrap(), [Output::OpenUrl(url.into())]);
+        #[cfg(not(target_os = "linux"))]
+        for (action, key) in [
+            #[cfg(not(target_os = "linux"))]
+            ("media:mute", Key::VolumeMute),
+            #[cfg(not(target_os = "linux"))]
+            ("media:volume-down", Key::VolumeDown),
+            #[cfg(not(target_os = "linux"))]
+            ("media:volume-up", Key::VolumeUp),
+        ] {
+            assert_eq!(simulate(action).unwrap(), [Output::Key(key, Click)], "{action}");
         }
-        pressed.push(key);
+        #[cfg(target_os = "linux")]
+        assert_eq!(simulate("media:mute").unwrap(), [Output::ToggleMute]);
+        assert!(simulate("none").unwrap().is_empty());
     }
-    let mut failed = None;
-    for key in pressed.into_iter().rev() {
-        if let Err(error) = enigo.key(key, Direction::Release) {
-            failed = Some(error);
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn playback_sends_one_mpris_command_without_keyboard_events() {
+        for (action, method) in [
+            ("media:play-pause", "PlayPause"),
+            ("media:next", "Next"),
+            ("media:previous", "Previous"),
+        ] {
+            assert_eq!(simulate(action).unwrap(), [Output::Mpris(method)], "{action}");
         }
     }
-    if let Some(error) = failed {
-        return Err(error.into());
+
+    #[test]
+    fn failed_final_press_releases_only_held_modifiers() {
+        let mut events = Vec::new();
+        let result = dispatch(plan("hotkey:ctrl+shift+p").unwrap(), |event| {
+            let should_fail = event == Output::Key(Key::Unicode('p'), Press);
+            events.push(event);
+            anyhow::ensure!(!should_fail, "press failed");
+            Ok(())
+        });
+        assert_eq!(result.unwrap_err().to_string(), "press failed");
+        assert_eq!(events, [
+            Output::Key(Key::Control, Press), Output::Key(Key::Shift, Press),
+            Output::Key(Key::Unicode('p'), Press), Output::Key(Key::Shift, Release),
+            Output::Key(Key::Control, Release),
+        ]);
     }
-    Ok(())
+
+    #[test]
+    fn failed_final_key_release_still_releases_modifiers() {
+        let mut events = Vec::new();
+        let result = dispatch(plan("hotkey:alt+f5").unwrap(), |event| {
+            let should_fail = event == Output::Key(Key::F5, Release);
+            events.push(event);
+            anyhow::ensure!(!should_fail, "release failed");
+            Ok(())
+        });
+        assert_eq!(result.unwrap_err().to_string(), "release failed");
+        assert_eq!(events, [
+            Output::Key(Key::Alt, Press), Output::Key(Key::F5, Press),
+            Output::Key(Key::F5, Release), Output::Key(Key::Alt, Release),
+        ]);
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +479,21 @@ mod tests {
             "open:https://example.com/",
         ] {
             assert!(validate(action).is_ok(), "rejected {action:?}");
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_hotkeys_accept_one_final_key_after_distinct_modifiers() {
+        for chord in [
+            "a+b", "a+ctrl", "ctrl", "ctrl+ALT", "ctrl+control+s", "meta+win+p", "\n",
+        ] {
+            assert!(hotkey_keys(chord).is_err(), "accepted {chord:?}");
+        }
+        for chord in [
+            "space", "ctrl+;", "shift+alt+f", "CONTROL+alt+shift+meta+enter",
+        ] {
+            assert!(hotkey_keys(chord).is_ok(), "rejected {chord:?}");
         }
     }
 

@@ -61,6 +61,9 @@ mod boot {
 /// Owns the D200H HID handle for one connection session.
 pub struct Dock {
     device: HidDevice,
+    // Keep the Linux device node locked until after the I/O handle closes.
+    #[cfg(target_os = "linux")]
+    _device_lock: std::fs::File,
     prepared_pages: RefCell<VecDeque<Arc<PreparedPage>>>,
 }
 
@@ -269,11 +272,43 @@ impl Dock {
                     "D200H consumer HID interface (usage page 0x0c, usage 1) not found".into(),
                 )
             })?;
+        #[cfg(target_os = "linux")]
+        let (device, device_lock) = {
+            use std::{
+                ffi::{CString, OsStr},
+                fs::{File, TryLockError},
+                os::{fd::AsRawFd, unix::ffi::OsStrExt},
+            };
+
+            let node = OsStr::from_bytes(info.path().to_bytes());
+            let lock = File::open(node).with_context(|| ConnectionError(
+                "Cannot open the D200H interface. Check USB access; after installing UlanziDeck, reconnect the dock.".into()
+            ))?;
+            match lock.try_lock() {
+                Ok(()) => {}
+                Err(TryLockError::WouldBlock) => {
+                    return Err(ConnectionError("Another controller is already using this D200H. Close that controller to connect.".into()).into())
+                }
+                Err(TryLockError::Error(error)) => {
+                    return Err(error).context(ConnectionError("Could not lock the D200H interface".into()))
+                }
+            }
+            // hidapi owns a separate I/O handle. Reopen the locked node itself so
+            // a hotplug cannot redirect the second open to a reused /dev/hidrawN.
+            let path = CString::new(format!("/proc/self/fd/{}", lock.as_raw_fd()))?;
+            let device = api
+                .open_path(&path)
+                .context("opening the locked D200H interface")?;
+            (device, lock)
+        };
+        #[cfg(not(target_os = "linux"))]
         let device = info
             .open_device(api)
             .context("opening D200H consumer HID interface")?;
         Ok(Self {
             device,
+            #[cfg(target_os = "linux")]
+            _device_lock: device_lock,
             prepared_pages: RefCell::new(VecDeque::new()),
         })
     }
@@ -531,9 +566,12 @@ impl Dock {
     // Errors: USB input failure.
     pub fn read_button(&self, timeout: Duration) -> Result<Option<ButtonEvent>> {
         let mut buffer = [0u8; PACKET + 1];
-        let count = self
-            .device
-            .read_timeout(&mut buffer, timeout.as_millis() as i32)?;
+        let count = match self.device.read_timeout(&mut buffer, timeout.as_millis().min(i32::MAX as u128) as i32) {
+            Ok(count) => count,
+            // A stop signal can interrupt poll(). Let the controller observe it.
+            Err(hidapi::HidError::IoError { error }) if error.kind() == std::io::ErrorKind::Interrupted => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
         Ok(decode_button(&buffer[..count]))
     }
 
@@ -763,6 +801,30 @@ mod tests {
     use super::*;
     use crate::model::Config;
     use std::io::Read;
+
+    #[test]
+    fn connection_recovery_preserves_transport_error_context() {
+        let unavailable = anyhow::Error::new(ConnectionError("missing consumer interface".into()))
+            .context("initializing D200H");
+        assert!(is_connection_error(&unavailable));
+        let denied = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            .context(ConnectionError("check USB permissions".into()));
+        assert!(is_connection_error(&denied));
+        assert!(format!("{denied:#}").contains("permission denied"));
+        let disconnected = anyhow::Error::new(hidapi::HidError::IoError {
+            error: std::io::Error::from(std::io::ErrorKind::NotConnected),
+        }).context("reading D200H");
+        assert!(is_connection_error(&disconnected));
+    }
+
+    #[test]
+    fn connection_recovery_does_not_retry_settings_or_artwork_errors() {
+        assert!(!is_connection_error(&anyhow::anyhow!("invalid settings")));
+        // An unrelated disk failure must not turn into an endless USB retry.
+        let disk = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            .context("reading the settings file");
+        assert!(!is_connection_error(&disk));
+    }
 
     #[test]
     fn malformed_button_reports_cannot_become_releases() {

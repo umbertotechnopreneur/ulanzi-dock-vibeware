@@ -24,7 +24,8 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, path::Path};
+use ulanzi_dock_vibeware::persistence;
 
 pub const KEY_COUNT: usize = 14;
 pub const NEXT_KEY: usize = 4;
@@ -137,6 +138,20 @@ pub struct PageConfig {
 }
 
 impl PageConfig {
+    /// Display the selected Linux office app while preserving stable page IDs.
+    pub fn display_name(&self) -> &str {
+        #[cfg(target_os = "linux")]
+        if self.executables.iter().any(|name| name == "soffice.bin") {
+            return match self.name.as_str() {
+                "Word" => "LibreOffice Writer",
+                "PowerPoint" => "LibreOffice Impress",
+                "Excel" => "LibreOffice Calc",
+                _ => &self.name,
+            };
+        }
+        &self.name
+    }
+
     /// Check the derived availability for physical `index`; an absent entry is available.
     pub fn key_available(&self, index: usize) -> bool {
         self.key_availability.get(index).copied().unwrap_or(true)
@@ -312,6 +327,15 @@ impl Default for Config {
                 Self::theme_selector(Theme::DarkClassic),
             ],
         };
+        #[cfg(target_os = "linux")]
+        for (page, entries) in [
+            (0, &[(7, "files"), (8, "show-desktop"), (9, "settings"), (10, "screenshot"), (11, "task-view")][..]),
+            (1, &[(2, "emoji"), (3, "screenshot"), (5, "files"), (6, "show-desktop"), (7, "task-view"), (8, "settings"), (9, "clipboard"), (12, "search")][..]),
+        ] {
+            for &(index, action) in entries {
+                config.pages[page].keys[index].action = format!("desktop:{action}");
+            }
+        }
         config.refresh_page_index();
         config.refresh_key_availability();
         config
@@ -533,10 +557,18 @@ impl Config {
                 "Themes" => ("THEMES", 8),
                 _ => (target.name.as_str(), 9),
             };
+            let label = if target.display_name() != target.name {
+                match target.name.as_str() {
+                    "Word" => "WRITER",
+                    "PowerPoint" => "IMPRESS",
+                    "Excel" => "CALC",
+                    _ => label,
+                }
+            } else { label };
             keys[slot] = KeyConfig {
                 label: label.into(),
                 action: format!("page:go:{}", target.name),
-                description: format!("Open the {} page", target.name),
+                description: format!("Open the {} page", target.display_name()),
                 asset: format!("index:{icon}"),
             };
         }
@@ -600,7 +632,7 @@ impl Config {
     /// Read the current settings format. Missing files use the initial defaults.
     /// Old or incomplete settings are rejected rather than silently rewritten.
     pub fn load(path: &Path) -> Result<Self> {
-        let mut config: Self = match fs::read(path) {
+        let mut config: Self = match persistence::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).with_context(|| {
                 format!(
                     "parsing {}: use the current settings format",
@@ -625,6 +657,7 @@ impl Config {
             page.keys = selection.keys.clone();
             page.executables = profile.executables.iter().map(|name| (*name).to_owned()).collect();
         }
+        config.refresh_page_index();
         config.refresh_key_availability();
         config.validate()?;
 
@@ -638,7 +671,7 @@ impl Config {
         struct Brightness {
             brightness: u8,
         }
-        let level = match fs::read(path) {
+        let level = match persistence::read(path) {
             Ok(bytes) => {
                 serde_json::from_slice::<Brightness>(&bytes)
                     .with_context(|| format!("reading brightness from {}", path.display()))?
@@ -656,7 +689,7 @@ impl Config {
     pub fn save_new(&self, path: &Path) -> Result<()> {
         self.validate()?;
         let json = serde_json::to_vec_pretty(self)?;
-        ulanzi_dock_vibeware::persistence::create_new(path, &json)
+        persistence::create_new(path, &json)
     }
 
     // Errors: a missing page, wrong key count, or reassigned navigation/clock key.

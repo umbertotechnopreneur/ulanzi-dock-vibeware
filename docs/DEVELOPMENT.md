@@ -85,7 +85,8 @@ scanned, build from the repository folder:
 bash scripts/build-linux.sh
 ```
 
-The script runs only `cargo build --frozen --release --bins`. It inherits the
+The script calls the shared console, checks prerequisites and the dependency
+scan receipt, then runs `cargo build --frozen --release --bins`. It inherits the
 cache, output and temporary directories above. It also prevents rustup from
 automatically installing a missing toolchain. Cargo's
 [`--frozen`](https://doc.rust-lang.org/cargo/commands/cargo-build.html#manifest-options)
@@ -109,30 +110,94 @@ profiles, shortcut editing and current desktop limitations. Start the controller
 with `run` only when ready for an authorized dock trial. A successful build does
 not prove that HID access or desktop shortcuts work.
 
-## One menu for the tools
+## One console for the tools
 
-From the repository folder, run:
+Use Python 3.11 or newer. Open the shared menu from the repository folder:
 
-```powershell
-pwsh -NoProfile -File scripts/ulanzi.ps1
+```sh
+python3 scripts/ulanzi.py
 ```
 
-Choose a task or press Enter to leave. The menu explains which choices build, write files or install the app. It does not publish releases or run tests.
+On Windows, use `python` instead of `python3`. The PowerShell entry
+`pwsh -NoProfile -File scripts/ulanzi.ps1` opens the same menu. The shared console
+owns navigation and native Linux build/setup/packaging. Windows packaging and
+artwork implementations remain separate modules called by that console; they
+are not copies of a second menu. Commands can run
+directly without prompts:
 
-With a command, the menu is skipped:
+```sh
+python3 scripts/ulanzi.py preflight
+python3 scripts/ulanzi.py setup
+python3 scripts/ulanzi.py build
+python3 scripts/ulanzi.py configure
+```
+
+When ready to use the connected dock, select `run` in the menu or execute
+`python3 scripts/ulanzi.py run`. This opens the device and dispatches configured
+shortcuts. It is a separate explicit action, never part of setup or build.
+
+`preflight` checks installed build prerequisites. It does not connect to the dock.
+`setup` installs missing build packages on Debian/Ubuntu through APT, using sudo
+when needed. Setup also installs ClamAV and its updater from authenticated distribution
+repositories when missing. This scanner bootstrap is the sole exception to the
+scan-before-install rule: APT verifies repository signatures and package hashes.
+Setup updates missing or stale signatures automatically. If the system updater
+is running, setup stops it during the update and restores it afterward.
+Signatures must be under 48 hours old. Signature updates use
+[FreshClam](https://docs.clamav.net/manual/Usage/SignatureManagement.html).
+The scanner accepts individual files up to 1 GiB and scan data up to 2 GiB;
+exceeding either limit stops setup. It scans downloaded DEBs
+and their extracted contents before installation. APT package scripts run only
+after those scans pass. The distribution must provide Rust 1.90 or newer.
+Pillow and ReportLab are included in the Linux package prerequisites.
+Other operating systems still need the manual prerequisites described above.
+No vendor software, drivers or firmware are installed by setup.
+
+Setup fetches locked Cargo dependencies, scans archives, extracted sources and
+Git checkouts, and records the scan in the external cache. Errors and scan-limit
+alerts stop setup. Builds compare cached dependency contents with the scan
+receipt before compiling; they do not run antivirus scans. Run setup again if the
+cache changes. Keep the cache private to your user.
+
+Linux build output, Cargo material and temporary files default to
+`$XDG_CACHE_HOME/ulanzideck` (or `~/.cache/ulanzideck`). Explicit `CARGO_HOME`,
+`CARGO_TARGET_DIR` and `TMPDIR` override those locations. Select a suitable mounted
+disk when using a live USB. Builds use up to four parallel jobs by default;
+`CARGO_BUILD_JOBS` can override this. `scripts/build-linux.sh` forwards to the same build
+command. Compilation uses `--frozen --release --bins` and never downloads missing
+dependencies. `configure` opens settings without starting a dock trial.
+
+Use `python3 scripts/ulanzi.py deb` to package a native Linux build.
+See [Debian packages](RELEASING.md#make-a-debian-package) for options and installation.
+The console also exposes icons, preview sheets, the OBS guide, dependency notices,
+Windows installers and packaging. On other systems, Python artwork tasks need separately prepared
+and scanned Pillow or ReportLab dependencies. Windows packaging tasks require
+PowerShell 7 and retain their existing options:
 
 ```powershell
 pwsh -NoProfile -File scripts/ulanzi.ps1 -Command build -KeepBuildCache
 pwsh -NoProfile -File scripts/ulanzi.ps1 -Command msix -Configuration Debug -PublisherSubject 'CN=Your Local Publisher'
 ```
 
-`build` keeps the local build script's existing Release behavior: it puts both programs in `artifacts/`, replaces them safely and removes its temporary build folder. `-KeepBuildCache` keeps that folder to speed up the next build. A running workspace copy must be closed first; `-StopRunning` explicitly allows the script to close it.
+The Windows build preserves staged replacement, backups and explicit process-stop
+options. Its existing dependency preparation remains manual. Packaging never
+publishes a GitHub release. The console does not run software tests, diagnostics
+or dock trials automatically. Running preflight is an explicit inspection command.
 
-The existing `build-local.ps1`, `build-msix.ps1` and `package-release.ps1` commands keep their parameters. With no parameters they open the same menu. Use `-?` on `ulanzi.ps1` for help. See [installation](INSTALLATION.md#build-your-own-installer) for signing requirements.
+## Check Linux actions without a dock
 
-Python 3.10 or newer handles the file tools through `scripts/tools.py`. It also offers a small menu without arguments. Pictures need Pillow; the OBS PDF also needs ReportLab. License collection uses Python's standard library and packages already restored in the Cargo cache. It does not download dependencies. These libraries are external imports and need the first-import scan described above before use.
+When an action test run is authorized, use `python3 scripts/ulanzi.py test-actions`.
+The reference layout covers 87 distinct actions across the 140 key positions
+on the ten enabled pages with the MATRIX theme. Each simulated press and release
+uses the controller's routing code. Desktop output goes to memory. The tests
+compare key order, media methods, URLs and internal commands against the expected
+effect of each position. They also check the index, disabled controls and
+brightness limits. The test process can run alongside the controller.
 
-The `build`, `msix` and `msix-icons` tasks use Windows tools. Other systems can build directly with Cargo; see [platform requirements](PLATFORMS.md).
+Add `--config /absolute/path/settings.json` to compare an existing profile,
+including its catalogue and Linux overrides, with this reference layout.
+Intentional differences appear as mismatches. Confirm application behavior
+separately by observing the desktop when you release the physical button.
 
 ## Find the right file
 

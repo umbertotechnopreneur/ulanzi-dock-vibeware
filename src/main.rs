@@ -29,6 +29,8 @@ mod art;
 mod cli_pages;
 mod console;
 mod controller;
+#[cfg(all(test, target_os = "linux"))]
+mod offline_actions;
 mod dock;
 mod gui;
 mod licensing;
@@ -130,8 +132,10 @@ enum Command {
     },
     /// Display a page, listen to this device, and dispatch configured actions.
     Run {
-        #[arg(long, default_value = "settings.json")]
-        config: PathBuf,
+        /// Use an explicit profile. On Linux the default is the same as for configure.
+        #[arg(long)]
+        #[cfg_attr(not(target_os = "linux"), arg(default_value = "settings.json"))]
+        config: Option<PathBuf>,
         #[arg(long, value_enum)]
         theme: Option<Theme>,
         /// Stop after this many seconds (1-300); omit to run until Ctrl+C.
@@ -297,7 +301,7 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
         println!("Press Ctrl+C to stop. For the command guide, use 'help'.\n");
         Cli {
             command: Command::Run {
-                config,
+                config: Some(config),
                 theme: None,
                 seconds: None,
                 no_actions: false,
@@ -411,6 +415,7 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 control.enter_background();
                 return Ok(());
             };
+            let config = config.map_or_else(paths::default_settings, Ok)?;
             let mut settings = Config::load(&config)?;
             // MSIX launches have redirected handles. Automatic console onboarding
             // returned false there, silently ending the app before its GUI existed.
@@ -454,4 +459,21 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_cli_tests {
+    use super::*;
+
+    #[test]
+    fn run_only_uses_a_relative_profile_when_requested() {
+        let cli = Cli::try_parse_from(["dock", "run"]).unwrap();
+        assert!(matches!(cli.command, Command::Run { config: None, .. }));
+
+        let cli = Cli::try_parse_from(["dock", "run", "--config", "settings.json"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Run { config: Some(path), .. } if path == std::path::Path::new("settings.json")
+        ));
+    }
 }

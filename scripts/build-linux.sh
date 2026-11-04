@@ -19,30 +19,7 @@
 #
 # VBWR E
 
-# Prepare and scan the toolchain and cached dependencies before invoking this script.
-# CARGO_HOME, CARGO_TARGET_DIR and TMPDIR are inherited from the caller.
-# This script builds release binaries only. It does not run them or clean the cache.
+# Shared console owns preflight, cache selection and the frozen source build.
 set -euo pipefail
-
-if (( $# != 0 )); then
-    printf '%s\n' 'Usage: bash scripts/build-linux.sh' >&2
-    exit 2
-fi
-
-if [[ "$OSTYPE" != linux* ]]; then
-    printf '%s\n' 'Run this build script on Linux.' >&2
-    exit 2
-fi
-
-if ! command -v cargo >/dev/null 2>&1; then
-    printf '%s\n' \
-        'Cargo was not found. Prepare Rust 1.90 or newer and scan the toolchain and dependencies before building.' >&2
-    exit 127
-fi
-
 project_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-cd -- "$project_dir"
-
-# Also prevent a Cargo executable managed by rustup from installing a toolchain.
-export RUSTUP_AUTO_INSTALL=0
-exec cargo build --frozen --release --bins
+exec python3 "$project_dir/scripts/ulanzi.py" build "$@"

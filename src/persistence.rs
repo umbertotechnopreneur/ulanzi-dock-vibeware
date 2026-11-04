@@ -36,6 +36,9 @@ use std::{
 /// Keep this guard alive across the complete read/modify/write operation.
 pub struct Transaction {
     path: PathBuf,
+    destination: PathBuf,
+    #[cfg(target_os = "linux")]
+    directory: File,
     // Closing this handle releases the OS lock, including after a process crash.
     _lock: File,
 }
@@ -49,6 +52,16 @@ impl Transaction {
 
     // Tests can allow slower disks more time without changing the user-facing timeout.
     fn begin_with_timeout(path: &Path, timeout: Duration) -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        let (path, directory, destination) = {
+            let absolute = std::path::absolute(path)?;
+            let name = absolute.file_name().context("state file needs a filename")?;
+            let parent = fs::canonicalize(absolute.parent().context("state file needs a parent")?)?;
+            let directory = linux::open_directory(&parent)?;
+            let destination = linux::fd_path(&directory).join(name);
+            (parent.join(name), directory, destination)
+        };
+        #[cfg(not(target_os = "linux"))]
         let path = match fs::canonicalize(path) {
             Ok(path) => path,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -64,19 +77,39 @@ impl Transaction {
             }
             Err(error) => return Err(error).context("resolving state file"),
         };
-        let mut name = path.as_os_str().to_owned();
+        #[cfg(not(target_os = "linux"))]
+        let destination = path.clone();
+        let mut name = destination.as_os_str().to_owned();
         name.push(".lock");
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY);
+        }
+        let lock = options
             .open(PathBuf::from(name))
             .context("opening state lock")?;
+        #[cfg(target_os = "linux")]
+        ensure!(
+            lock.metadata()?.is_file(),
+            "state lock must be a regular file"
+        );
         let started = Instant::now();
         loop {
             match lock.try_lock() {
-                Ok(()) => return Ok(Self { path, _lock: lock }),
+                Ok(()) => {
+                    return Ok(Self {
+                        path,
+                        destination,
+                        #[cfg(target_os = "linux")]
+                        directory,
+                        _lock: lock,
+                    })
+                }
                 Err(TryLockError::WouldBlock) if started.elapsed() < timeout => {
                     std::thread::sleep(Duration::from_millis(10));
                 }
@@ -88,7 +121,7 @@ impl Transaction {
         }
     }
 
-    /// Return the canonical destination used by this transaction and its lock.
+    /// Return the stable profile path that callers can keep after the lock drops.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -96,11 +129,7 @@ impl Transaction {
     /// Read a complete current snapshot; an absent destination is `None`.
     /// Other I/O errors propagate rather than being mistaken for a new file.
     pub fn read(&self) -> Result<Option<Vec<u8>>> {
-        match fs::read(&self.path) {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error).with_context(|| format!("reading {}", self.path.display())),
-        }
+        read_optional(&self.destination)
     }
 
     /// Replace only if the target still matches `expected`; `None` means absent.
@@ -115,12 +144,12 @@ impl Transaction {
         if expected == Some(bytes) {
             return Ok(());
         }
-        let staged = StagedFile::new(&self.path, bytes)?;
+        let staged = StagedFile::new(self, &self.destination, bytes)?;
         if let Some(original) = expected {
-            let mut backup = self.path.as_os_str().to_owned();
+            let mut backup = self.destination.as_os_str().to_owned();
             backup.push(".gui.bak");
             let backup = PathBuf::from(backup);
-            StagedFile::new(&backup, original)?.replace(&backup)?;
+            StagedFile::new(self, &backup, original)?.replace(&backup)?;
         }
         // Editors outside this application may not honor its lock.
         ensure!(
@@ -128,7 +157,7 @@ impl Transaction {
             "{} changed before saving",
             self.path.display()
         );
-        staged.replace(&self.path)
+        staged.replace(&self.destination)
     }
 
     /// Publish a complete new file without ever replacing an existing destination.
@@ -136,14 +165,111 @@ impl Transaction {
         if self.read()?.is_some() {
             return Ok(false);
         }
-        let staged = StagedFile::new(&self.path, bytes)?;
+        let staged = StagedFile::new(self, &self.destination, bytes)?;
         // The sibling temporary is on the same volume. Linking is an atomic
         // create-if-absent operation on Windows and Unix; unsupported filesystems fail closed.
-        match fs::hard_link(&staged.path, &self.path) {
+        match fs::hard_link(&staged.path, &self.destination) {
             Ok(()) => Ok(true),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
             Err(error) => Err(error).context("publishing new state file without replacement"),
         }
+    }
+}
+
+/// Read a profile input. Linux opens only regular files, without following
+/// a final symlink or waiting for a writer when a FIFO occupies the expected name.
+pub fn read(path: &Path) -> std::io::Result<Vec<u8>> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::read_regular(path)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        fs::read(path)
+    }
+}
+
+/// Only a missing file becomes `None`. Propagate all other read errors.
+pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
+    match read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::*;
+    use std::{
+        io::{self, Read},
+        os::{
+            fd::AsRawFd,
+            unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
+        },
+    };
+
+    // A procfs fd path pins the directory inode across all name lookups, including
+    // rename and hard_link. Callers retain the descriptor until the operation ends.
+    pub(super) fn fd_path(directory: &File) -> PathBuf {
+        PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()))
+    }
+
+    pub(super) fn open_directory(path: &Path) -> io::Result<File> {
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(path)
+    }
+
+    pub(super) fn read_regular(path: &Path) -> io::Result<Vec<u8>> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
+            .open(path)?;
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "expected a regular file",
+            ));
+        }
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    // Never grant group/other access, even briefly, or increase an existing owner's mode.
+    pub(super) fn private_mode(path: &Path) -> io::Result<u32> {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.is_file() => Ok(metadata.mode() & 0o600),
+            Ok(_) => Ok(0o600),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(0o600),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(super) fn private_staging(directory: &File) -> Result<Option<File>> {
+        let metadata = directory.metadata()?;
+        // SAFETY: geteuid takes no arguments and cannot fail.
+        let uid = unsafe { libc::geteuid() };
+        if metadata.uid() == uid && metadata.mode() & 0o022 == 0 {
+            return Ok(None);
+        }
+        // Peers with write access to the profile could swap an ordinary sibling
+        // temporary before publication. Use a private subdirectory on the same FS.
+        let path = fd_path(directory).join(format!(".ulanzi-stage-{uid}"));
+        match fs::DirBuilder::new().mode(0o700).create(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error).context("creating private state staging directory"),
+        }
+        let staging = open_directory(&path).context("opening private state staging directory")?;
+        let metadata = staging.metadata()?;
+        ensure!(
+            metadata.uid() == uid && metadata.mode() & 0o777 == 0o700,
+            "state staging directory must be owned by the current user and have mode 0700"
+        );
+        Ok(Some(staging))
     }
 }
 
@@ -161,12 +287,29 @@ pub fn create_new(path: &Path, bytes: &[u8]) -> Result<()> {
 /// A flushed sibling temporary file; dropping it removes only this owned path.
 struct StagedFile {
     path: PathBuf,
+    #[cfg(target_os = "linux")]
+    _private_directory: Option<File>,
 }
 
 impl StagedFile {
     /// Stage `bytes` beside `destination` using create-new, collision-resistant names.
     /// A write or flush failure closes the handle before cleanup, including on Windows.
-    fn new(destination: &Path, bytes: &[u8]) -> Result<Self> {
+    fn new(_transaction: &Transaction, destination: &Path, bytes: &[u8]) -> Result<Self> {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(target_os = "linux")]
+        let (destination, private_directory) = {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mode = linux::private_mode(&_transaction.destination)?;
+            options.mode(mode & linux::private_mode(destination)?);
+            let private_directory = linux::private_staging(&_transaction.directory)?;
+            let path = match &private_directory {
+                Some(dir) => linux::fd_path(dir)
+                    .join(destination.file_name().context("missing state filename")?),
+                None => destination.to_owned(),
+            };
+            (path, private_directory)
+        };
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         for _ in 0..16 {
@@ -177,12 +320,16 @@ impl StagedFile {
                 SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
             let path = PathBuf::from(name);
-            let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
+            let mut file = match options.open(&path) {
                 Ok(file) => file,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(error).context("creating staged state file"),
             };
-            let staged = Self { path };
+            let staged = Self {
+                path,
+                #[cfg(target_os = "linux")]
+                _private_directory: private_directory,
+            };
             let result = file.write_all(bytes).and_then(|()| file.sync_all());
             // Close first so cleanup also works after a write failure on Windows.
             drop(file);
@@ -247,6 +394,12 @@ mod tests {
                 SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos(),
                 SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                fs::DirBuilder::new().mode(0o700).create(&path)?;
+            }
+            #[cfg(not(target_os = "linux"))]
             fs::create_dir(&path)?;
             Ok(Self(path))
         }
@@ -280,6 +433,36 @@ mod tests {
         transaction.replace(Some(b"original"), b"updated")?;
         assert_eq!(fs::read(fixture.0.join("state.json.gui.bak"))?, b"original");
         assert_eq!(transaction.read()?.as_deref(), Some(b"updated".as_slice()));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn redirected_state_cannot_overwrite_another_file() -> Result<()> {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = Fixture::new()?;
+        let external = Fixture::new()?;
+        let source = fixture.file();
+        let backup = fixture.0.join("state.json.gui.bak");
+        let outside = external.file();
+        fs::write(&outside, b"other user data")?;
+        let transaction = Transaction::begin(&source)?;
+        symlink(&outside, &source)?;
+        let redirected_read = transaction.read();
+        let redirected_write = transaction.replace(Some(b"other user data"), b"new page");
+        fs::remove_file(&source)?;
+        assert!(redirected_read.is_err());
+        assert!(redirected_write.is_err());
+
+        fs::write(&source, b"old page")?;
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o400))?;
+        symlink(&outside, &backup)?;
+        transaction.replace(Some(b"old page"), b"new page")?;
+        assert_eq!(fs::read(&outside)?, b"other user data");
+        assert_eq!(fs::read(&backup)?, b"old page");
+        for file in [&source, &backup] {
+            assert_eq!(fs::metadata(file)?.permissions().mode() & 0o777, 0o400);
+        }
         Ok(())
     }
 

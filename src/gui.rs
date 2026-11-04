@@ -30,7 +30,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use slint::{ComponentHandle, Model};
-use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
+use std::{cell::{Cell, RefCell}, path::PathBuf, rc::Rc, sync::Arc};
 
 slint::include_modules!();
 
@@ -227,6 +227,7 @@ struct LinuxPageChoices {
 struct Configurator {
     window: slint::Weak<MainWindow>,
     settings: RefCell<Option<SettingsStore>>,
+    refreshing: Cell<bool>,
     app_pages: Rc<slint::VecModel<AppPage>>,
     #[cfg(target_os = "linux")]
     linux_app_pages: Rc<slint::VecModel<LinuxAppPage>>,
@@ -244,6 +245,10 @@ impl Configurator {
             return;
         };
 
+        if self.refreshing.replace(true) {
+            return;
+        }
+        window.set_ready(false);
         match SettingsStore::load(&self.path) {
             Ok(loaded) => {
                 let pages = loaded
@@ -267,7 +272,6 @@ impl Configurator {
                 window.set_detect_applications(loaded.config.runtime.detect_applications);
                 window.set_poll_seconds(loaded.config.runtime.focus_poll_seconds as i32);
                 window.set_message(window.get_save_hint());
-                window.set_ready(true);
                 #[cfg(target_os = "linux")]
                 if let Err(error) = self.reload_linux_apps(&loaded.config) {
                     self.linux_app_pages.set_vec(Vec::new());
@@ -275,6 +279,7 @@ impl Configurator {
                     window.set_message(format!("Could not read installed applications: {error:#}").into());
                 }
                 *self.settings.borrow_mut() = Some(loaded);
+                window.set_ready(true);
             }
             Err(error) => {
                 window.set_ready(false);
@@ -282,6 +287,7 @@ impl Configurator {
                 *self.settings.borrow_mut() = None;
             }
         }
+        self.refreshing.set(false);
     }
 
     /// Refresh known native, Flatpak and Snap launchers without running commands.
@@ -339,6 +345,7 @@ impl Configurator {
     /// Persist only an explicit app selection or request for suggested shortcuts.
     #[cfg(target_os = "linux")]
     fn save_linux_choice(&self, row: i32, selection: Option<i32>) {
+        if self.refreshing.get() { return; }
         let (page, id) = {
             let choices = self.linux_choices.borrow();
             let Some(choice) = usize::try_from(row).ok().and_then(|index| choices.get(index)) else { return; };
@@ -396,6 +403,7 @@ impl Configurator {
 
     /// Save a user gesture atomically; failures remain visible for retry.
     fn save(&self, theme_changed: bool) {
+        if self.refreshing.get() { return; }
         let Some(window) = self.window.upgrade() else {
             return;
         };
@@ -491,6 +499,7 @@ fn bind_configurator(
     let state = Rc::new(Configurator {
         window: window.as_weak(),
         settings: RefCell::new(None),
+        refreshing: Cell::new(false),
         app_pages,
         #[cfg(target_os = "linux")]
         linux_app_pages,
@@ -503,6 +512,7 @@ fn bind_configurator(
 
     let toggled = Rc::clone(&state);
     window.on_page_toggled(move |index, enabled| {
+        if toggled.refreshing.get() { return; }
         if let Some(mut page) = toggled.app_pages.row_data(index as usize) {
             page.enabled = enabled;
             toggled.app_pages.set_row_data(index as usize, page);
@@ -645,6 +655,7 @@ pub fn standalone(path: PathBuf, configure: bool, control: Arc<Control>) -> Resu
     )?;
     let _console = crate::console::detach_if_owned()?;
     control.enter_background();
+    eprintln!("Opening UlanziDeck {}: {}", if configure { "configurator" } else { "About dialog" }, path.display());
     if configure {
         present_dialog(&dialogs.config, DialogKind::Configuration)?;
     } else {

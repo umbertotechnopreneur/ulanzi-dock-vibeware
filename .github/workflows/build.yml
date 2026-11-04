@@ -54,7 +54,7 @@ jobs:
           python-version: "3.13"
       - name: Install Linux development libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libudev-dev libxdo-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-xcb-dev libxcursor-dev libxkbcommon-x11-dev
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev libudev-dev libxdo-dev libxkbcommon-dev libfontconfig1-dev libwayland-dev libx11-xcb-dev libxcursor-dev libxkbcommon-x11-dev
       - name: Add Rust target
         shell: pwsh
         run: |
@@ -77,6 +77,9 @@ jobs:
           if (-not $versionLine) { throw 'Package version was not found in Cargo.toml.' }
           $version = $versionLine.Matches[0].Groups[1].Value
           ./scripts/package-release.ps1 -Target '${{ matrix.target }}' -Label '${{ matrix.label }}' -Tag "v$version-stable"
+      - name: Package native Linux Debian installer
+        if: runner.os == 'Linux'
+        run: CARGO_HOME="$HOME/.cargo" python3 scripts/ulanzi.py deb --binary target/${{ matrix.target }}/release/ulanzi-dock-vibeware --output dist
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.label }}
@@ -84,4 +87,6 @@ jobs:
             dist/ulanzi-dock-vibeware-*.zip
             dist/ulanzi-dock-vibeware-*.tar.gz
             dist/ulanzi-dock-vibeware-*.sha256
+            dist/ulanzi-dock-vibeware_*.deb
+            dist/ulanzi-dock-vibeware_*.deb.sha256
           if-no-files-found: error

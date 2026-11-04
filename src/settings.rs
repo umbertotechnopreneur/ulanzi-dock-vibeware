@@ -26,11 +26,10 @@
 use crate::model::{Config, RuntimeSettings, Theme, PAGE_INDEX_NAME};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-use ulanzi_dock_vibeware::persistence::Transaction;
+use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::fs;
+use ulanzi_dock_vibeware::persistence::{read_optional, Transaction};
 
 /// Saves only the requested preferences, preserving custom keys and metadata.
 /// Snapshots prevent a dialog from overwriting edits made since it was opened.
@@ -39,15 +38,6 @@ pub struct SettingsStore {
     path: PathBuf,
     json: Option<Vec<u8>>,
     catalogue: Option<Vec<u8>>,
-}
-
-/// Read `path`; absence is `None`, while permission and other I/O failures propagate.
-fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
-    match fs::read(path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
-    }
 }
 
 // Session state is kept apart from settings, so page navigation cannot make an
@@ -324,6 +314,12 @@ mod tests {
                 std::process::id(),
                 SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                fs::DirBuilder::new().mode(0o700).create(&path)?;
+            }
+            #[cfg(not(target_os = "linux"))]
             fs::create_dir(&path)?;
             let fixture = Self(path);
 

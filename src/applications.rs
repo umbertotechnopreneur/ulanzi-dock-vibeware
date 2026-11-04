@@ -25,7 +25,8 @@
 use crate::model::{Config, CLOCK_KEY, NEXT_KEY};
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{collections::HashSet, fs, path::Path};
+use std::{collections::HashSet, path::Path};
+use ulanzi_dock_vibeware::persistence;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -164,15 +165,15 @@ pub fn validate_asset(asset: &str) -> Result<(&str, usize)> {
 
 /// An explicit editor request can create the current catalogue, never replace one.
 pub fn create_default(path: &Path) -> Result<()> {
-    ulanzi_dock_vibeware::persistence::create_new(path, include_bytes!("../applications.yaml"))
+    persistence::create_new(path, include_bytes!("../applications.yaml"))
 }
 
 /// Read the catalogue beside `settings`, or use the bundled current default if absent.
 /// Propagate file/parse errors; an invalid existing catalogue is never replaced.
 pub fn load(settings: &Path) -> Result<Catalog> {
     let path = settings.with_file_name("applications.yaml");
-    let yaml = if path.exists() {
-        fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?
+    let yaml = if let Some(bytes) = persistence::read_optional(&path)? {
+        String::from_utf8(bytes).with_context(|| format!("reading {}", path.display()))?
     } else {
         include_str!("../applications.yaml").to_owned()
     };

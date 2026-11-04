@@ -23,6 +23,9 @@
 //! Shell helpers open links/files or restart this executable. Device I/O and Slint dialog
 //! construction remain in their own modules.
 
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
+
 #[cfg(not(target_os = "windows"))]
 use anyhow::Result;
 #[cfg(target_os = "windows")]
@@ -87,9 +90,9 @@ impl Control {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     /// Decode the connection state atomically for native tray presentation.
-    fn connection(&self) -> ConnectionState {
+    pub(crate) fn connection(&self) -> ConnectionState {
         match self.connection.load(Ordering::SeqCst) {
             1 => ConnectionState::Connected,
             2 => ConnectionState::Disconnected,
@@ -965,16 +968,78 @@ pub use windows::{
 // target: URL or local file passed directly to the OS opener, without shell interpolation.
 // Errors: spawning the platform's default opener.
 fn open_target(target: &std::ffi::OsStr) -> Result<()> {
-    use anyhow::Context;
     #[cfg(target_os = "macos")]
     let executable = "open";
     #[cfg(not(target_os = "macos"))]
     let executable = "xdg-open";
-    std::process::Command::new(executable)
-        .arg(target)
-        .spawn()
-        .context("opening the browser or editor")?;
-    Ok(())
+    let mut command = std::process::Command::new(executable);
+    command.arg(target);
+    #[cfg(target_os = "linux")]
+    {
+        linux_openers::spawn(&mut command)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        use anyhow::Context;
+        command.spawn().context("opening the browser or editor")?;
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux_openers {
+    use anyhow::{ensure, Context, Result};
+    use std::{
+        process::{Child, Command},
+        sync::{Mutex, PoisonError},
+        thread,
+        time::Duration,
+    };
+
+    // Some openers stay alive until the browser or editor closes.
+    const MAX_ACTIVE: usize = 16;
+    // Some means one reaper owns this batch, even if the first spawn failed.
+    static ACTIVE: Mutex<Option<Vec<Child>>> = Mutex::new(None);
+
+    pub(super) fn spawn(command: &mut Command) -> Result<()> {
+        let mut active = ACTIVE.lock().unwrap_or_else(PoisonError::into_inner);
+        if active.is_none() {
+            // Start the reaper before creating any process it would have to own.
+            thread::Builder::new()
+                .name("desktop-openers".into())
+                .spawn(reap)
+                .context("starting the desktop opener worker")?;
+        }
+        let children = active.get_or_insert_with(Vec::new);
+        ensure!(
+            children.len() < MAX_ACTIVE,
+            "too many desktop openers are running"
+        );
+        children.push(command.spawn().context("opening the browser or editor")?);
+        Ok(())
+    }
+
+    fn reap() {
+        loop {
+            {
+                let mut active = ACTIVE.lock().unwrap_or_else(PoisonError::into_inner);
+                let Some(children) = active.as_mut() else {
+                    return;
+                };
+                children.retain_mut(|child| match child.try_wait() {
+                    Ok(status) => status.is_none(),
+                    // ECHILD means the kernel has no child for us to collect.
+                    // Retain the handle on any other error and retry next time.
+                    Err(error) => error.raw_os_error() != Some(libc::ECHILD),
+                });
+                if children.is_empty() {
+                    *active = None;
+                    return;
+                }
+            }
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
 }
 
 #[cfg(not(target_os = "windows"))]

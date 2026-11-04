@@ -67,7 +67,7 @@ pwsh -NoProfile -File scripts/ulanzi.ps1 -Command msix -Configuration Debug
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('build', 'msix', 'package', 'icons', 'msix-icons', 'atlases', 'obs-guide', 'notices')]
+    [ValidateSet('preflight', 'setup', 'configure', 'run', 'deb', 'build', 'msix', 'package', 'icons', 'msix-icons', 'atlases', 'obs-guide', 'notices')]
     [string] $Command,
     [switch] $StopRunning,
     [switch] $KeepBuildCache,
@@ -92,6 +92,11 @@ $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'PowerShell 7 or newer is required.' }
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $allowed = @{
+    preflight = @()
+    setup = @()
+    configure = @()
+    run = @()
+    deb = @()
     build = @('StopRunning', 'KeepBuildCache')
     msix = @('Install', 'KeepStaging', 'Configuration', 'Architecture', 'PublisherSubject', 'StoreConfig', 'PackageVersion', 'SignStoreTestPackage')
     package = @('Target', 'Label', 'Tag')
@@ -108,6 +113,13 @@ function Invoke-Task([string] $Name, [hashtable] $Options) {
     $Name = $Name.ToLowerInvariant()
     foreach ($key in $Options.Keys) {
         if ($key -notin $allowed[$Name]) { throw "-$key does not apply to $Name." }
+    }
+    if ($Name -in @('preflight', 'setup', 'configure', 'run', 'deb') -or ($Name -eq 'build' -and -not $IsWindows)) {
+        if ($Options.Count) { throw 'This task does not accept extra options on this platform.' }
+        $python = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { 'python' }
+        & $python (Join-Path $PSScriptRoot 'ulanzi.py') $Name
+        if ($LASTEXITCODE -ne 0) { throw "The $Name task failed (exit code $LASTEXITCODE)." }
+        return
     }
     if (-not $IsWindows -and $Name -in @('build', 'msix', 'msix-icons')) {
         throw 'This task uses Windows tools. On Linux or macOS, build with Cargo; see docs/DEVELOPMENT.md.'
@@ -158,61 +170,7 @@ if ($PSBoundParameters.Count -gt 0) {
     Invoke-Task $Command $options
     return
 }
-if ([Console]::IsInputRedirected) { throw 'Use -Command in unattended jobs. Run in a terminal for the menu.' }
-
-Push-Location -LiteralPath $root
-try {
-    while ($true) {
-        Write-Host "`nUlanziDeck tools" -ForegroundColor Cyan
-        Write-Host '  1  Build local Windows programs (Release, from current source)'
-        Write-Host '  2  Build a Windows installer (Debug)'
-        Write-Host '  3  Build and install on this PC (Debug; can close the running app)'
-        Write-Host '  4  Make a ZIP or tar.gz from an already built source target'
-        Write-Host '  5  Prepare app icons (PNG, ICO and ICNS)'
-        Write-Host '  6  Prepare Windows installer icons'
-        Write-Host '  7  Make preview sheets from exported buttons'
-        Write-Host '  8  Rebuild the OBS preview and printable guide'
-        Write-Host '  9  Collect dependency licenses from the local Cargo cache'
-        Write-Host '  0  Exit'
-        $choice = Read-Host 'Choose a number'
-        if ($choice -eq '0' -or [string]::IsNullOrWhiteSpace($choice)) { break }
-        try {
-            switch ($choice.Trim()) {
-                '1' { Invoke-Task 'build' @{} }
-                { $_ -in '2', '3' } {
-                    $subject = Read-Value 'Signing certificate subject' 'CN=umber'
-                    Invoke-Task 'msix' @{ Configuration = 'Debug'; PublisherSubject = $subject; Install = ($choice.Trim() -eq '3') }
-                }
-                '4' {
-                    $targets = @{
-                        'windows-x64' = 'x86_64-pc-windows-msvc'; 'windows-arm64' = 'aarch64-pc-windows-msvc'
-                        'linux-x64' = 'x86_64-unknown-linux-gnu'; 'macos-arm64' = 'aarch64-apple-darwin'
-                    }
-                    $label = Read-Value 'Platform: windows-x64, windows-arm64, linux-x64 or macos-arm64' 'windows-x64'
-                    if (-not $targets.ContainsKey($label)) { throw 'Choose one of the four platform names.' }
-                    $versionLine = Select-String -LiteralPath (Join-Path $root 'Cargo.toml') -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
-                    $tag = Read-Value 'Archive tag' "v$($versionLine.Matches[0].Groups[1].Value)-stable"
-                    Invoke-Task 'package' @{ Target = $targets[$label]; Label = $label; Tag = $tag }
-                }
-                '5' { Invoke-Task 'icons' @{} }
-                '6' { Invoke-Task 'msix-icons' @{} }
-                '7' {
-                    $settings = Read-Value 'Settings file used to export the buttons'
-                    $source = Read-Value 'Exported buttons folder' 'assets/buttons'
-                    Invoke-Task 'atlases' @{ Settings = $settings; Source = $source }
-                }
-                '8' {
-                    $artwork = Read-Value 'OBS exported artwork folder' 'tmp/obs-creator/artwork/dark-abstract/page-9'
-                    Invoke-Task 'obs-guide' @{ Artwork = $artwork }
-                }
-                '9' {
-                    $output = Read-Value 'Notices output folder' 'artifacts/third-party-notices'
-                    Invoke-Task 'notices' @{ Output = $output }
-                }
-                default { Write-Host 'Choose a number from 0 to 9.' }
-            }
-        }
-        catch { Write-Host $_.Exception.Message -ForegroundColor Red }
-    }
-}
-finally { Pop-Location }
+# All interactive navigation belongs to the shared cross-platform console.
+$python = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { 'python' }
+& $python (Join-Path $PSScriptRoot 'ulanzi.py')
+if ($LASTEXITCODE -ne 0) { throw "The console failed (exit code $LASTEXITCODE)." }

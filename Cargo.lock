@@ -4619,16 +4619,19 @@ dependencies = [
 
 [[package]]
 name = "ulanzi-dock-vibeware"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
+ "async-io",
  "chrono",
  "clap",
  "ctrlc",
  "enigo",
  "fontdue",
+ "futures-lite",
  "hidapi",
  "image",
+ "libc",
  "raw-window-handle",
  "serde",
  "serde_json",
@@ -4639,6 +4642,8 @@ dependencies = [
  "windows-collections",
  "windows-sys 0.61.2",
  "winresource",
+ "x11rb",
+ "zbus",
  "zip",
 ]
 

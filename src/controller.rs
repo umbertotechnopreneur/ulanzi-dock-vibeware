@@ -30,7 +30,7 @@ use crate::{
     settings::{self, SettingsStore},
     tray::{ConnectionState, Control},
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -70,6 +70,8 @@ struct Controller {
 /// Run validated `config` using resolved CLI `options` until `control` requests exit.
 /// Restores the last enabled page, applies licensing, and propagates fatal I/O errors.
 pub fn run(config: Config, options: RunOptions, control: Arc<Control>) -> Result<()> {
+    // Close portal/input sessions before Rust begins destroying thread-local runtimes.
+    let _input = actions::InputSession;
     let foreground = foreground_process(options.detect_applications);
     let last_saved_page = settings::load_last_page(&options.config_path)?;
     let current_page = restored_page(&config, last_saved_page.as_deref());
@@ -123,16 +125,8 @@ fn foreground_process(detect_applications: bool) -> ForegroundProcess {
     }
 }
 
-/// Disabled application pages must still allow NEXT PAGE.
-/// Check physical `index` against `page` availability; `page_is_active` does not
-/// disable NEXT PAGE. The wide display is handled separately before this check.
-fn can_press_key(page: &PageConfig, index: usize, page_is_active: bool) -> bool {
-    let is_next_page = index == NEXT_KEY;
-    let page_allows_press = page_is_active || is_next_page;
-    let key_is_available = page.key_available(index);
-
-    page_allows_press && key_is_available
-}
+mod routing;
+pub(crate) use routing::{route_button, ButtonRoute};
 
 impl Controller {
     /// Borrow the current page from the controller's validated page collection.
@@ -161,12 +155,16 @@ impl Controller {
     }
 
     /// Own connection sessions until shutdown. Recover only recognized connection
-    /// failures on Windows; configuration/protocol errors are returned to the caller.
+    /// failures on every platform; configuration/artwork errors are returned to the caller.
     fn run(mut self) -> Result<()> {
         self.config.refresh_theme_selector(self.theme)?;
         let stop = Arc::clone(&self.control);
         ctrlc::set_handler(move || stop.stop())?;
 
+        #[cfg(target_os = "linux")]
+        let _desktop = crate::tray::linux::DesktopStatus::start(
+            self.options.config_path.clone(), Arc::clone(&self.control),
+        );
         while self.is_running() {
             let Some(dock) = self.connect()? else {
                 break;
@@ -179,15 +177,13 @@ impl Controller {
                 if !dock::is_connection_error(&error) {
                     return Err(error);
                 }
-                #[cfg(not(target_os = "windows"))]
-                return Err(error);
-                #[cfg(target_os = "windows")]
-                {
-                    self.held_key = None;
-                    self.control.set_connection(ConnectionState::Disconnected);
-                    eprintln!("D200H disconnected; waiting to reconnect: {error:#}");
-                    self.wait_for_connection_retry();
+                if !self.is_running() {
+                    break;
                 }
+                self.held_key = None;
+                self.control.set_connection(ConnectionState::Disconnected);
+                eprintln!("D200H disconnected; waiting to reconnect: {error:#}");
+                self.wait_for_connection_retry(Duration::from_millis(250));
             }
         }
 
@@ -195,11 +191,11 @@ impl Controller {
         Ok(())
     }
 
-    /// Retry a missing Windows dock while the app remains running. `None` means
+    /// Retry a missing, busy or inaccessible dock while the app remains running. `None` means
     /// shutdown was requested before a connection, not that initialization succeeded.
     fn connect(&mut self) -> Result<Option<Dock>> {
-        #[cfg(target_os = "windows")]
         let mut last_error = String::new();
+        let mut retry = Duration::from_millis(250);
 
         while self.is_running() {
             match self.connect_once() {
@@ -211,17 +207,13 @@ impl Controller {
                     if !dock::is_connection_error(&error) {
                         return Err(error);
                     }
-                    #[cfg(not(target_os = "windows"))]
-                    return Err(error);
-                    #[cfg(target_os = "windows")]
-                    {
-                        let message = format!("{error:#}");
-                        if message != last_error {
-                            eprintln!("Waiting for D200H: {message}");
-                            last_error = message;
-                        }
-                        self.wait_for_connection_retry();
+                    let message = format!("{error:#}");
+                    if message != last_error {
+                        eprintln!("Waiting for D200H: {message}");
+                        last_error = message;
                     }
+                    self.wait_for_connection_retry(retry);
+                    retry = (retry * 2).min(Duration::from_secs(2));
                 }
             }
         }
@@ -276,10 +268,10 @@ impl Controller {
         Ok(dock)
     }
 
-    #[cfg(target_os = "windows")]
-    /// Retry after 250 ms, checking shutdown every 50 ms.
-    fn wait_for_connection_retry(&self) {
-        for _ in 0..5 {
+    /// Retry with bounded backoff, checking shutdown every 50 ms.
+    fn wait_for_connection_retry(&self, delay: Duration) {
+        let deadline = Instant::now() + delay;
+        while Instant::now() < deadline {
             if !self.is_running() {
                 break;
             }
@@ -331,7 +323,8 @@ impl Controller {
     /// Apply saved UI preferences on this HID thread, without restarting the app.
     /// Malformed files leave the current configuration active.
     fn apply_saved_preferences(&mut self, dock: &Dock) -> Result<()> {
-        let saved: Config = serde_json::from_slice(&std::fs::read(&self.options.config_path)?)?;
+        let bytes = ulanzi_dock_vibeware::persistence::read(&self.options.config_path)?;
+        let saved: Config = serde_json::from_slice(&bytes)?;
         saved.validate()?;
         let theme_changed = saved.theme != self.config.theme;
         let runtime_changed = saved.runtime != self.config.runtime;
@@ -598,98 +591,67 @@ impl Controller {
     fn handle_button(&mut self, dock: &Dock, event: ButtonEvent) -> Result<bool> {
         println!("Dock button UTC={} index={} pressed={} page={} theme={}",
             chrono::Utc::now().to_rfc3339(), event.index, event.pressed, self.page().name, self.theme.slug());
-        if event.index == CLOCK_KEY {
-            if event.pressed {
-                self.held_key = Some(CLOCK_KEY);
-            } else if self.held_key == Some(CLOCK_KEY) {
-                self.held_key = None;
-                self.current_page = self.config.page_index_position();
-                self.page_is_active = true;
-                self.show_page(dock)?;
-                println!("Page: {}", self.page().name);
-                return Ok(true);
+        let index = event.index;
+        if index != CLOCK_KEY {
+            self.refresh_availability(dock, &self.foreground())?;
+        }
+        let route = route_button(
+            &self.config,
+            self.current_page,
+            self.page_is_active,
+            !self.options.no_actions,
+            &mut self.held_key,
+            event,
+        )?;
+        let page_changed = match route {
+            ButtonRoute::Ignore => return Ok(false),
+            ButtonRoute::Pressed => {
+                dock.show_key(self.page(), self.theme, index, true, self.page_is_active)?;
+                return Ok(false);
             }
-            return Ok(false);
-        }
-
-        self.refresh_availability(dock, &self.foreground())?;
-        if event.pressed {
-            if can_press_key(self.page(), event.index, self.page_is_active)
-                && self.held_key != Some(event.index)
-            {
-                self.held_key = Some(event.index);
-                dock.show_key(
-                    self.page(),
-                    self.theme,
-                    event.index,
-                    true,
-                    self.page_is_active,
-                )?;
-            }
-            return Ok(false);
-        }
-
-        if self.held_key != Some(event.index) {
-            return Ok(false);
-        }
-        self.held_key = None;
-        if !self.page().key_available(event.index) {
-            return Ok(false);
-        }
-
-        let action = self.page().keys[event.index].action.clone();
-        let mut page_changed = false;
-        if event.index == NEXT_KEY {
-            self.current_page = self.config.next_enabled_page(self.current_page);
-            page_changed = true;
-        } else if let Some(target) = action.strip_prefix("page:go:") {
-            if let Some(destination) = self
-                .config
-                .pages
-                .iter()
-                .position(|page| page.enabled && page.name == target)
-            {
+            ButtonRoute::Released => false,
+            ButtonRoute::Page(destination) => {
                 self.current_page = destination;
-                page_changed = true;
+                true
             }
-        } else if let Some(slug) = action.strip_prefix("theme:") {
-            let selected = Theme::from_slug(slug)
-                .with_context(|| format!("unknown selected theme '{slug}'"))?;
-            self.options.theme = selected;
-            self.theme = selected;
-            self.config.theme = selected;
-            self.config.refresh_theme_selector(selected)?;
-            self.current_page = self.config.home_page();
-            page_changed = true;
-            println!("Theme: {}", selected.slug());
-
-            if let Err(error) = self.control.lock_settings().and_then(|_lock| {
-                SettingsStore::load(&self.options.config_path)?.save_theme(selected)
-            }) {
-                eprintln!("Could not save theme selection: {error:#}");
-            }
-        } else if !self.options.no_actions && self.page_is_active {
-            if matches!(action.as_str(), "brightness:up" | "brightness:down") {
-                self.adjust_brightness(dock, action == "brightness:up")?;
-            } else if actions::page_available(self.page(), &self.foreground()) {
-                if let Err(error) = actions::execute(&action) {
-                    eprintln!(
-                        "Action '{}' failed: {error:#}",
-                        self.page().keys[event.index].label
-                    );
+            ButtonRoute::Theme(selected) => {
+                self.options.theme = selected;
+                self.theme = selected;
+                self.config.theme = selected;
+                self.config.refresh_theme_selector(selected)?;
+                self.current_page = self.config.home_page();
+                println!("Theme: {}", selected.slug());
+                if let Err(error) = self.control.lock_settings().and_then(|_lock| {
+                    SettingsStore::load(&self.options.config_path)?.save_theme(selected)
+                }) {
+                    eprintln!("Could not save theme selection: {error:#}");
                 }
+                true
             }
-        }
+            ButtonRoute::Brightness(increase) => {
+                self.adjust_brightness(dock, increase)?;
+                false
+            }
+            ButtonRoute::Desktop(action) => {
+                if actions::page_available(self.page(), &self.foreground()) {
+                    if let Err(error) = actions::execute(action) {
+                        eprintln!("Action '{}' failed: {error:#}", self.page().keys[index].label);
+                    }
+                }
+                false
+            }
+        };
 
         if page_changed {
-            self.page_is_active = actions::page_available(self.page(), &self.foreground());
+            self.page_is_active =
+                index == CLOCK_KEY || actions::page_available(self.page(), &self.foreground());
             self.show_page(dock)?;
             println!("Page: {}", self.page().name);
         } else {
             dock.show_key(
                 self.page(),
                 self.theme,
-                event.index,
+                index,
                 false,
                 self.page_is_active,
             )?;

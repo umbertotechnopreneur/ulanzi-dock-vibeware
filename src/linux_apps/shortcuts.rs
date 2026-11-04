@@ -58,12 +58,12 @@ const CODE: &[Shortcut] = &[
 ];
 
 // Spotify's public shortcut table does not identify Linux bindings. Do not
-// present its Windows shortcuts as verified Linux defaults. Media keys follow
-// desktop media routing and can reach a player other than Spotify.
+// present its Windows shortcuts as verified Linux defaults. MPRIS playback actions use
+// the selected running player, which can be an app other than Spotify.
 const SPOTIFY: &[Shortcut] = &[
-    shortcut(0, "PLAY / PAUSE", "media:play-pause", "Send the desktop media play/pause key. The desktop chooses the player."),
-    shortcut(1, "PREVIOUS", "media:previous", "Send the desktop previous-track key. The desktop chooses the player."),
-    shortcut(2, "NEXT TRACK", "media:next", "Send the desktop next-track key. The desktop chooses the player."),
+    shortcut(0, "PLAY / PAUSE", "media:play-pause", "Play or pause the selected MPRIS player."),
+    shortcut(1, "PREVIOUS", "media:previous", "Go to the previous track in the selected MPRIS player."),
+    shortcut(2, "NEXT TRACK", "media:next", "Go to the next track in the selected MPRIS player."),
     shortcut(3, "UNASSIGNED", "none", "Set a shuffle shortcut in settings.json after checking Spotify's shortcut list."),
     shortcut(5, "UNASSIGNED", "none", "Set a repeat shortcut in settings.json after checking Spotify's shortcut list."),
     shortcut(6, "UNASSIGNED", "none", "Set a search shortcut in settings.json after checking Spotify's shortcut list."),
