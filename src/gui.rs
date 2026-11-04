@@ -660,6 +660,10 @@ pub fn standalone(path: PathBuf, configure: bool, control: Arc<Control>) -> Resu
     let _console = crate::console::detach_if_owned()?;
     control.enter_background();
     eprintln!("Opening UlanziDeck {}: {}", if configure { "configurator" } else { "About dialog" }, path.display());
+    #[cfg(target_os = "linux")]
+    if let Ok(message) = std::env::var("ULANZIDECK_START_ERROR") {
+        dialogs.config.set_message(message.into());
+    }
     if configure {
         present_dialog(&dialogs.config, DialogKind::Configuration)?;
     } else {

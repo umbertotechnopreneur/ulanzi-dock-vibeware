@@ -18,7 +18,7 @@
  *
  * VBWR E */
 
-//! Inspect or change this app's Windows sign-in entry after an explicit startup command.
+//! Inspect or change this app's sign-in startup after an explicit command.
 //! Packaged apps use Windows startup settings; portable apps use the owned shortcut
 //! helper. This module does not install drivers, elevate privileges or start the dock.
 
@@ -102,8 +102,34 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
-/// Reject Windows startup changes on unsupported platforms; flags have no side effects.
+#[cfg(target_os = "linux")]
+/// Manage the installed controller's user service, without opening HID or starting it now.
+pub fn manage(enable: bool, disable: bool) -> Result<()> {
+    use anyhow::{ensure, Context};
+    use std::{path::Path, process::Command};
+    const UNIT: &str = "ulanzideck-controller.service";
+    ensure!(Path::new("/usr/lib/systemd/user").join(UNIT).is_file(),
+        "Install the UlanziDeck Debian package before configuring Linux sign-in startup.");
+    let reload = Command::new("systemctl").args(["--user", "daemon-reload"])
+        .output().context("reloading user service definitions")?;
+    ensure!(reload.status.success(), "Could not reload user services: {}", String::from_utf8_lossy(&reload.stderr));
+    let action = if disable { "disable" } else if enable { "enable" } else { "is-enabled" };
+    let output = Command::new("systemctl").args(["--user", action, UNIT])
+        .output().context("managing UlanziDeck sign-in startup")?;
+    if enable || disable {
+        ensure!(output.status.success(), "Could not change sign-in startup: {}", String::from_utf8_lossy(&output.stderr));
+        println!("Launch at Linux sign-in: {}. The running controller is unchanged.", if disable { "disabled" } else { "enabled" });
+    } else {
+        let state = String::from_utf8_lossy(&output.stdout);
+        ensure!(output.status.success() || state.trim() == "disabled",
+            "Could not read sign-in startup: {}", String::from_utf8_lossy(&output.stderr));
+        println!("Launch at Linux sign-in: {}", state.trim());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+/// Reject startup changes on unsupported platforms; flags have no side effects.
 pub fn manage(_enable: bool, _disable: bool) -> Result<()> {
     anyhow::bail!("Windows sign-in startup is available only on Windows")
 }

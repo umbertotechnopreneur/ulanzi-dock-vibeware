@@ -283,7 +283,7 @@ set -eu
 if [ "$#" -eq 0 ]; then set -- run; fi
 # Desktop launches have no terminal. Preserve errors and panic backtraces locally.
 case "$1" in
-    run|configure)
+    run|configure|launch)
         logdir="${XDG_STATE_HOME:-$HOME/.local/state}/ulanzideck/logs"
         if mkdir -p "$logdir"; then
             if log=$(umask 077; mktemp "$logdir/$1-XXXXXXXX.log"); then
@@ -295,6 +295,17 @@ case "$1" in
         export RUST_BACKTRACE
         ;;
 esac
+if [ "$1" = launch ]; then
+    if [ "$#" -ne 1 ]; then
+        printf '%s\n' 'launch uses the installed default profile; use configure --config for a separate editor.' >&2
+        exit 2
+    fi
+    if ! systemctl --user daemon-reload || ! systemctl --user start ulanzideck-controller.service; then
+        ULANZIDECK_START_ERROR='Could not start the dock controller. See the application log for details.'
+        export ULANZIDECK_START_ERROR
+    fi
+    set -- configure
+fi
 case "$1" in
     run|configure|about|brightness)
         profile="${XDG_CONFIG_HOME:-$HOME/.config}/ulanzideck/settings.json"
@@ -313,12 +324,31 @@ esac
         write('usr/share/applications/ulanzideck.desktop', '''[Desktop Entry]
 Type=Application
 Name=UlanziDeck
-Comment=Configure my Ulanzi D200H shortcuts and themes
-Exec=ulanzideck configure
+Comment=Start my Ulanzi D200H controller and open settings
+Exec=ulanzideck launch
 Icon=ulanzideck
 StartupWMClass=ulanzideck
 Terminal=false
 Categories=Utility;Settings;
+''')
+        write('usr/lib/systemd/user/ulanzideck-controller.service', '''# Copyright (c) 2026 Umberto Giacobbi. MIT License.
+[Unit]
+Description=UlanziDeck D200H controller
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ulanzideck run
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical-session.target
 ''')
         icon = tree / 'usr/share/icons/hicolor/256x256/apps/ulanzideck.png'
         icon.parent.mkdir(parents=True)
@@ -353,7 +383,7 @@ fi
         dependencies = next(line.removeprefix('shlibs:Depends=') for line in result.stdout.splitlines()
                             if line.startswith('shlibs:Depends='))
         # These desktop backends are loaded dynamically and are invisible to ELF dependency scanning.
-        dependencies += ', wireplumber, libglib2.0-bin, gnome-control-center, gnome-characters, xdg-desktop-portal-gnome, udev, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxi6, libxrandr2, libwayland-client0, libwayland-cursor0'
+        dependencies += ', systemd, wireplumber, libglib2.0-bin, gnome-control-center, gnome-characters, xdg-desktop-portal-gnome, udev, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxi6, libxrandr2, libwayland-client0, libwayland-cursor0'
         size = (sum(path.stat().st_size for path in (tree / 'usr').rglob('*') if path.is_file()) + 1023) // 1024
         write('DEBIAN/control', f'''Package: ulanzi-dock-vibeware
 Version: {version}

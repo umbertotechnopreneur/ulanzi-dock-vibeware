@@ -63,9 +63,21 @@ sudo apt install /absolute/path/ulanzi-dock-vibeware_0.4.0_amd64.deb
 Reconnect the D200H after installation so its restricted `uaccess` rule applies.
 Only the active local desktop session receives access. The package does not grant
 world-writable HID access or run the controller as root. Open UlanziDeck from the
-application menu for settings, or run `ulanzideck` in a terminal for the controller.
-Use `ulanzideck configure` to open settings directly. Keep that terminal open
-while using the controller. Settings are stored in
+application menu to start the controller service and open settings. Closing
+settings leaves the controller running. `ulanzideck configure` opens only the
+settings editor; `ulanzideck run` starts a controller in the current terminal.
+The installed user service is enabled only after an explicit startup request:
+
+```sh
+ulanzideck startup --enable
+ulanzideck startup
+ulanzideck startup --disable
+```
+
+Enabling starts the controller at the next graphical sign-in. Disabling removes
+automatic startup and leaves a running controller unchanged. The service retries
+failed controller processes and keeps waiting for an absent dock. To stop it now,
+use `systemctl --user stop ulanzideck-controller.service`. Settings are stored in
 `$XDG_CONFIG_HOME/ulanzideck` (normally `~/.config/ulanzideck`). An explicit
 `--config` selects another profile. Removing the package leaves user settings.
 The installed launcher records controller and configurator errors in

@@ -82,12 +82,12 @@ enum Command {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Manage launch at Windows sign-in for the current user.
+    /// Manage launch at sign-in for the current user.
     Startup {
-        /// Register this executable to start when you sign in to Windows.
+        /// Enable this app to start when you sign in.
         #[arg(long, conflicts_with = "disable")]
         enable: bool,
-        /// Remove this executable's Windows sign-in entry.
+        /// Disable this app's sign-in startup.
         #[arg(long)]
         disable: bool,
     },
