@@ -615,6 +615,10 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
 fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     placement::initialize(&path);
     let about = AboutDialog::new().context("creating the About dialog")?;
+    // Slint has initialized its backend, but neither native window is shown yet.
+    // Match ulanzideck.desktop so Wayland/X11 shells use the installed app icon.
+    #[cfg(target_os = "linux")]
+    slint::set_xdg_app_id("ulanzideck").context("setting the Linux desktop application ID")?;
     let config = MainWindow::new().context("creating the configurator")?;
     let state = bind_configurator(&config, path, control, mode);
     let store_timer = store_ui::bind(&config);

@@ -316,6 +316,7 @@ Name=UlanziDeck
 Comment=Configure my Ulanzi D200H shortcuts and themes
 Exec=ulanzideck configure
 Icon=ulanzideck
+StartupWMClass=ulanzideck
 Terminal=false
 Categories=Utility;Settings;
 ''')
