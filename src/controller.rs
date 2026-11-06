@@ -182,7 +182,8 @@ impl Controller {
                 }
                 self.held_key = None;
                 self.control.set_connection(ConnectionState::Disconnected);
-                eprintln!("D200H disconnected; waiting to reconnect: {error:#}");
+                eprintln!("D200H disconnected UTC={} page={}: {error:#}",
+                    chrono::Utc::now().to_rfc3339(), self.page().name);
                 self.wait_for_connection_retry(Duration::from_millis(250));
             }
         }
@@ -198,6 +199,10 @@ impl Controller {
         let mut retry = Duration::from_millis(250);
 
         while self.is_running() {
+            if self.control.take_reconnect_request() {
+                self.control.set_connection(ConnectionState::Waiting);
+                retry = Duration::from_millis(250);
+            }
             match self.connect_once() {
                 Ok(dock) => {
                     self.control.set_connection(ConnectionState::Connected);
@@ -207,9 +212,10 @@ impl Controller {
                     if !dock::is_connection_error(&error) {
                         return Err(error);
                     }
+                    self.control.set_connection(ConnectionState::Disconnected);
                     let message = format!("{error:#}");
                     if message != last_error {
-                        eprintln!("Waiting for D200H: {message}");
+                        eprintln!("Waiting for D200H UTC={}: {message}", chrono::Utc::now().to_rfc3339());
                         last_error = message;
                     }
                     self.wait_for_connection_retry(retry);
@@ -272,7 +278,7 @@ impl Controller {
     fn wait_for_connection_retry(&self, delay: Duration) {
         let deadline = Instant::now() + delay;
         while Instant::now() < deadline {
-            if !self.is_running() {
+            if !self.is_running() || self.control.reconnect_requested() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(50));

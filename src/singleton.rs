@@ -18,15 +18,16 @@
  *
  * VBWR E */
 
-//! Keep one controller instance per Windows user session for its entire lifetime.
-//! The owned mutex is released when the guard drops. This module never kills competing
-//! processes and does not arbitrate physical USB ownership across Windows sessions.
+//! Keep one controller per user session on Windows and Linux.
+//! Linux also gives the standalone settings window a separate instance guard.
 
 use anyhow::Result;
 
 /// Held on the main thread until the controller, HID worker and tray have stopped.
 /// A second launch must never kill an editor or another installation by filename.
 pub struct Instance {
+    #[cfg(target_os = "linux")]
+    _lock: std::fs::File,
     #[cfg(target_os = "windows")]
     handle: windows_sys::Win32::Foundation::HANDLE,
     #[cfg(target_os = "windows")]
@@ -46,8 +47,7 @@ impl Drop for Instance {
 }
 
 /// Try to acquire the session guard without waiting.
-/// An existing controller returns None; native mutex errors are reported. Other platforms return
-/// a no-op guard because this Windows-specific ownership rule is not implemented there.
+/// An existing controller returns None. Errors acquiring the guard are reported.
 pub fn acquire() -> Result<Option<Instance>> {
     #[cfg(target_os = "windows")]
     {
@@ -81,6 +81,56 @@ pub fn acquire() -> Result<Option<Instance>> {
             }
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    return linux_lock("ulanzideck-controller.lock");
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     Ok(Some(Instance {}))
+}
+
+#[cfg(target_os = "linux")]
+pub fn acquire_configurator() -> Result<Option<Instance>> {
+    linux_lock("ulanzideck-configurator.lock")
+}
+
+#[cfg(target_os = "linux")]
+fn linux_lock(name: &str) -> Result<Option<Instance>> {
+    use anyhow::{ensure, Context};
+    use std::{
+        env,
+        fs::{self, OpenOptions, TryLockError},
+        os::unix::fs::OpenOptionsExt,
+        path::PathBuf,
+    };
+
+    // The systemd service and terminals use the same directory even when a
+    // terminal did not inherit the desktop session's environment.
+    let user = unsafe { libc::geteuid() };
+    let system_runtime = PathBuf::from(format!("/run/user/{user}"));
+    let directory = Some(system_runtime).filter(|path| path.is_dir()).or_else(|| env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && path.is_dir()));
+    let directory = match directory {
+        Some(directory) => directory,
+        None => {
+            let home = env::var_os("HOME").context("locating the user instance lock directory")?;
+            let directory = PathBuf::from(home).join(".local/state/ulanzideck");
+            fs::create_dir_all(&directory).context("creating the user instance lock directory")?;
+            directory
+        }
+    };
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(directory.join(name))
+        .context("opening the UlanziDeck instance lock")?;
+    ensure!(lock.metadata()?.is_file(), "The instance lock must be a regular file.");
+    match lock.try_lock() {
+        Ok(()) => Ok(Some(Instance { _lock: lock })),
+        Err(TryLockError::WouldBlock) => Ok(None),
+        Err(TryLockError::Error(error)) => Err(error).context("locking the UlanziDeck instance"),
+    }
 }

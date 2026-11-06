@@ -284,7 +284,7 @@ export component MainWindow inherits Window {
     title: "UlanziDeck — Configuration";
     preferred-width: 820px;
     preferred-height: 900px;
-    min-width: 720px;
+    min-width: 500px;
     min-height: 360px;
     background: Palette.paper;
     default-font-family: "Consolas";
@@ -295,6 +295,9 @@ export component MainWindow inherits Window {
     in property <bool> linux-app-selection: false;
     in property <[LinuxAppPage]> linux-app-pages;
     in property <bool> foreground-supported: true;
+    in property <string> dock-status: "Unavailable";
+    in property <bool> can-reconnect;
+    private property <bool> wide-layout: root.width >= 760px;
     in property <string> save-hint: "Changes are saved automatically and applied while the controller is running.";
     in-out property <int> theme-index;
     in-out property <bool> auto-switch;
@@ -319,6 +322,7 @@ export component MainWindow inherits Window {
     callback refresh-linux-apps();
     callback open-file(bool);
     callback learn-vibeware();
+    callback reconnect();
     callback dismiss();
     VerticalLayout {
      spacing: 0px;
@@ -334,51 +338,68 @@ export component MainWindow inherits Window {
             VibeWareLink { clicked => { root.learn-vibeware(); } }
         }
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
-        Text { text: "Dock theme"; color: Palette.ink; }
-        ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; selected => { root.theme-changed(); } }
-        if root.foreground-supported: VerticalLayout {
-            spacing: 14px;
-            CheckBox { enabled: root.ready; text: "Detect applications and page availability"; checked <=> root.detect-applications; toggled => { root.preferences-changed(); } }
-            if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch page automatically when the active app changes"; checked <=> root.auto-switch; toggled => { root.preferences-changed(); } }
-            if !root.detect-applications: Text { text: "Enabled pages stay available. Automatic switching is off."; color: Palette.muted; wrap: word-wrap; }
-            HorizontalLayout {
-                spacing: 12px;
-                Text { text: "Check active application every (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
-                SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; edited => { root.preferences-changed(); } }
-            }
-        }
-        if !root.foreground-supported: Text {
-            text: "Choose pages manually. Active application detection is unavailable on this system.";
-            color: Palette.muted;
-            wrap: word-wrap;
-        }
-        Rectangle { height: 2px; background: Palette.ink; }
-        Text { text: "Application pages"; color: Palette.ink; font-weight: 700; }
-        VerticalLayout {
-            spacing: 10px;
-            for row in Math.ceil(root.app-pages.length / 2): HorizontalLayout {
-                spacing: 12px;
-                CheckBox {
-                    min-width: 0px;
-                    preferred-width: 0px;
-                    horizontal-stretch: 1;
-                    enabled: root.ready;
-                    text: root.app-pages[row * 2].name;
-                    checked: root.app-pages[row * 2].enabled;
-                    toggled => { root.page-toggled(row * 2, self.checked); }
+        Rectangle {
+            // Reflow the same controls instead of recreating bindings on resize.
+            min-height: self.preferred-height;
+            preferred-height: root.wide-layout
+                ? max(theme-panel.preferred-height, pages-panel.preferred-height)
+                : theme-panel.preferred-height + 18px + pages-panel.preferred-height;
+            theme-panel := VerticalLayout {
+                x: 0px;
+                y: 0px;
+                width: root.wide-layout ? (parent.width - 24px) / 2 : parent.width;
+                height: self.preferred-height;
+                spacing: 10px;
+                Text { text: "Dock theme"; color: Palette.ink; font-weight: 700; }
+                ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; selected => { root.theme-changed(); } }
+                if root.foreground-supported: VerticalLayout {
+                    spacing: 10px;
+                    CheckBox { enabled: root.ready; text: "Detect active applications"; checked <=> root.detect-applications; toggled => { root.preferences-changed(); } }
+                    if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch pages automatically"; checked <=> root.auto-switch; toggled => { root.preferences-changed(); } }
+                    if !root.detect-applications: Text { text: "Choose pages manually."; color: Palette.muted; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Check interval (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
+                        SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; edited => { root.preferences-changed(); } }
+                    }
                 }
-                if row * 2 + 1 < root.app-pages.length: CheckBox {
-                    min-width: 0px;
-                    preferred-width: 0px;
-                    horizontal-stretch: 1;
-                    enabled: root.ready;
-                    text: root.app-pages[row * 2 + 1].name;
-                    checked: root.app-pages[row * 2 + 1].enabled;
-                    toggled => { root.page-toggled(row * 2 + 1, self.checked); }
+                if !root.foreground-supported: Text {
+                    text: "Choose pages manually. Active application detection is unavailable on this system.";
+                    color: Palette.muted;
+                    wrap: word-wrap;
                 }
             }
+            pages-panel := VerticalLayout {
+                x: root.wide-layout ? theme-panel.width + 24px : 0px;
+                y: root.wide-layout ? 0px : theme-panel.height + 18px;
+                width: theme-panel.width;
+                height: self.preferred-height;
+                spacing: 10px;
+                Text { text: "Application pages"; color: Palette.ink; font-weight: 700; }
+                for row in Math.ceil(root.app-pages.length / 2): HorizontalLayout {
+                    spacing: 12px;
+                    CheckBox {
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        horizontal-stretch: 1;
+                        enabled: root.ready;
+                        text: root.app-pages[row * 2].name;
+                        checked: root.app-pages[row * 2].enabled;
+                        toggled => { root.page-toggled(row * 2, self.checked); }
+                    }
+                    if row * 2 + 1 < root.app-pages.length: CheckBox {
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        horizontal-stretch: 1;
+                        enabled: root.ready;
+                        text: root.app-pages[row * 2 + 1].name;
+                        checked: root.app-pages[row * 2 + 1].enabled;
+                        toggled => { root.page-toggled(row * 2 + 1, self.checked); }
+                    }
+                }
+                Text { text: "Disabled pages are skipped. Your shortcuts stay saved."; color: Palette.muted; wrap: word-wrap; }
+            }
         }
-        Text { text: "Disabled pages are skipped. Your shortcuts stay saved."; color: Palette.muted; wrap: word-wrap; }
         if root.linux-app-selection: VerticalLayout {
             spacing: 14px;
             Rectangle { height: 2px; background: Palette.ink; }
@@ -421,20 +442,63 @@ export component MainWindow inherits Window {
             PixelButton { text: "settings.json"; clicked => { root.open-file(false); } }
             PixelButton { text: "applications.yaml"; clicked => { root.open-file(true); } }
         }
-        Text {
-            text: root.save-hint;
-            color: Palette.muted;
-            wrap: word-wrap;
-        }
       }
      }
      footer := VerticalLayout {
         padding: 22px;
         spacing: 8px;
-        Text { text: root.message; color: Palette.blue; wrap: word-wrap; min-height: 42px; }
+        Text { text: root.message == "" ? root.save-hint : root.message; color: Palette.blue; wrap: word-wrap; }
         HorizontalLayout {
-            spacing: 8px;
-            PixelButton { text: "Close"; clicked => { root.dismiss(); } }
+            spacing: 12px;
+            Rectangle {
+                height: 36px;
+                min-width: status-content.preferred-width;
+                horizontal-stretch: 0;
+                border-radius: 18px;
+                border-width: 1px;
+                border-color: #c9bfa9;
+                background: #fff8e8;
+                status-content := HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    Rectangle {
+                        width: 16px;
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #232a2f66;
+                            background: root.dock-status == "Connected" ? #218244
+                                : root.dock-status == "Disconnected" ? #c32f3d
+                                : root.dock-status == "Connecting" ? #ad681a : Palette.muted;
+                            Rectangle {
+                                x: 4px;
+                                y: 3px;
+                                width: 6px;
+                                height: 4px;
+                                border-radius: 2px;
+                                background: #ffffff88;
+                            }
+                        }
+                    }
+                    Text {
+                        text: root.dock-status == "Unavailable" ? "Dock status unavailable" : root.dock-status;
+                        color: Palette.ink;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            if root.can-reconnect: PixelButton {
+                text: "Reconnect";
+                horizontal-stretch: 0;
+                clicked => { root.reconnect(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            PixelButton { text: "Close"; horizontal-stretch: 0; clicked => { root.dismiss(); } }
         }
      }
     }

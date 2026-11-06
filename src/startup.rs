@@ -20,9 +20,41 @@
 
 //! Inspect or change this app's sign-in startup after an explicit command.
 //! Packaged apps use Windows startup settings; portable apps use the owned shortcut
-//! helper. This module does not install drivers, elevate privileges or start the dock.
+//! helper. On Linux the desktop launcher starts the packaged user service.
 
 use anyhow::Result;
+
+#[cfg(target_os = "linux")]
+pub(crate) const LINUX_UNIT: &str = "ulanzideck-controller.service";
+
+#[cfg(target_os = "linux")]
+pub(crate) fn launch_controller() -> Result<()> {
+    use anyhow::{ensure, Context};
+    use std::{path::PathBuf, process::Command};
+
+    let systemctl = |args: &[&str]| -> Result<Vec<u8>> {
+        let output = Command::new("systemctl").arg("--user").args(args)
+            .output().context("calling the systemd user manager")?;
+        ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr).trim());
+        Ok(output.stdout)
+    };
+    systemctl(&["daemon-reload"])?;
+    let pid = systemctl(&["show", "--property=MainPID", "--value", LINUX_UNIT])?;
+    let pid: u32 = String::from_utf8_lossy(&pid).trim().parse()
+        .context("reading the controller PID")?;
+
+    // An upgrade replaces the executable, leaving the old service process alive.
+    let mut replaced = std::env::current_exe()?.into_os_string();
+    replaced.push(" (deleted)");
+    let previous = PathBuf::from(format!("/proc/{pid}/exe")).read_link();
+    let action = if previous.is_ok_and(|path| path.as_os_str() == replaced.as_os_str()) {
+        "restart"
+    } else {
+        "start"
+    };
+    systemctl(&[action, LINUX_UNIT])?;
+    Ok(())
+}
 
 #[cfg(windows)]
 // enable: install or repair this user's hidden sign-in shortcut.
@@ -107,14 +139,13 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
 pub fn manage(enable: bool, disable: bool) -> Result<()> {
     use anyhow::{ensure, Context};
     use std::{path::Path, process::Command};
-    const UNIT: &str = "ulanzideck-controller.service";
-    ensure!(Path::new("/usr/lib/systemd/user").join(UNIT).is_file(),
+    ensure!(Path::new("/usr/lib/systemd/user").join(LINUX_UNIT).is_file(),
         "Install the UlanziDeck Debian package before configuring Linux sign-in startup.");
     let reload = Command::new("systemctl").args(["--user", "daemon-reload"])
         .output().context("reloading user service definitions")?;
     ensure!(reload.status.success(), "Could not reload user services: {}", String::from_utf8_lossy(&reload.stderr));
     let action = if disable { "disable" } else if enable { "enable" } else { "is-enabled" };
-    let output = Command::new("systemctl").args(["--user", action, UNIT])
+    let output = Command::new("systemctl").args(["--user", action, LINUX_UNIT])
         .output().context("managing UlanziDeck sign-in startup")?;
     if enable || disable {
         ensure!(output.status.success(), "Could not change sign-in startup: {}", String::from_utf8_lossy(&output.stderr));

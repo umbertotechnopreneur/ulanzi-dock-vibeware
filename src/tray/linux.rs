@@ -18,6 +18,8 @@ use zbus::{
     zvariant::{ObjectPath, Value},
 };
 
+pub(crate) mod connection;
+
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const ITEM: &str = "/StatusNotifierItem";
 const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
@@ -175,21 +177,33 @@ fn connection_text(state: ConnectionState) -> &'static str {
     }
 }
 
-fn notify(bus: &Connection, state: ConnectionState) -> Result<u32> {
+fn notify(bus: &Connection, title: &str, body: &str) -> Result<u32> {
     let message = bus.call_method(Some(NOTIFICATIONS), NOTIFICATION_PATH, Some(NOTIFICATIONS),
-        "Notify", &("UlanziDeck", 0_u32, "ulanzideck", "UlanziDeck is running",
-        connection_text(state), Vec::<&str>::new(), HashMap::<&str, Value<'_>>::new(), 5000_i32))?;
+        "Notify", &("UlanziDeck", 0_u32, "ulanzideck", title,
+        body, Vec::<&str>::new(), HashMap::<&str, Value<'_>>::new(), 5000_i32))?;
     Ok(message.body().deserialize()?)
 }
 
+pub(crate) fn notify_message(title: &str, body: &str) -> Result<()> {
+    let bus = Builder::session()?.method_timeout(Duration::from_secs(1)).build()?;
+    notify(&bus, title, body)?;
+    Ok(())
+}
+
 fn serve(profile: PathBuf, control: Arc<Control>, stop: Receiver<()>) -> Result<()> {
+    // Keep the indicator on an unnamed connection. GNOME can discover it as a
+    // second item if it also shares the controller's well-known bus name.
+    let _status = connection::publish(&profile, Arc::clone(&control))
+        .map_err(|error| eprintln!("Could not publish the controller connection state: {error:#}"))
+        .ok();
     let bus = Builder::session()?.method_timeout(Duration::from_secs(1))
         .serve_at("/Menu", Menu(profile.clone()))?
         .serve_at(ITEM, Indicator::new(profile, Arc::clone(&control))?)?.build().context("opening the desktop session bus")?;
     if stop.try_recv().is_ok() { return Ok(()); }
 
     // A notification service and an indicator host are independent and optional.
-    let notification = notify(&bus, control.connection()).map_err(|error| eprintln!("Desktop notification unavailable: {error:#}")).ok();
+    let notification = notify(&bus, "UlanziDeck is running", connection_text(control.connection()))
+        .map_err(|error| eprintln!("Desktop notification unavailable: {error:#}")).ok();
     if notification.is_some() {
         println!("Desktop notification accepted.");
     }

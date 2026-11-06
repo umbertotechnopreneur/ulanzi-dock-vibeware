@@ -55,6 +55,7 @@ pub struct Control {
     background: AtomicBool,
     settings: std::sync::Mutex<()>,
     connection: AtomicU8,
+    reconnect: AtomicBool,
     #[cfg(target_os = "windows")]
     tray_window: AtomicUsize,
 }
@@ -68,6 +69,7 @@ impl Control {
             background: AtomicBool::new(false),
             settings: std::sync::Mutex::new(()),
             connection: AtomicU8::new(ConnectionState::Waiting as u8),
+            reconnect: AtomicBool::new(false),
             #[cfg(target_os = "windows")]
             tray_window: AtomicUsize::new(0),
         }
@@ -98,6 +100,22 @@ impl Control {
             2 => ConnectionState::Disconnected,
             _ => ConnectionState::Waiting,
         }
+    }
+
+    /// Ask the current controller to retry discovery without restarting it.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    pub(crate) fn request_reconnect(&self) {
+        if self.is_running() && self.connection() != ConnectionState::Connected {
+            self.reconnect.store(true, Ordering::SeqCst);
+        }
+    }
+
+    pub(crate) fn reconnect_requested(&self) -> bool {
+        self.reconnect.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn take_reconnect_request(&self) -> bool {
+        self.reconnect.swap(false, Ordering::SeqCst)
     }
 
     /// Ask the controller to leave its loop; this does not terminate a process.

@@ -280,6 +280,7 @@ def package_deb(options):
         write('usr/bin/ulanzideck', '''#!/bin/sh
 # Copyright (c) 2026 Umberto Giacobbi. MIT License.
 set -eu
+binary=/usr/lib/ulanzideck/ulanzi-dock-vibeware
 if [ "$#" -eq 0 ]; then set -- run; fi
 # Desktop launches have no terminal. Preserve errors and panic backtraces locally.
 case "$1" in
@@ -300,11 +301,7 @@ if [ "$1" = launch ]; then
         printf '%s\n' 'launch uses the installed default profile; use configure --config for a separate editor.' >&2
         exit 2
     fi
-    if ! systemctl --user daemon-reload || ! systemctl --user start ulanzideck-controller.service; then
-        ULANZIDECK_START_ERROR='Could not start the dock controller. See the application log for details.'
-        export ULANZIDECK_START_ERROR
-    fi
-    set -- configure
+    set -- configure --start-controller
 fi
 case "$1" in
     run|configure|about|brightness)
@@ -312,13 +309,13 @@ case "$1" in
         # An explicit --config belongs to the caller; do not append a second one.
         for argument in "$@"; do
             case "$argument" in
-                --config|--config=*) exec /usr/lib/ulanzideck/ulanzi-dock-vibeware "$@" ;;
+                --config|--config=*) exec "$binary" "$@" ;;
             esac
         done
         mkdir -p "$(dirname "$profile")"
-        exec /usr/lib/ulanzideck/ulanzi-dock-vibeware "$@" --config "$profile"
+        exec "$binary" "$@" --config "$profile"
         ;;
-    *) exec /usr/lib/ulanzideck/ulanzi-dock-vibeware "$@" ;;
+    *) exec "$binary" "$@" ;;
 esac
 ''', executable=True)
         write('usr/share/applications/ulanzideck.desktop', '''[Desktop Entry]

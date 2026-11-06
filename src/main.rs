@@ -81,6 +81,9 @@ enum Command {
     Configure {
         #[arg(long)]
         config: Option<PathBuf>,
+        #[cfg(target_os = "linux")]
+        #[arg(long, hide = true)]
+        start_controller: bool,
     },
     /// Manage launch at sign-in for the current user.
     Startup {
@@ -326,13 +329,21 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 config.map_or_else(paths::default_settings, Ok)?,
                 false,
                 control,
+                false,
             )?;
         }
-        Command::Configure { config } => {
+        Command::Configure {
+            config,
+            #[cfg(target_os = "linux")]
+            start_controller,
+        } => {
+            #[cfg(not(target_os = "linux"))]
+            let start_controller = false;
             gui::standalone(
                 config.map_or_else(paths::default_settings, Ok)?,
                 true,
                 control,
+                start_controller,
             )?;
         }
         Command::Startup { enable, disable } => startup::manage(enable, disable)?,
@@ -405,13 +416,15 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 None
             };
             let Some(_instance) = singleton::acquire()? else {
+                #[cfg(target_os = "linux")]
+                println!("Another UlanziDeck controller is already running. This instance will not start.");
                 #[cfg(target_os = "windows")]
                 if !background {
                     if let Err(error) = tray::activate_existing() {
                         eprintln!("Could not activate UlanziDeck: {error:#}");
                     }
                 }
-                // A duplicate launch succeeds silently, without a console close prompt.
+                // Leave the existing controller in charge and exit without a close prompt.
                 control.enter_background();
                 return Ok(());
             };

@@ -34,6 +34,7 @@ use std::{cell::{Cell, RefCell}, path::PathBuf, rc::Rc, sync::Arc};
 
 slint::include_modules!();
 
+mod connection;
 mod placement;
 mod store_ui;
 use placement::DialogKind;
@@ -56,6 +57,7 @@ struct Dialogs {
     about: AboutDialog,
     config: MainWindow,
     _store_timer: slint::Timer,
+    _connection_timer: Option<slint::Timer>,
 }
 
 impl Drop for Dialogs {
@@ -271,7 +273,7 @@ impl Configurator {
                 window.set_auto_switch(loaded.config.runtime.auto_switch);
                 window.set_detect_applications(loaded.config.runtime.detect_applications);
                 window.set_poll_seconds(loaded.config.runtime.focus_poll_seconds as i32);
-                window.set_message(window.get_save_hint());
+                window.set_message("".into());
                 #[cfg(target_os = "linux")]
                 if let Err(error) = self.reload_linux_apps(&loaded.config) {
                     self.linux_app_pages.set_vec(Vec::new());
@@ -620,6 +622,7 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     #[cfg(target_os = "linux")]
     slint::set_xdg_app_id("ulanzideck").context("setting the Linux desktop application ID")?;
     let config = MainWindow::new().context("creating the configurator")?;
+    let connection_timer = connection::bind(&config, &path, Arc::clone(&control), mode == Mode::Resident);
     let state = bind_configurator(&config, path, control, mode);
     let store_timer = store_ui::bind(&config);
 
@@ -638,6 +641,7 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
         about,
         config,
         _store_timer: store_timer,
+        _connection_timer: connection_timer,
     })
 }
 
@@ -645,7 +649,21 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
 // configure: open the configurator directly instead of the About dialog.
 // control: application lifecycle shared with the caller.
 // Errors: UI creation or event-loop failure. Never discovers or opens HID.
-pub fn standalone(path: PathBuf, configure: bool, control: Arc<Control>) -> Result<()> {
+pub fn standalone(
+    path: PathBuf,
+    configure: bool,
+    control: Arc<Control>,
+    _start_controller: bool,
+) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    let Some(_instance) = crate::singleton::acquire_configurator()? else {
+        let message = "The UlanziDeck settings window is already open.";
+        println!("{message}");
+        if let Err(error) = crate::tray::linux::notify_message("UlanziDeck is already open", message) {
+            eprintln!("Could not show the duplicate launch notification: {error:#}");
+        }
+        return Ok(());
+    };
     #[cfg(target_os = "windows")]
     let first_welcome = !configure && SettingsStore::load(&path)?.config.is_first_run;
     let dialogs = create(
@@ -661,8 +679,11 @@ pub fn standalone(path: PathBuf, configure: bool, control: Arc<Control>) -> Resu
     control.enter_background();
     eprintln!("Opening UlanziDeck {}: {}", if configure { "configurator" } else { "About dialog" }, path.display());
     #[cfg(target_os = "linux")]
-    if let Ok(message) = std::env::var("ULANZIDECK_START_ERROR") {
-        dialogs.config.set_message(message.into());
+    if _start_controller {
+        if let Err(error) = crate::startup::launch_controller() {
+            eprintln!("Could not start the dock controller: {error:#}");
+            dialogs.config.set_message("Could not start the dock controller. See the application log for details.".into());
+        }
     }
     if configure {
         present_dialog(&dialogs.config, DialogKind::Configuration)?;
