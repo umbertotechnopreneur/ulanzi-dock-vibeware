@@ -22,7 +22,7 @@ Download an MSIX from [my releases](https://github.com/umbertotechnopreneur/ulan
 
 1. Open the MSIX and choose **Install**.
 2. Open **UlanziDeck** from Start.
-3. Follow the first-run setup. Right-click the tray icon, then choose **About → Configure** to change your choices later.
+3. Follow the first-run setup. Right-click the tray icon, then choose **Settings** to change your choices later.
 
 The tray icon is the small app icon near the Windows clock. Starting the controller can update a connected dock. If startup fails, an error window explains why.
 
@@ -38,7 +38,7 @@ Linux and macOS use a terminal. See [platform instructions](PLATFORMS.md).
 
 ## Change and back up settings
 
-On Windows, open **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the app you are using. Changes are saved and applied automatically.
+On Windows, choose **Settings** from the tray menu. Pick a theme, enable pages and choose whether the dock follows the app you are using. Changes are saved and applied automatically.
 
 The settings buttons open two text files:
 

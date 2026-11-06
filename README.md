@@ -77,7 +77,7 @@ Want an installer and a Start-menu entry? See [installation and settings](docs/I
 
 ## Change your setup
 
-On Windows, right-click the tray icon near the Windows clock and choose **About → Configure**. Pick a theme, enable pages and choose whether the dock follows the active app. Changes are saved and applied automatically.
+On Windows, right-click the tray icon near the Windows clock and choose **Settings**. Pick a theme, enable pages and choose whether the dock follows the active app. Changes are saved and applied automatically.
 
 The settings buttons open the files for shortcuts and app assignments. See [settings and backups](docs/INSTALLATION.md#change-and-back-up-settings) for their locations and what to edit.
 

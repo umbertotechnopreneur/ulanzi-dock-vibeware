@@ -228,6 +228,7 @@ mod windows {
     const MANIFESTO: i32 = 13;
     const ABOUT: i32 = 14;
     const EXIT_APP: i32 = 15;
+    const SETTINGS: i32 = 16;
     const RESTART_PARENT: &str = "ULANZIDOCK_VIBEWARE_RESTART_PARENT";
 
     /// Hand a user launch to the resident UI without starting another controller.
@@ -572,6 +573,7 @@ mod windows {
             (GITHUB, "GitHub"),
             (MANIFESTO, "VibeWare manifesto"),
             (ABOUT, "About"),
+            (SETTINGS, "Settings"),
             (0, ""),
             (EXIT_APP, "Exit"),
         ] {
@@ -813,9 +815,9 @@ mod windows {
                 ptr::null(),
             );
             PostMessageW(window, WM_NULL, 0, 0);
-            // About hands focus to the Slint UI thread. Returning focus to the
+            // About and Settings hand focus to the Slint UI thread. Returning focus to the
             // notification area here can race that user-requested activation.
-            if selected != ABOUT {
+            if !matches!(selected, ABOUT | SETTINGS) {
                 Shell_NotifyIconW(NIM_SETFOCUS, &notification(window, state.icon.0));
             }
             selected
@@ -833,6 +835,7 @@ mod windows {
             GITHUB => open_link(window, env!("CARGO_PKG_REPOSITORY")),
             MANIFESTO => open_link(window, "https://umbertogiacobbi.biz/vibeware/manifesto"),
             ABOUT => crate::gui::show_about(),
+            SETTINGS => crate::gui::show_settings(),
             _ => Ok(()),
         };
         if let Err(error) = result {

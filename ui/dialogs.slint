@@ -74,19 +74,33 @@ component PixelButton inherits Rectangle {
 // Plain, keyboard-accessible navigation link.
 component TextLink inherits Rectangle {
     in property <string> text;
+    in property <image> icon;
     callback clicked();
-    min-width: caption.preferred-width;
-    height: 28px;
+    min-width: content.preferred-width;
+    height: 32px;
     background: transparent;
     border-width: focus.has-focus ? 1px : 0px;
     border-color: Palette.blue;
     accessible-role: button;
     accessible-label: root.text;
     forward-focus: focus;
-    caption := Text {
-        text: root.text;
-        color: Palette.blue;
-        vertical-alignment: center;
+    content := HorizontalLayout {
+        alignment: center;
+        padding-left: 5px;
+        padding-right: 5px;
+        spacing: 6px;
+        Rectangle {
+            width: 16px;
+            Image {
+                width: 16px;
+                height: 16px;
+                y: (parent.height - self.height) / 2;
+                source: root.icon;
+                image-fit: contain;
+                colorize: Palette.blue;
+            }
+        }
+        Text { text: root.text; color: Palette.blue; vertical-alignment: center; }
     }
     focus := FocusScope {
         touch := TouchArea {
@@ -154,13 +168,13 @@ component ProductWordmark inherits Rectangle {
     }
 }
 
-// Product/author links with a separate fixed footer for Configure and Close.
+// Centered product information with a fixed footer for external links.
 export component AboutDialog inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
     title: "About UlanziDeck";
     preferred-width: 640px;
     preferred-height: body.preferred-height + footer.preferred-height;
-    min-width: 420px;
+    min-width: max(500px, link-row.preferred-width + 36px);
     min-height: 360px;
     background: Palette.paper;
     default-font-family: "Consolas";
@@ -169,8 +183,6 @@ export component AboutDialog inherits Window {
     icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
     in-out property <string> message;
     callback open-link(string);
-    callback configure();
-    callback dismiss();
     VerticalLayout {
      spacing: 0px;
      ScrollView {
@@ -190,12 +202,6 @@ export component AboutDialog inherits Window {
             wrap: word-wrap;
         }
         Text { text: "I'm Umberto Giacobbi · MIT"; color: Palette.ink; horizontal-alignment: center; }
-        HorizontalLayout {
-            spacing: 8px;
-            TextLink { text: "My website"; clicked => { root.open-link("website"); } }
-            TextLink { text: "Source on GitHub"; clicked => { root.open-link("project"); } }
-            Rectangle { horizontal-stretch: 1; background: transparent; }
-        }
         Rectangle {
             min-height: 130px;
             max-height: 130px;
@@ -203,26 +209,30 @@ export component AboutDialog inherits Window {
             clip: true;
             AboutSlint { width: parent.width; height: parent.height; }
         }
-        Text { text: root.message; color: Palette.muted; wrap: word-wrap; visible: root.message != ""; }
-        HorizontalLayout {
-            spacing: 8px;
-            TextLink { text: "Terms"; clicked => { root.open-link("terms"); } }
-            TextLink { text: "Privacy"; clicked => { root.open-link("privacy"); } }
-            Rectangle { horizontal-stretch: 1; background: transparent; }
-        }
       }
      }
      footer := VerticalLayout {
-        padding-left: 22px;
-        padding-right: 22px;
-        padding-top: 12px;
-        padding-bottom: 22px;
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-bottom: 18px;
+        spacing: 8px;
         HorizontalLayout {
-            spacing: 8px;
-            PixelButton { text: "Configure"; primary: true; clicked => { root.configure(); } }
-            PixelButton { text: "Close"; clicked => { root.dismiss(); } }
-            Rectangle { horizontal-stretch: 1; background: transparent; }
+            alignment: center;
             VibeWareLink { clicked => { root.open-link("vibeware"); } }
+        }
+        if root.message != "": Text {
+            text: root.message;
+            color: Palette.muted;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+        link-row := HorizontalLayout {
+            alignment: center;
+            spacing: 12px;
+            TextLink { text: "UmbertoGiacobbi.biz"; icon: @image-url("icons/website.svg"); clicked => { root.open-link("website"); } }
+            TextLink { text: "Source on GitHub"; icon: @image-url("icons/source.svg"); clicked => { root.open-link("project"); } }
+            TextLink { text: "Terms"; icon: @image-url("icons/terms.svg"); clicked => { root.open-link("terms"); } }
+            TextLink { text: "Privacy"; icon: @image-url("icons/privacy.svg"); clicked => { root.open-link("privacy"); } }
         }
      }
     }

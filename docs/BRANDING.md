@@ -37,11 +37,11 @@ The README footer shows the floppy, my name, a [manifesto link](https://umbertog
 
 For the app's About window:
 
-- Put my website first, then the repository, as simple text links.
-- Keep Terms, Privacy, the version and MIT attribution easy to find.
-- Put the original VibeWare icon at the bottom right, at 64 x 64 pixels.
+- Put my website, the repository, Terms and Privacy on one centered row with icons.
+- Keep the version and MIT attribution easy to find.
+- Center the original 64 × 64 VibeWare icon above the link row.
 - Make the icon clickable. Do not add a Manifesto label or explanatory VibeWare text.
-- Keep Configure and Close available. Images must fit the window.
+- Open Settings from the tray and close About with its window controls. Images must fit the window.
 - A second launch brings the existing window forward without forcing maximization.
 
 Keep links to [UlanziDeck](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware), [VibeWare](https://github.com/umbertotechnopreneur/VibeWare), [my site](https://umbertogiacobbi.biz), [Terms](https://umbertogiacobbi.biz/terms/) and [Privacy](https://umbertogiacobbi.biz/privacy/).

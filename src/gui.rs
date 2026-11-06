@@ -89,6 +89,17 @@ pub fn show_about() -> Result<()> {
     .context("opening the About dialog")
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub fn show_settings() -> Result<()> {
+    slint::invoke_from_event_loop(|| {
+        if let Some(configurator) = CONFIGURATOR.with(|slot| {
+            slot.borrow().as_ref().and_then(std::rc::Weak::upgrade)
+        }) {
+            configurator.show();
+        }
+    }).context("opening the configurator")
+}
+
 /// Reuse the resident window without restoring saved geometry or maximizing it.
 #[cfg(target_os = "windows")]
 pub fn activate_existing() -> Result<()> {
@@ -576,7 +587,7 @@ fn bind_about_links(about: &AboutDialog) {
 fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
     let about_weak = about.as_weak();
     let config_weak = window.as_weak();
-    let close_about: Rc<dyn Fn()> = Rc::new(move || {
+    about.window().on_close_requested(move || {
         if let Some(about) = about_weak.upgrade() {
             placement::remember(about.window(), DialogKind::About);
             let _ = about.hide();
@@ -585,7 +596,7 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
             if cfg!(target_os = "linux")
                 && config_weak.upgrade().is_some_and(|config| config.window().is_visible())
             {
-                return;
+                return slint::CloseRequestResponse::HideWindow;
             }
             if let Some(config) = config_weak.upgrade() {
                 placement::remember(config.window(), DialogKind::Configuration);
@@ -593,11 +604,6 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
             }
             let _ = slint::quit_event_loop();
         }
-    });
-    let dismiss_about = Rc::clone(&close_about);
-    about.on_dismiss(move || dismiss_about());
-    about.window().on_close_requested(move || {
-        close_about();
         slint::CloseRequestResponse::HideWindow
     });
 
@@ -639,8 +645,6 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     let store_timer = store_ui::bind(&config);
 
     about.set_version(env!("CARGO_PKG_VERSION").into());
-    let configure = Rc::clone(&state);
-    about.on_configure(move || configure.show());
     bind_about_links(&about);
     bind_close_handlers(&about, &config, mode);
 

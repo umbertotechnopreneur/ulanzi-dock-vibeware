@@ -3,7 +3,7 @@
 
 //! Linux tray commands for the running GUI and the sign-in preference.
 
-use super::{MainWindow, CONFIGURATOR};
+use super::MainWindow;
 use crate::{startup, tray::linux::connection};
 use anyhow::Result;
 use slint::ComponentHandle;
@@ -45,13 +45,7 @@ impl Endpoint {
     }
 
     fn show_settings(&self) -> fdo::Result<()> {
-        slint::invoke_from_event_loop(|| {
-            if let Some(configurator) = CONFIGURATOR.with(|slot| {
-                slot.borrow().as_ref().and_then(std::rc::Weak::upgrade)
-            }) {
-                configurator.show();
-            }
-        }).map_err(|error| fdo::Error::Failed(error.to_string()))
+        super::show_settings().map_err(|error| fdo::Error::Failed(error.to_string()))
     }
 
     fn quit(&self) -> fdo::Result<()> {
