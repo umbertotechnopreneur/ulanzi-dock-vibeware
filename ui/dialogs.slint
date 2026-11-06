@@ -294,6 +294,10 @@ export component MainWindow inherits Window {
     in property <[AppPage]> app-pages;
     in property <bool> linux-app-selection: false;
     in property <[LinuxAppPage]> linux-app-pages;
+    in property <bool> startup-visible;
+    in property <bool> startup-ready;
+    in property <string> startup-message;
+    in-out property <bool> startup-enabled;
     in property <bool> foreground-supported: true;
     in property <string> dock-status: "Unavailable";
     in property <bool> can-reconnect;
@@ -320,6 +324,7 @@ export component MainWindow inherits Window {
     callback linux-app-selected(int, int);
     callback linux-shortcuts-requested(int);
     callback refresh-linux-apps();
+    callback startup-toggled(bool);
     callback open-file(bool);
     callback learn-vibeware();
     callback reconnect();
@@ -338,6 +343,20 @@ export component MainWindow inherits Window {
             VibeWareLink { clicked => { root.learn-vibeware(); } }
         }
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
+        if root.startup-visible: VerticalLayout {
+            spacing: 4px;
+            CheckBox {
+                text: "Start with the operating system";
+                enabled: root.startup-ready;
+                checked <=> root.startup-enabled;
+                toggled => { root.startup-toggled(self.checked); }
+            }
+            if root.startup-message != "": Text {
+                text: root.startup-message;
+                color: Palette.muted;
+                wrap: word-wrap;
+            }
+        }
         Rectangle {
             // Reflow the same controls instead of recreating bindings on resize.
             min-height: self.preferred-height;

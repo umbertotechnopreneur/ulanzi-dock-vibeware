@@ -98,33 +98,56 @@ impl Indicator {
         ObjectPath::from_static_str("/Menu").expect("valid static path")
     }
 
-    fn activate(&self, _x: i32, _y: i32) -> zbus::fdo::Result<()> {
-        open_settings(&self.profile)
+    async fn activate(&self, _x: i32, _y: i32, #[zbus(connection)] bus: &zbus::Connection)
+        -> zbus::fdo::Result<()>
+    {
+        open_dialog(bus, &self.profile, false).await.map_err(menu_error)
     }
 }
 
-fn open_settings(profile: &std::path::Path) -> zbus::fdo::Result<()> {
-    let executable = std::env::current_exe()
-        .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
-    let mut command = Command::new(executable);
-    command.arg("configure").arg("--config").arg(profile);
+async fn open_dialog(bus: &zbus::Connection, profile: &std::path::Path, about: bool) -> Result<()> {
+    let method = if about { "ShowAbout" } else { "ShowSettings" };
+    if crate::gui::linux::request(bus, profile, method).await? {
+        return Ok(());
+    }
+    let mut command = Command::new(std::env::current_exe()?);
+    if about {
+        command.args(["about", "--gui"]);
+    } else {
+        command.arg("configure");
+    }
+    command.arg("--config").arg(profile);
     super::linux_openers::spawn(&mut command)
-        .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))
+}
+
+fn menu_error(error: anyhow::Error) -> zbus::fdo::Error {
+    zbus::fdo::Error::Failed(format!("{error:#}"))
 }
 
 // GNOME AppIndicator requires a real DBusMenu before showing an item.
-// This static tree has a root (0) and one action (1).
 type Properties = HashMap<String, Value<'static>>;
 type Layout = (i32, Properties, Vec<Value<'static>>);
 
-struct Menu(PathBuf);
+const SETTINGS: i32 = 1;
+const ABOUT: i32 = 2;
+const GITHUB: i32 = 3;
+const QUIT: i32 = 4;
+const MENU_ITEMS: [(i32, &str); 4] =
+    [(ABOUT, "About"), (GITHUB, "Open GitHub"), (QUIT, "Quit"), (SETTINGS, "Settings")];
+
+struct Menu {
+    profile: PathBuf,
+    control: Arc<Control>,
+}
 
 fn menu_properties(id: i32, requested: &[String]) -> Properties {
     let mut props = Properties::new();
-    let (key, value) = match id {
-        0 => ("children-display", "submenu"),
-        1 => ("label", "Open settings"),
-        _ => return props,
+    let (key, value) = if id == 0 {
+        ("children-display", "submenu")
+    } else if let Some((_, label)) = MENU_ITEMS.iter().find(|(item, _)| *item == id) {
+        ("label", *label)
+    } else {
+        return props;
     };
     if requested.is_empty() || requested.iter().any(|name| name == key) {
         props.insert(key.into(), Value::from(value));
@@ -141,31 +164,48 @@ impl Menu {
     fn get_layout(&self, parent_id: i32, recursion_depth: i32, property_names: Vec<String>)
         -> zbus::fdo::Result<(u32, Layout)>
     {
-        if parent_id != 0 && parent_id != 1 {
+        if parent_id != 0 && !MENU_ITEMS.iter().any(|(id, _)| *id == parent_id) {
             return Err(zbus::fdo::Error::InvalidArgs("Unknown menu item".into()));
         }
-        let mut children = Vec::new();
-        if parent_id == 0 && recursion_depth != 0 {
-            let leaf: Layout = (1, menu_properties(1, &property_names), Vec::new());
-            children.push(Value::Structure(zbus::zvariant::Structure::from(leaf)));
-        }
+        let children = if parent_id == 0 && recursion_depth != 0 {
+            MENU_ITEMS.iter().map(|&(id, _)| {
+                let leaf: Layout = (id, menu_properties(id, &property_names), Vec::new());
+                Value::Structure(zbus::zvariant::Structure::from(leaf))
+            }).collect()
+        } else {
+            Vec::new()
+        };
         Ok((1, (parent_id, menu_properties(parent_id, &property_names), children)))
     }
 
     fn get_group_properties(&self, ids: Vec<i32>, property_names: Vec<String>) -> Vec<(i32, Properties)> {
-        [0, 1].into_iter().filter(|id| ids.is_empty() || ids.contains(id))
+        std::iter::once(0).chain(MENU_ITEMS.iter().map(|&(id, _)| id))
+            .filter(|id| ids.is_empty() || ids.contains(id))
             .map(|id| (id, menu_properties(id, &property_names))).collect()
     }
 
     fn about_to_show(&self, _id: i32) -> bool { false }
 
-    fn event(&self, id: i32, event_id: &str, _data: zbus::zvariant::OwnedValue, _timestamp: u32)
-        -> zbus::fdo::Result<()>
-    {
-        if id == 1 && event_id == "clicked" {
-            open_settings(&self.0)?;
+    async fn event(
+        &self, id: i32, event_id: &str, _data: zbus::zvariant::OwnedValue, _timestamp: u32,
+        #[zbus(connection)] bus: &zbus::Connection,
+    ) -> zbus::fdo::Result<()> {
+        if event_id != "clicked" {
+            return Ok(());
         }
-        Ok(())
+        match id {
+            ABOUT => open_dialog(bus, &self.profile, true).await,
+            GITHUB => super::open_browser(env!("CARGO_PKG_REPOSITORY")),
+            SETTINGS => open_dialog(bus, &self.profile, false).await,
+            QUIT => {
+                if let Err(error) = crate::gui::linux::request(bus, &self.profile, "Quit").await {
+                    eprintln!("Could not close the UlanziDeck window: {error:#}");
+                }
+                self.control.stop();
+                Ok(())
+            }
+            _ => Ok(()),
+        }.map_err(menu_error)
     }
 }
 
@@ -197,7 +237,7 @@ fn serve(profile: PathBuf, control: Arc<Control>, stop: Receiver<()>) -> Result<
         .map_err(|error| eprintln!("Could not publish the controller connection state: {error:#}"))
         .ok();
     let bus = Builder::session()?.method_timeout(Duration::from_secs(1))
-        .serve_at("/Menu", Menu(profile.clone()))?
+        .serve_at("/Menu", Menu { profile: profile.clone(), control: Arc::clone(&control) })?
         .serve_at(ITEM, Indicator::new(profile, Arc::clone(&control))?)?.build().context("opening the desktop session bus")?;
     if stop.try_recv().is_ok() { return Ok(()); }
 

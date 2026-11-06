@@ -28,18 +28,53 @@ use anyhow::Result;
 pub(crate) const LINUX_UNIT: &str = "ulanzideck-controller.service";
 
 #[cfg(target_os = "linux")]
-pub(crate) fn launch_controller() -> Result<()> {
-    use anyhow::{ensure, Context};
-    use std::{path::PathBuf, process::Command};
+pub(crate) fn linux_unit_installed() -> bool {
+    std::path::Path::new("/usr/lib/systemd/user").join(LINUX_UNIT).is_file()
+}
 
-    let systemctl = |args: &[&str]| -> Result<Vec<u8>> {
-        let output = Command::new("systemctl").arg("--user").args(args)
-            .output().context("calling the systemd user manager")?;
-        ensure!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr).trim());
-        Ok(output.stdout)
-    };
-    systemctl(&["daemon-reload"])?;
-    let pid = systemctl(&["show", "--property=MainPID", "--value", LINUX_UNIT])?;
+#[cfg(target_os = "linux")]
+fn linux_systemctl(args: &[&str]) -> Result<std::process::Output> {
+    use anyhow::Context;
+    std::process::Command::new("systemctl").arg("--user").args(args)
+        .output().with_context(|| format!("calling systemctl --user {}", args[0]))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_systemctl_checked(args: &[&str]) -> Result<Vec<u8>> {
+    let output = linux_systemctl(args)?;
+    anyhow::ensure!(
+        output.status.success(), "systemctl --user {} failed: {}",
+        args[0], String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(output.stdout)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_enabled() -> Result<bool> {
+    let output = linux_systemctl(&["is-enabled", LINUX_UNIT])?;
+    match String::from_utf8_lossy(&output.stdout).trim() {
+        "enabled" => Ok(true),
+        "disabled" | "enabled-runtime" | "masked" | "masked-runtime" => Ok(false),
+        _ => anyhow::bail!("Could not read sign-in startup: {}",
+            String::from_utf8_lossy(&output.stderr).trim()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_set_enabled(enabled: bool) -> Result<()> {
+    let action = if enabled { "enable" } else { "disable" };
+    linux_systemctl_checked(&[action, LINUX_UNIT])?;
+    anyhow::ensure!(linux_enabled()? == enabled, "The startup state did not change.");
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn launch_controller() -> Result<()> {
+    use anyhow::Context;
+    use std::path::PathBuf;
+
+    linux_systemctl_checked(&["daemon-reload"])?;
+    let pid = linux_systemctl_checked(&["show", "--property=MainPID", "--value", LINUX_UNIT])?;
     let pid: u32 = String::from_utf8_lossy(&pid).trim().parse()
         .context("reading the controller PID")?;
 
@@ -52,7 +87,7 @@ pub(crate) fn launch_controller() -> Result<()> {
     } else {
         "start"
     };
-    systemctl(&[action, LINUX_UNIT])?;
+    linux_systemctl_checked(&[action, LINUX_UNIT])?;
     Ok(())
 }
 
@@ -137,25 +172,15 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
 #[cfg(target_os = "linux")]
 /// Manage the installed controller's user service, without opening HID or starting it now.
 pub fn manage(enable: bool, disable: bool) -> Result<()> {
-    use anyhow::{ensure, Context};
-    use std::{path::Path, process::Command};
-    ensure!(Path::new("/usr/lib/systemd/user").join(LINUX_UNIT).is_file(),
+    anyhow::ensure!(linux_unit_installed(),
         "Install the UlanziDeck Debian package before configuring Linux sign-in startup.");
-    let reload = Command::new("systemctl").args(["--user", "daemon-reload"])
-        .output().context("reloading user service definitions")?;
-    ensure!(reload.status.success(), "Could not reload user services: {}", String::from_utf8_lossy(&reload.stderr));
-    let action = if disable { "disable" } else if enable { "enable" } else { "is-enabled" };
-    let output = Command::new("systemctl").args(["--user", action, LINUX_UNIT])
-        .output().context("managing UlanziDeck sign-in startup")?;
-    if enable || disable {
-        ensure!(output.status.success(), "Could not change sign-in startup: {}", String::from_utf8_lossy(&output.stderr));
-        println!("Launch at Linux sign-in: {}. The running controller is unchanged.", if disable { "disabled" } else { "enabled" });
+    let enabled = if enable || disable {
+        linux_set_enabled(enable)?;
+        enable
     } else {
-        let state = String::from_utf8_lossy(&output.stdout);
-        ensure!(output.status.success() || state.trim() == "disabled",
-            "Could not read sign-in startup: {}", String::from_utf8_lossy(&output.stderr));
-        println!("Launch at Linux sign-in: {}", state.trim());
-    }
+        linux_enabled()?
+    };
+    println!("Launch at Linux sign-in: {}", if enabled { "enabled" } else { "disabled" });
     Ok(())
 }
 

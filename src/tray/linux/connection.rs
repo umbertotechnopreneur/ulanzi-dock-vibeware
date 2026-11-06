@@ -69,7 +69,7 @@ pub(crate) fn can_start(profile: &Path) -> bool {
         .filter(|path| !path.is_empty())
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|path| PathBuf::from(path).join(".config")));
-    Path::new("/usr/lib/systemd/user").join(LINUX_UNIT).is_file()
+    crate::startup::linux_unit_installed()
         && directory.is_some_and(|directory| {
             let default = directory.join("ulanzideck/settings.json");
             name(&default).is_ok_and(|default| name(profile).is_ok_and(|profile| default == profile))

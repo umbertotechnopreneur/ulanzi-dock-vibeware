@@ -35,6 +35,8 @@ use std::{cell::{Cell, RefCell}, path::PathBuf, rc::Rc, sync::Arc};
 slint::include_modules!();
 
 mod connection;
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
 mod placement;
 mod store_ui;
 use placement::DialogKind;
@@ -580,6 +582,11 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
             let _ = about.hide();
         }
         if mode != Mode::Resident {
+            if cfg!(target_os = "linux")
+                && config_weak.upgrade().is_some_and(|config| config.window().is_visible())
+            {
+                return;
+            }
             if let Some(config) = config_weak.upgrade() {
                 placement::remember(config.window(), DialogKind::Configuration);
                 let _ = config.hide();
@@ -595,12 +602,15 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
     });
 
     let weak = window.as_weak();
+    let about_weak = about.as_weak();
     let close_config: Rc<dyn Fn()> = Rc::new(move || {
         if let Some(config) = weak.upgrade() {
             placement::remember(config.window(), DialogKind::Configuration);
             let _ = config.hide();
         }
-        if mode == Mode::Configure {
+        let standalone_without_about = mode != Mode::Resident
+            && !about_weak.upgrade().is_some_and(|about| about.window().is_visible());
+        if if cfg!(target_os = "linux") { standalone_without_about } else { mode == Mode::Configure } {
             let _ = slint::quit_event_loop();
         }
     });
@@ -622,6 +632,8 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     #[cfg(target_os = "linux")]
     slint::set_xdg_app_id("ulanzideck").context("setting the Linux desktop application ID")?;
     let config = MainWindow::new().context("creating the configurator")?;
+    #[cfg(target_os = "linux")]
+    linux::bind_startup(&config, &path);
     let connection_timer = connection::bind(&config, &path, Arc::clone(&control), mode == Mode::Resident);
     let state = bind_configurator(&config, path, control, mode);
     let store_timer = store_ui::bind(&config);
@@ -657,7 +669,7 @@ pub fn standalone(
 ) -> Result<()> {
     #[cfg(target_os = "linux")]
     let Some(_instance) = crate::singleton::acquire_configurator()? else {
-        let message = "The UlanziDeck settings window is already open.";
+        let message = "UlanziDeck already has an open window.";
         println!("{message}");
         if let Err(error) = crate::tray::linux::notify_message("UlanziDeck is already open", message) {
             eprintln!("Could not show the duplicate launch notification: {error:#}");
@@ -675,6 +687,10 @@ pub fn standalone(
             Mode::About
         },
     )?;
+    #[cfg(target_os = "linux")]
+    let _tray_commands = linux::publish(&path).map_err(|error| {
+        eprintln!("Could not receive commands from the tray: {error:#}");
+    }).ok();
     let _console = crate::console::detach_if_owned()?;
     control.enter_background();
     eprintln!("Opening UlanziDeck {}: {}", if configure { "configurator" } else { "About dialog" }, path.display());
