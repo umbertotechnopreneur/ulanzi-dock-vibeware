@@ -181,7 +181,7 @@ export component AboutDialog inherits Window {
     default-font-size: 14px;
     in property <string> version;
     icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
-    in-out property <string> message;
+    in property <string> message;
     callback open-link(string);
     VerticalLayout {
      spacing: 0px;
@@ -192,7 +192,7 @@ export component AboutDialog inherits Window {
         padding: 22px;
         spacing: 12px;
         ProductWordmark { }
-        Text { text: "Open dock driver · v" + root.version; color: Palette.muted; horizontal-alignment: center; }
+        Text { text: "Controller for Ulanzi D200H · v" + root.version; color: Palette.muted; horizontal-alignment: center; }
         Text { text: "I built UlanziDeck for my D200H: shortcuts, media controls and app pages, right on my desk."; color: Palette.ink; horizontal-alignment: center; wrap: word-wrap; }
         Text {
             text: "I provide this software independently and as-is, without warranty. Use it at your own risk.";
