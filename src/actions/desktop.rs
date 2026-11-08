@@ -2,7 +2,7 @@
 
 //! Native GNOME desktop commands. Arbitrary application shortcuts keep their input backend.
 use anyhow::{Context, Result};
-use std::{collections::HashMap, process::{Command, Stdio}, sync::OnceLock, time::Duration};
+use std::{collections::HashMap, process::{Command, Stdio}, sync::OnceLock, time::{Duration, Instant}};
 use zbus::{blocking::{Connection, connection::Builder}, zvariant::Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,7 +57,7 @@ pub(super) fn execute(action: DesktopAction) -> Result<()> {
             Ok(())
         }
         ShowDesktop => show_desktop(),
-        Clipboard => clipboard(),
+        Clipboard => super::execute_immediate(&format!("hotkey:{}", clipboard_chord()?)),
     }
 }
 
@@ -78,7 +78,7 @@ fn show_desktop() -> Result<()> {
     Ok(())
 }
 
-fn clipboard() -> Result<()> {
+pub(super) fn clipboard_chord() -> Result<String> {
     // Use the shortcut owned by the user's existing Clipboard Indicator extension.
     let info = bus()?.call_method(Some("org.gnome.Shell"), "/org/gnome/Shell",
         Some("org.gnome.Shell.Extensions"), "GetExtensionInfo", &("clipboard-indicator@tudmotu.com",))?;
@@ -87,12 +87,26 @@ fn clipboard() -> Result<()> {
         "enable Clipboard Indicator in GNOME Extensions to use clipboard history");
     let home = std::env::var_os("HOME").context("HOME is not set")?;
     let schemas = std::path::PathBuf::from(home).join(".local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/schemas");
-    let output = Command::new("gsettings").arg("--schemadir").arg(schemas)
-        .args(["get", "org.gnome.shell.extensions.clipboard-indicator", "toggle-menu"]).output()?;
+    let mut child = Command::new("gsettings").arg("--schemadir").arg(schemas)
+        .args(["get", "org.gnome.shell.extensions.clipboard-indicator", "toggle-menu"])
+        .stdin(Stdio::null()).stdout(Stdio::piped()).spawn()?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            result => {
+                let _ = child.kill();
+                let _ = child.wait();
+                result.context("waiting for the Clipboard Indicator shortcut")?;
+                anyhow::bail!("Reading the Clipboard Indicator shortcut timed out");
+            }
+        }
+    }
+    let output = child.wait_with_output()?;
     anyhow::ensure!(output.status.success(), "could not read the Clipboard Indicator shortcut");
     let binding = String::from_utf8(output.stdout)?;
     let binding = binding.split('\'').nth(1).context("assign a Clipboard Indicator shortcut first")?;
-    let chord = binding.replace("<Primary>", "ctrl+").replace("<Control>", "ctrl+")
-        .replace("<Shift>", "shift+").replace("<Alt>", "alt+").replace("<Super>", "super+");
-    super::execute(&format!("hotkey:{chord}"))
+    Ok(binding.replace("<Primary>", "ctrl+").replace("<Control>", "ctrl+")
+        .replace("<Shift>", "shift+").replace("<Alt>", "alt+").replace("<Super>", "super+"))
 }

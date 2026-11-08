@@ -7,8 +7,6 @@
 """One console for setup, source builds, configuration and developer tools."""
 import argparse
 import hashlib
-import json
-from datetime import datetime, timezone
 import os
 from pathlib import Path
 import platform
@@ -22,11 +20,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / 'scripts'
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'ulanzideck'
-PACKAGES = ['cargo', 'rustc', 'gcc', 'libc6-dev', 'pkg-config', 'libxkbcommon-dev',
-            'python3-pil', 'python3-reportlab', 'dpkg-dev', 'wireplumber', 'libglib2.0-bin', 'gnome-control-center', 'gnome-characters', 'xdg-desktop-portal-gnome']
 COMMANDS = {
     'preflight': 'Check prerequisites and show what is missing',
-    'setup': 'Install missing Linux prerequisites and prepare scanned dependencies',
+    'setup': 'Stage locked Linux dependencies for a first-import scan',
     'build': 'Build programs from current source',
     'test-actions': 'Check the Linux reference actions with simulated button events',
     'configure': 'Open application settings without connecting to the dock',
@@ -51,7 +47,7 @@ def run(args, *, capture=False, env=None):
 def require(name):
     path = shutil.which(name)
     if not path:
-        raise RuntimeError(f'{name} is missing. Run setup first.')
+        raise RuntimeError(f'{name} is missing. See docs/DEVELOPMENT.md for prerequisites.')
     return path
 
 
@@ -59,10 +55,9 @@ def build_env():
     env = os.environ.copy()
     env['RUSTUP_AUTO_INSTALL'] = '0'
     env.setdefault('CARGO_BUILD_JOBS', str(min(4, os.cpu_count() or 1)))
-    env.setdefault('CARGO_HOME', str(CACHE / 'cargo'))
     env.setdefault('CARGO_TARGET_DIR', str(CACHE / 'target'))
     env.setdefault('TMPDIR', str(CACHE / 'tmp'))
-    for key in ('CARGO_HOME', 'CARGO_TARGET_DIR', 'TMPDIR'):
+    for key in ('CARGO_TARGET_DIR', 'TMPDIR'):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     return env
 
@@ -83,7 +78,7 @@ def preflight():
     checks = {name: bool(shutil.which(name)) for name in ('cargo', 'rustc')}
     checks['Rust 1.90 or newer'] = rust_ready()
     if platform.system() == 'Linux':
-        checks.update({name: bool(shutil.which(name)) for name in ('gcc', 'pkg-config', 'clamscan')})
+        checks.update({name: bool(shutil.which(name)) for name in ('gcc', 'pkg-config')})
         checks['xkbcommon development files'] = bool(shutil.which('pkg-config')) and subprocess.run(
             ['pkg-config', '--exists', 'xkbcommon'], cwd=ROOT).returncode == 0
     elif platform.system() == 'Windows':
@@ -93,144 +88,29 @@ def preflight():
         checks['Xcode command line tools'] = bool(shutil.which('clang'))
     for name, ready in checks.items():
         print(f"  {'READY' if ready else 'MISSING'}  {name}")
-    print('Build readiness does not verify the dock or cached dependency scans.')
+    print('This checks the installed toolchain and build tools.')
     return all(checks.values())
 
 
-def signature_version():
-    version = run([require('clamscan'), '--version'], capture=True)
-    parts = version.split('/', 2)
-    if len(parts) != 3:
-        return None
-    # ClamAV prints an English date regardless of the user's terminal locale.
-    try:
-        date = datetime.strptime(parts[2].strip(), '%a %b %d %H:%M:%S %Y').replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
-    age = (datetime.now(timezone.utc) - date).total_seconds()
-    return version if 0 <= age <= 172800 else None
-
-
-def bootstrap_scanner(admin):
-    missing = [name for name in ('clamav', 'clamav-freshclam') if not package_installed(name)]
-    if missing:
-        print('Installing ClamAV from authenticated distribution repositories.', flush=True)
-        # Explicit owner-authorized bootstrap: a scanner cannot scan itself first.
-        # APT verifies repository signatures and package hashes. Never bypass them.
-        run(admin + ['apt-get', '-o', 'APT::Get::AllowUnauthenticated=false',
-                     '-o', 'Acquire::AllowInsecureRepositories=false', '-y', 'install', *missing])
-        CACHE.mkdir(parents=True, exist_ok=True)
-        with (CACHE / 'dependency-import.log').open('a', encoding='utf-8') as stream:
-            stream.write(f'{datetime.now(timezone.utc).isoformat()} | Authorized scanner bootstrap via authenticated APT: {missing}\n')
-    if signature_version():
-        return
-    service = 'clamav-freshclam.service'
-    active = bool(shutil.which('systemctl')) and subprocess.run(
-        ['systemctl', 'is-active', '--quiet', service], cwd=ROOT).returncode == 0
-    if active:
-        run(admin + ['systemctl', 'stop', service])
-    try:
-        run(admin + [require('freshclam'), '--stdout'])
-    finally:
-        if active:
-            run(admin + ['systemctl', 'start', service])
-    if not signature_version():
-        raise RuntimeError('ClamAV signatures are still missing or outdated after the update.')
-
-
-def package_installed(package):
-    result = subprocess.run(['dpkg-query', '-W', '-f=${Status}', package],
-                            text=True, capture_output=True, cwd=ROOT)
-    return result.returncode == 0 and result.stdout == 'install ok installed'
-
-
-def scan(paths):
-    scanner = require('clamscan')
-    version = signature_version()
-    if not version:
-        raise RuntimeError('ClamAV signatures are missing or outdated. Run setup to update them.')
-    CACHE.mkdir(parents=True, exist_ok=True)
-    log = CACHE / 'dependency-import.log'
-    with log.open('a', encoding='utf-8') as stream:
-        stream.write(f'\n{datetime.now(timezone.utc).isoformat()} | {version}\n')
-        for path in paths:
-            stream.write(f'Source: {path}\n')
-        stream.flush()
-        # Load the signature database once for the complete import batch.
-        result = subprocess.run([scanner, '--recursive', '--alert-exceeds-max=yes',
-                                 '--max-filesize=1G', '--max-scansize=2G',
-                                 *map(str, paths)], stdout=stream,
-                                stderr=subprocess.STDOUT, cwd=ROOT)
-        if result.returncode:
-            raise RuntimeError(f'Scan stopped. Inspect {log}. Nothing will be built.')
-    print(f'Clean scan recorded in {log}')
-
-
-def dependency_snapshot(home):
-    result = {}
-    for folder in ('registry/cache', 'registry/src', 'git'):
-        base = home / folder
-        if base.exists():
-            for path in sorted(base.rglob('*')):
-                if path.is_file():
-                    with path.open('rb') as stream:
-                        result[str(path.relative_to(home))] = hashlib.file_digest(stream, 'sha256').hexdigest()
-    return result
-
-
-def setup():
-    if platform.system() != 'Linux' or not shutil.which('apt-get'):
-        raise RuntimeError('Automatic setup currently supports Debian/Ubuntu. Other systems: see docs/DEVELOPMENT.md.')
-    admin = [] if os.geteuid() == 0 else [require('sudo')]
-    if admin and subprocess.run(admin + ['-n', 'true'], cwd=ROOT,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
-        run(admin + ['-v'])
-    run(admin + ['apt-get', '-o', 'Acquire::AllowInsecureRepositories=false', 'update'])
-    bootstrap_scanner(admin)
-    missing = [package for package in PACKAGES if not package_installed(package)]
-    if not rust_ready():
-        missing = list(dict.fromkeys([*missing, 'rustc', 'cargo']))
-    if missing:
-        # A dedicated archive directory prevents scanning unrelated cached packages.
-        archives = CACHE / 'apt'
-        archives.mkdir(parents=True, exist_ok=True)
-        archives.chmod(0o755)
-        options = ['-o', f'Dir::Cache::archives={archives}',
-                   '-o', 'APT::Get::AllowUnauthenticated=false',
-                   '-o', 'Acquire::AllowInsecureRepositories=false']
-        run(admin + ['apt-get', *options, '--download-only', '-y', 'install', *missing])
-        files = list(archives.glob('*.deb'))
-        if not files:
-            raise RuntimeError('No downloaded packages found for scanning.')
-        scan(files)
-        with tempfile.TemporaryDirectory(prefix='deb-scan-', dir=CACHE) as extracted:
-            for index, package_file in enumerate(files):
-                run(['dpkg-deb', '--extract', package_file, Path(extracted) / str(index)])
-            scan([Path(extracted)])
-        run(admin + ['apt-get', *options, '--no-download', '-y', 'install', *missing])
-    if not rust_ready():
-        raise RuntimeError('Distribution Rust is older than 1.90. Prepare a scanned newer toolchain before continuing.')
-    env = build_env()
-    machine = platform.machine().lower()
+def setup(options):
+    if platform.system() != 'Linux':
+        raise RuntimeError('This command stages Linux dependencies. See docs/DEVELOPMENT.md for other platforms.')
+    parser = argparse.ArgumentParser(prog='ulanzi.py setup')
+    parser.add_argument('stage', type=Path, help='Empty staging directory outside the repository')
+    stage = parser.parse_args(options).stage.resolve()
+    if stage.is_relative_to(ROOT):
+        raise RuntimeError('Choose a staging directory outside the repository.')
+    stage.mkdir(parents=True, exist_ok=True)
+    if any(stage.iterdir()):
+        raise RuntimeError('Choose an empty directory for a fresh import.')
     targets = {'x86_64': 'x86_64-unknown-linux-gnu', 'aarch64': 'aarch64-unknown-linux-gnu'}
-    if machine not in targets:
-        raise RuntimeError(f'Unsupported setup architecture: {machine}')
-    run([require('cargo'), 'fetch', '--locked', '--target', targets[machine]], env=env)
-    home = Path(env['CARGO_HOME'])
-    paths = [p for p in (home / 'registry/cache', home / 'registry/src', home / 'git') if p.exists()]
-    if not paths:
-        raise RuntimeError('Cargo dependency material was not found for scanning.')
-    scan(paths)
-    receipt = home / 'ulanzideck-scan.json'
-    with tempfile.NamedTemporaryFile(mode='w', dir=home, encoding='utf-8', delete=False) as stream:
-        json.dump(dependency_snapshot(home), stream)
-        stream.flush()
-        os.fsync(stream.fileno())
-        pending = Path(stream.name)
-    if receipt.exists():
-        shutil.copy2(receipt, receipt.with_suffix('.json.bak'))
-    pending.replace(receipt)
-    print('Setup finished. Run build next. No application or dock trial was started.')
+    target = targets.get(platform.machine().lower())
+    if target is None:
+        raise RuntimeError(f'Unsupported setup architecture: {platform.machine()}')
+    env = {**os.environ, 'CARGO_HOME': str(stage), 'RUSTUP_AUTO_INSTALL': '0'}
+    run([require('cargo'), 'fetch', '--locked', '--target', target], env=env)
+    print(f'Dependencies staged in {stage}.')
+    print('Scan the new archives and extracted files with Windows Defender before using this directory.')
 
 
 def package_deb(options):
@@ -239,7 +119,7 @@ def package_deb(options):
     import tomllib
 
     parser = argparse.ArgumentParser(prog='ulanzi.py deb', description=package_deb.__doc__)
-    parser.add_argument('--binary', type=Path, help='Existing native release executable')
+    parser.add_argument('--binary', type=Path, help='Native release executable built from the current source')
     parser.add_argument('--output', type=Path, default=CACHE / 'dist')
     args = parser.parse_args(options)
     if platform.system() != 'Linux':
@@ -338,7 +218,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ulanzideck run
+ExecStart=/usr/bin/ulanzideck run --non-interactive
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
@@ -422,30 +302,28 @@ Description: UlanziDeck controller and configurator for the Ulanzi D200H
     print(f'Package ready: {destination}')
 
 
-def scanned_build_env():
-    env = build_env()
-    home = Path(env['CARGO_HOME'])
-    receipt = home / 'ulanzideck-scan.json'
-    if not receipt.is_file() or json.loads(receipt.read_text(encoding='utf-8')) != dependency_snapshot(home):
-        raise RuntimeError('Dependency cache is missing or changed since its scan. Run setup first.')
-    return env
+def offline_build_env():
+    home = os.environ.get('CARGO_HOME')
+    if not home or not Path(home).is_absolute() or not Path(home).is_dir():
+        raise RuntimeError('Set CARGO_HOME to the prepared Cargo cache. See docs/DEVELOPMENT.md.')
+    return build_env()
 
 
 def dispatch(command, options):
-    if command in ('preflight', 'setup', 'build', 'configure') and options:
+    if command in ('preflight', 'build', 'configure') and options:
         raise RuntimeError(f'{command} does not accept extra options.')
     if command == 'preflight':
         if not preflight():
-            raise RuntimeError('Prerequisites are missing. Run setup or follow docs/DEVELOPMENT.md.')
+            raise RuntimeError('Prerequisites are missing. See docs/DEVELOPMENT.md.')
     elif command == 'setup':
-        setup()
+        setup(options)
     elif command == 'build':
         if platform.system() == 'Windows':
-            run([require('pwsh'), '-NoProfile', '-File', SCRIPTS / 'ulanzi.ps1', '-Command', 'build', '-KeepBuildCache'])
+            run([require('pwsh'), '-NoProfile', '-File', SCRIPTS / 'ulanzi.ps1', '-Command', 'build'])
         else:
             if not preflight():
-                raise RuntimeError('Prerequisites are missing. Run setup first.')
-            env = scanned_build_env()
+                raise RuntimeError('Prerequisites are missing. See docs/DEVELOPMENT.md.')
+            env = offline_build_env()
             run([require('cargo'), 'build', '--frozen', '--release', '--bins'], env=env)
     elif command == 'test-actions':
         if platform.system() != 'Linux':
@@ -453,7 +331,7 @@ def dispatch(command, options):
         parser = argparse.ArgumentParser(prog='ulanzi.py test-actions')
         parser.add_argument('--config', type=Path, help='Read a local profile and compare it to the reference layout')
         args = parser.parse_args(options)
-        env = scanned_build_env()
+        env = offline_build_env()
         if args.config:
             env['ULANZI_OFFLINE_PROFILE'] = str(args.config.resolve(strict=True))
         else:
@@ -502,7 +380,7 @@ def main():
             continue
         command = entries[int(choice) - 1]
         try:
-            if command in ('package', 'atlases', 'obs-guide', 'notices'):
+            if command in ('setup', 'package', 'atlases', 'obs-guide', 'notices'):
                 print('Enter command options. Use --help to list them; leave empty to return.')
                 options = input('Options: ').strip()
                 if options:

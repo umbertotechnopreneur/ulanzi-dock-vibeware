@@ -47,11 +47,6 @@ pub fn premium_enabled() -> bool {
     cfg!(feature = "store-licensing") && PREMIUM_ENABLED
 }
 
-/// Every current theme is free, independently of Store entitlement.
-pub fn is_free(_theme: Theme) -> bool {
-    true
-}
-
 /// Return the real Store entitlement only when premium functionality is enabled.
 /// Disabling premium does not fabricate an owned license or start a Store worker.
 pub fn snapshot() -> Snapshot {
@@ -66,11 +61,6 @@ pub fn snapshot() -> Snapshot {
         price: String::new(),
         message: "All 13 themes are included. No purchase is required.".into(),
     }
-}
-
-/// Theme selection never depends on the premium switch or Store state.
-pub fn allows(theme: Theme) -> bool {
-    is_free(theme)
 }
 
 /// Retain the shared theme-selection entry point for settings and CLI callers.

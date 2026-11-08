@@ -253,9 +253,37 @@ export struct LinuxAppPage {
     status: string,
 }
 
-// Slint 1.13 resets ComboBox selection when its model changes. Restore the saved
-// index after those model notifications, without emitting a user-selection callback.
-component SavedApplicationComboBox inherits Rectangle {
+// Keep the displayed value confirmed until the Rust model accepts the request.
+component SavedCheckBox inherits CheckBox {
+    in property <bool> saved-checked;
+    callback change-requested(bool);
+    init => { root.checked = root.saved-checked; }
+    changed saved-checked => { root.checked = root.saved-checked; }
+    toggled => {
+        let requested = root.checked;
+        root.checked = root.saved-checked;
+        if requested != root.saved-checked {
+            root.change-requested(requested);
+        }
+    }
+}
+
+component SavedSpinBox inherits SpinBox {
+    in property <int> saved-value;
+    callback change-requested(int);
+    init => { root.value = root.saved-value; }
+    changed saved-value => { root.value = root.saved-value; }
+    edited(requested) => {
+        root.value = root.saved-value;
+        if requested != root.saved-value {
+            root.change-requested(requested);
+        }
+    }
+}
+
+// Slint 1.13 resets the index when the option model changes. Restore the
+// confirmed index after those notifications.
+component SavedComboBox inherits Rectangle {
     in property <[string]> model;
     in property <bool> enabled: true;
     in property <int> saved-index: 0;
@@ -275,7 +303,13 @@ component SavedApplicationComboBox inherits Rectangle {
         height: parent.height;
         model: root.model;
         enabled: root.enabled;
-        selected => { root.selection-requested(self.current-index); }
+        selected => {
+            let requested = self.current-index;
+            self.current-index = root.saved-index;
+            if requested != root.saved-index {
+                root.selection-requested(requested);
+            }
+        }
     }
     selection-sync := Timer {
         interval: 1ms;
@@ -287,8 +321,9 @@ component SavedApplicationComboBox inherits Rectangle {
     }
 }
 
-// Editable preferences plus Store status. Rust owns stale-write checks, licensing,
-// saving and restart requests; selecting a theme here does not activate it directly.
+export enum DockStatus { Unavailable, ControllerStopped, ControllerStarting, Waiting, Connected, Disconnected }
+
+// Display confirmed settings and send individual user requests to Rust.
 export component MainWindow inherits Window {
     init => { WidgetPalette.color-scheme = ColorScheme.light; }
     title: "UlanziDeck — Configuration";
@@ -307,18 +342,20 @@ export component MainWindow inherits Window {
     in property <bool> startup-visible;
     in property <bool> startup-ready;
     in property <string> startup-message;
-    in-out property <bool> startup-enabled;
+    in property <bool> startup-enabled;
     in property <bool> foreground-supported: true;
-    in property <string> dock-status: "Unavailable";
+    in property <DockStatus> dock-status: DockStatus.Unavailable;
+    in property <string> dock-message;
     in property <bool> can-reconnect;
     private property <bool> wide-layout: root.width >= 760px;
     in property <string> save-hint: "Changes are saved automatically and applied while the controller is running.";
-    in-out property <int> theme-index;
-    in-out property <bool> auto-switch;
-    in-out property <bool> detect-applications;
-    in-out property <int> poll-seconds: 1;
-    in-out property <string> message;
-    in-out property <bool> ready: false;
+    in property <int> theme-index;
+    in property <bool> auto-switch;
+    in property <bool> detect-applications;
+    in property <int> poll-seconds: 1;
+    in property <string> message;
+    in property <string> settings-message;
+    in property <bool> ready: false;
     in property <bool> resident;
     in property <bool> store-edition;
     in property <bool> store-busy;
@@ -328,9 +365,11 @@ export component MainWindow inherits Window {
     in property <string> store-message;
     callback buy-themes();
     callback restore-purchases();
-    callback preferences-changed();
-    callback theme-changed();
-    callback page-toggled(int, bool);
+    callback detect-applications-requested(bool);
+    callback auto-switch-requested(bool);
+    callback poll-seconds-requested(int);
+    callback theme-changed(int);
+    callback page-toggled(string, bool);
     callback linux-app-selected(int, int);
     callback linux-shortcuts-requested(int);
     callback refresh-linux-apps();
@@ -355,11 +394,11 @@ export component MainWindow inherits Window {
         Text { text: "MAKE IT YOURS"; color: Palette.blue; font-size: 24px; font-weight: 700; }
         if root.startup-visible: VerticalLayout {
             spacing: 4px;
-            CheckBox {
-                text: "Start with the operating system";
+            SavedCheckBox {
+                text: "Start at sign-in";
                 enabled: root.startup-ready;
-                checked <=> root.startup-enabled;
-                toggled => { root.startup-toggled(self.checked); }
+                saved-checked: root.startup-enabled;
+                change-requested(enabled) => { root.startup-toggled(enabled); }
             }
             if root.startup-message != "": Text {
                 text: root.startup-message;
@@ -380,16 +419,37 @@ export component MainWindow inherits Window {
                 height: self.preferred-height;
                 spacing: 10px;
                 Text { text: "Dock theme"; color: Palette.ink; font-weight: 700; }
-                ComboBox { enabled: root.ready; model: root.themes; current-index <=> root.theme-index; selected => { root.theme-changed(); } }
+                SavedComboBox {
+                    enabled: root.ready;
+                    model: root.themes;
+                    saved-index: root.theme-index;
+                    selection-requested(index) => { root.theme-changed(index); }
+                }
                 if root.foreground-supported: VerticalLayout {
                     spacing: 10px;
-                    CheckBox { enabled: root.ready; text: "Detect active applications"; checked <=> root.detect-applications; toggled => { root.preferences-changed(); } }
-                    if root.detect-applications: CheckBox { enabled: root.ready; text: "Switch pages automatically"; checked <=> root.auto-switch; toggled => { root.preferences-changed(); } }
+                    SavedCheckBox {
+                        enabled: root.ready;
+                        text: "Detect the active app";
+                        saved-checked: root.detect-applications;
+                        change-requested(enabled) => { root.detect-applications-requested(enabled); }
+                    }
+                    if root.detect-applications: SavedCheckBox {
+                        enabled: root.ready;
+                        text: "Switch pages automatically";
+                        saved-checked: root.auto-switch;
+                        change-requested(enabled) => { root.auto-switch-requested(enabled); }
+                    }
                     if !root.detect-applications: Text { text: "Choose pages manually."; color: Palette.muted; wrap: word-wrap; }
                     HorizontalLayout {
                         spacing: 8px;
                         Text { text: "Check interval (seconds)"; color: Palette.ink; vertical-alignment: center; wrap: word-wrap; }
-                        SpinBox { enabled: root.ready && root.detect-applications; minimum: 1; maximum: 60; value <=> root.poll-seconds; edited => { root.preferences-changed(); } }
+                        SavedSpinBox {
+                            enabled: root.ready && root.detect-applications;
+                            minimum: 1;
+                            maximum: 60;
+                            saved-value: root.poll-seconds;
+                            change-requested(seconds) => { root.poll-seconds-requested(seconds); }
+                        }
                     }
                 }
                 if !root.foreground-supported: Text {
@@ -407,23 +467,23 @@ export component MainWindow inherits Window {
                 Text { text: "Application pages"; color: Palette.ink; font-weight: 700; }
                 for row in Math.ceil(root.app-pages.length / 2): HorizontalLayout {
                     spacing: 12px;
-                    CheckBox {
+                    SavedCheckBox {
                         min-width: 0px;
                         preferred-width: 0px;
                         horizontal-stretch: 1;
                         enabled: root.ready;
                         text: root.app-pages[row * 2].name;
-                        checked: root.app-pages[row * 2].enabled;
-                        toggled => { root.page-toggled(row * 2, self.checked); }
+                        saved-checked: root.app-pages[row * 2].enabled;
+                        change-requested(enabled) => { root.page-toggled(root.app-pages[row * 2].name, enabled); }
                     }
-                    if row * 2 + 1 < root.app-pages.length: CheckBox {
+                    if row * 2 + 1 < root.app-pages.length: SavedCheckBox {
                         min-width: 0px;
                         preferred-width: 0px;
                         horizontal-stretch: 1;
                         enabled: root.ready;
                         text: root.app-pages[row * 2 + 1].name;
-                        checked: root.app-pages[row * 2 + 1].enabled;
-                        toggled => { root.page-toggled(row * 2 + 1, self.checked); }
+                        saved-checked: root.app-pages[row * 2 + 1].enabled;
+                        change-requested(enabled) => { root.page-toggled(root.app-pages[row * 2 + 1].name, enabled); }
                     }
                 }
                 Text { text: "Disabled pages are skipped. Your shortcuts stay saved."; color: Palette.muted; wrap: word-wrap; }
@@ -438,7 +498,7 @@ export component MainWindow inherits Window {
                 PixelButton { text: "Refresh"; enabled: root.ready; clicked => { root.refresh-linux-apps(); } }
             }
             Text {
-                text: "Choosing an installed app keeps your shortcuts. Use suggested shortcuts to replace this page’s action keys. Return to applications.yaml mapping to use the shared shortcuts again.";
+                text: "Choosing an app keeps your shortcuts. Use shared app mapping to restore the shared shortcuts.";
                 color: Palette.muted;
                 wrap: word-wrap;
             }
@@ -447,7 +507,7 @@ export component MainWindow inherits Window {
                 Text { text: root.linux-app-pages[row].page; color: Palette.ink; font-weight: 600; }
                 HorizontalLayout {
                     spacing: 12px;
-                    SavedApplicationComboBox {
+                    SavedComboBox {
                         min-width: 0px;
                         horizontal-stretch: 1;
                         enabled: root.ready;
@@ -456,7 +516,7 @@ export component MainWindow inherits Window {
                         selection-requested(index) => { root.linux-app-selected(row, index); }
                     }
                     PixelButton {
-                        text: "Use suggested shortcuts";
+                        text: "Replace with suggested shortcuts";
                         enabled: root.ready && root.linux-app-pages[row].available;
                         clicked => { root.linux-shortcuts-requested(row); }
                     }
@@ -476,7 +536,9 @@ export component MainWindow inherits Window {
      footer := VerticalLayout {
         padding: 22px;
         spacing: 8px;
-        Text { text: root.message == "" ? root.save-hint : root.message; color: Palette.blue; wrap: word-wrap; }
+        if root.message != "": Text { text: root.message; color: Palette.blue; wrap: word-wrap; }
+        if root.dock-message != "": Text { text: root.dock-message; color: Palette.blue; wrap: word-wrap; }
+        Text { text: root.settings-message == "" ? root.save-hint : root.settings-message; color: Palette.blue; wrap: word-wrap; }
         HorizontalLayout {
             spacing: 12px;
             Rectangle {
@@ -500,9 +562,9 @@ export component MainWindow inherits Window {
                             border-radius: 8px;
                             border-width: 1px;
                             border-color: #232a2f66;
-                            background: root.dock-status == "Connected" ? #218244
-                                : root.dock-status == "Disconnected" ? #c32f3d
-                                : root.dock-status == "Connecting" ? #ad681a : Palette.muted;
+                            background: root.dock-status == DockStatus.Connected ? #218244
+                                : root.dock-status == DockStatus.Disconnected ? #c32f3d
+                                : root.dock-status == DockStatus.Waiting || root.dock-status == DockStatus.ControllerStarting ? #ad681a : Palette.muted;
                             Rectangle {
                                 x: 4px;
                                 y: 3px;
@@ -514,7 +576,12 @@ export component MainWindow inherits Window {
                         }
                     }
                     Text {
-                        text: root.dock-status == "Unavailable" ? "Dock status unavailable" : root.dock-status;
+                        text: root.dock-status == DockStatus.Connected ? "Dock connected"
+                            : root.dock-status == DockStatus.Disconnected ? "Dock disconnected"
+                            : root.dock-status == DockStatus.Waiting ? "Waiting for dock"
+                            : root.dock-status == DockStatus.ControllerStarting ? "Starting controller"
+                            : root.dock-status == DockStatus.ControllerStopped ? "Controller stopped"
+                            : "Dock status unavailable";
                         color: Palette.ink;
                         font-weight: 700;
                         vertical-alignment: center;
@@ -522,7 +589,7 @@ export component MainWindow inherits Window {
                 }
             }
             if root.can-reconnect: PixelButton {
-                text: "Reconnect";
+                text: root.dock-status == DockStatus.ControllerStopped ? "Start controller" : "Reconnect";
                 horizontal-stretch: 0;
                 clicked => { root.reconnect(); }
             }

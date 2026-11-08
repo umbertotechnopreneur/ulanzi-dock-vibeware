@@ -33,7 +33,7 @@ The controller shares its Rust code across these systems. The controller retries
 | Follow the app in front and dim inactive actions | Implemented | Not implemented | Not implemented |
 | Sign-in startup and replacement of a running controller | Implemented | Opt-in installed user service; desktop launcher reuses it | Start and stop manually |
 | Automatic reconnect after a missing/disconnected dock | Implemented | Implemented; owner confirmed display restoration after reconnect | Implemented; unverified |
-| Download format | ZIP; local x64 and ARM64 MSIX builder | tar.gz | tar.gz; no signed app bundle |
+| Download format | ZIP and local x64 and ARM64 MSIX builder | tar.gz and Debian package | tar.gz |
 
 On Linux and macOS, active-application matching reports “unsupported”. Enabled pages remain available, but do not switch automatically. The Linux application selector below does not add active-application matching. The page index always lists enabled pages, including those whose app is closed. Selecting LibreOffice changes the visible Word/Excel/PowerPoint labels to Writer/Calc/Impress while keeping the internal page identifiers. On macOS, edit Windows-specific shortcuts for your system; Ctrl and the Windows key do not automatically become Command shortcuts.
 
@@ -49,13 +49,17 @@ Keep the terminal open. Press Ctrl+C to stop the controller. On macOS, run one c
 
 When the Linux controller starts, it sends a desktop notification and displays the UlanziDeck icon on desktops with an indicator host, such as KDE Plasma or GNOME with AppIndicator support. Desktop notification preferences control the banner. Activating the indicator opens settings for the running profile. The icon remains available while waiting for the dock or recovering a connection. Its tooltip reports the connection state. The icon disappears when the controller stops.
 
-On Linux, `run` and `configure` use the same default profile beside the portable executable. To use a different profile, pass the same `--config` path to both commands. A second controller trying to use the same dock waits without writing to it, even if it uses a different profile. Close the other controller to release the dock. Missing interfaces and USB access errors are retried with a delay of up to two seconds; settings and artwork errors are reported separately.
+On portable Linux, `run` and `configure` use the same default profile beside the executable. To use a different profile, pass the same `--config` path to both commands. Linux allows one controller per user. Stop the current controller before starting another profile. The controller retries missing interfaces and USB access errors with a delay of up to two seconds.
 
 Keep your Linux profile in a folder you control. Use regular files for the settings, application catalogue and session state. Linux rejects symbolic links at those filenames. When the controller creates or replaces settings and backups, it grants access only to the owner and preserves stricter owner permissions.
 
-The Debian desktop launcher starts or reuses the controller service before opening settings. Use `ulanzideck startup --enable` to enable it at graphical sign-in; `--disable` leaves the running controller unchanged. The standalone settings window can be opened with `configure`; `about --gui` opens About. Standalone Slint windows are available in the source for all three platforms. Save settings, then restart the controller manually to apply them.
+Open the Debian desktop launcher to open settings and start or reuse the controller service. It can start with a new profile without a terminal. Turn on **Start at sign-in** in Settings or run `ulanzideck startup --enable`. Disabling this option leaves a running controller active. Use `configure` to open settings on its own, or `about --gui` to open About. Theme, brightness and enabled pages update while the controller runs. Restart after changing app mappings or shortcuts.
 
-The Linux build targets Ubuntu 24.04. It needs a compatible glibc system, USB/HID permission and desktop libraries. The [build workflow](../.github/workflows/build.yml) lists development packages. For PLAY / PAUSE, NEXT TRACK and PREVIOUS on the media page, open a player with MPRIS support in the same desktop session. These three actions send playback commands directly to the player on both Wayland and X11. If several players are open, playback goes to a playing player first, then a paused one, then a stopped one. Ties are resolved by the player's MPRIS bus name in alphabetical order. MUTE and volume control the default PipeWire output through WirePlumber’s `wpctl`. Volume changes by five percentage points, capped at 100%. Linux setup and Debian packages include WirePlumber. On Wayland, the first application shortcut opens a keyboard-only Remote Desktop portal session. Enable interaction in the consent dialog. The controller keeps this session for subsequent shortcuts and closes it when the input backend is released. Cancellation or a timeout reports an error. On X11, shortcuts use a persistent X11 input connection.
+The Linux build targets Ubuntu 24.04. It needs compatible system libraries and USB/HID permission. The [build workflow](../.github/workflows/build.yml) lists development packages.
+
+On Wayland, the first keyboard shortcut opens the desktop's keyboard permission dialog. Allow keyboard access, return to the app you want to use and press the dock button again. If the session closes, a later press can open a new permission dialog. On X11, shortcuts use a persistent X11 input connection.
+
+For PLAY / PAUSE, NEXT TRACK and PREVIOUS, open a player with MPRIS support in the same desktop session. Playback commands work on Wayland and X11. A playing player takes priority over a paused or stopped player. Ties are resolved by the player's MPRIS bus name in alphabetical order. MUTE and volume use WirePlumber's `wpctl` to control the default PipeWire output. Volume moves by five percentage points up to 100%. The Debian package includes WirePlumber as a dependency.
 
 The macOS build targets macOS 15 for Apple Silicon. Older macOS versions are outside the current target, and there is no Intel package. It is a terminal program, without app signing or notarization. Input permissions and the foreground application's shortcut choices still apply.
 
@@ -95,11 +99,11 @@ Under **Installed Linux applications**, choose an application for each page. Use
 | Excel | LibreOffice Calc |
 | OBS Creator | OBS Studio |
 
-Selecting an application keeps the page's effective shortcuts. **Use suggested shortcuts** replaces its twelve action keys with the selected Linux preset. It keeps NEXT PAGE at index 4, the wide display at index 13 and the existing artwork. This is an explicit replacement: apply a preset before making your own shortcut edits.
+Selecting an application keeps the page's shortcuts. **Replace with suggested shortcuts** applies the Linux preset to the twelve action keys. NEXT PAGE, the wide display and the existing artwork stay in place. Apply a preset before customizing the shortcuts.
 
 The current settings format includes a `linux_applications` object, empty when no Linux app is selected. Selections and their keys are saved there in `settings.json`. For example, the Word choice stores its application ID in `linux_applications["Word"].application` and its editable key array in `linux_applications["Word"].keys`. Edit that key array to customize the selected Linux profile. The shared `pages` keys stay unchanged, and Windows ignores these Linux choices. Saves retain the existing `.gui.bak` backup and atomic-write behavior.
 
-Choose **Use applications.yaml mapping** to remove a page's Linux choice and use the shared catalogue and shortcuts again. Page checkboxes still control which pages are enabled. Finding or selecting an application does not enable a page, launch the application or install anything. All ten regular pages and thirteen themes remain in place. Restart the controller after changing applications or shortcuts.
+Choose **Use shared app mapping** to remove a page's Linux choice and use the shared catalogue and shortcuts again. Page checkboxes still control which pages are enabled. Restart the controller after changing applications or shortcuts.
 
 Detection reads known `.desktop` launchers in the user and system XDG application directories, Flatpak exports and Snap's desktop directory. It also checks known native commands in `PATH` when no known launcher exists. A user-hidden launcher is respected. The lookup uses the [XDG directory rules](https://specifications.freedesktop.org/basedir/latest/), the [desktop entry format](https://specifications.freedesktop.org/desktop-entry/latest/) and [Flatpak export conventions](https://docs.flatpak.org/en/latest/conventions.html#desktop-files).
 
@@ -115,12 +119,12 @@ The Linux Spotify shortcut preset assigns the same three MPRIS playback actions.
 
 The OBS preset keeps the project's existing shortcut chords. Assign them manually in **OBS Settings → Hotkeys**, following the [OBS Creator guide](../presets/obs-creator/README.md). The buttons do not report recording or audio state.
 
-These selections do not change the input backend. Shortcut output still uses X11. Native Wayland input, active-application matching, automatic page switching and dimming inactive actions remain unimplemented on Linux. Desktop shortcut assignments and application keymaps can also intercept configured keys.
+Choose pages manually on Linux. Desktop shortcut assignments and application keymaps can intercept configured keys on both Wayland and X11.
 
 ## Current build
 
-The latest local package is Windows x64 Release 1.0.8.0, built from source and installed.
-ARM64, Linux and macOS were not rebuilt for this package. No dock trial was run.
+The latest local package is Windows x64 Debug 1.0.9.0, built from source and
+signed for local testing. Windows x64 Release 1.0.8.0 is still installed.
 
 I own and use only a D200H on Windows x64. Other models and platforms need owner
 reports. [Tell me what you find](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/issues),

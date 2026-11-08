@@ -143,11 +143,6 @@ impl Control {
         self.background.load(Ordering::SeqCst)
     }
 
-    // Request a restart only after the configurator has saved successfully.
-    pub fn request_restart(&self) {
-        self.request(RESTART);
-    }
-
     // Serialize configurator saves with theme changes made on the physical dock.
     // Errors: a previous settings operation panicked while holding the lock.
     pub fn lock_settings(&self) -> anyhow::Result<std::sync::MutexGuard<'_, ()>> {

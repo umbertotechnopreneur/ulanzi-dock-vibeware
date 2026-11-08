@@ -25,6 +25,7 @@ Build Windows x64 or ARM64 MSIX packages from current source.
 Local packages use the existing trusted signing certificate. -StoreConfig embeds
 licensing configuration from an external JSON file and produces an unsigned Store
 submission package. This script does not submit or publish to Partner Center.
+Cargo uses the locked dependencies already available on this machine.
 .PARAMETER StoreConfig
 Absolute path outside this repository to private Store identity and add-on JSON.
 Normal Store submission packages remain unsigned.
@@ -300,12 +301,6 @@ if ($IconsOnly) {
 
 $cargo = Get-Command cargo -ErrorAction Stop
 $targetTriple = if ($Architecture -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
-$rustVersion = & rustc -vV
-if ($LASTEXITCODE -ne 0) { throw 'Could not read the Rust host target.' }
-$hostLine = $rustVersion | Where-Object { $_ -match '^host: ' } | Select-Object -First 1
-if (!$hostLine) { throw 'Rust did not report its host target.' }
-$hostTriple = $hostLine.Substring(6).Trim()
-$crossBuild = $targetTriple -ne $hostTriple
 $makeAppx = Get-WindowsSdkTool 'makeappx.exe'
 $signTool = if (!$StoreConfig -or $SignStoreTestPackage) { Get-WindowsSdkTool 'signtool.exe' }
 $cargoToml = Join-Path $root 'Cargo.toml'
@@ -330,48 +325,57 @@ if ($StoreConfig -and !$SignStoreTestPackage -and ($parsedVersion.Major -lt 1 -o
 }
 
 $configurationSuffix = if ($Configuration -eq 'Debug') { '-debug' } else { '' }
-$stage = Assert-WorkspacePath (Join-Path $root "tmp/msix-$Architecture$configurationSuffix")
-$outputDir = Assert-WorkspacePath (Join-Path $root 'artifacts/msix')
+$temporaryParent = Assert-WorkspacePath (Join-Path $root 'tmp')
+$artifacts = Assert-WorkspacePath (Join-Path $root 'artifacts')
+$stage = Assert-WorkspacePath (Join-Path $temporaryParent "msix-$Architecture$configurationSuffix")
+$buildDir = Assert-WorkspacePath (Join-Path $temporaryParent "msix-build-$([Guid]::NewGuid().ToString('N'))")
+$outputDir = Assert-WorkspacePath (Join-Path $artifacts 'msix')
 $output = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.msix")
 $unsigned = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.unsigned.msix")
 $certificateFile = Assert-WorkspacePath (Join-Path $outputDir 'ulanzi-dock-vibeware-local.cer')
-
-if (Test-Path -LiteralPath $stage) {
-    Remove-Item -LiteralPath $stage -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $stage, $outputDir | Out-Null
+$pendingPackage = Join-Path $buildDir 'candidate.msix'
+$pendingCertificate = Join-Path $buildDir 'signing.cer'
+New-Item -ItemType Directory -Force -Path $temporaryParent, $outputDir | Out-Null
+$lockPath = Assert-WorkspacePath (Join-Path $temporaryParent 'msix-build.lock')
+$buildLock = [IO.FileStream]::new($lockPath, 'OpenOrCreate', 'ReadWrite', 'None', 1, 'DeleteOnClose')
 
 try {
+    if (Test-Path -LiteralPath $stage) {
+        Remove-Item -LiteralPath (Assert-WorkspacePath $stage) -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $stage, $buildDir | Out-Null
     Push-Location -LiteralPath $root
     $previousStoreConfig = $env:ULANZI_STORE_CONFIG
-    $previousBuildTarget = $env:CARGO_BUILD_TARGET
+    $previousAutoInstall = $env:RUSTUP_AUTO_INSTALL
     try {
-        # Use the detected host for ordinary builds and an explicit target for
-        # cross-builds, independent of a caller's CARGO_BUILD_TARGET setting.
-        $env:CARGO_BUILD_TARGET = $hostTriple
-        $buildArguments = @('build', '--locked', '--bins')
+        $env:RUSTUP_AUTO_INSTALL = '0'
+        $rustVersion = & rustc -vV
+        if ($LASTEXITCODE -ne 0) { throw 'Could not read the Rust host target.' }
+        $hostLine = $rustVersion | Where-Object { $_ -match '^host: ' } | Select-Object -First 1
+        if (!$hostLine) { throw 'Rust did not report its host target.' }
+        $hostTriple = $hostLine.Substring(6).Trim()
+        # Read executables only from this invocation's empty output directory.
+        $buildArguments = @('build', '--frozen', '--bins', '--target-dir', $buildDir)
         if ($Configuration -eq 'Release') { $buildArguments += '--release' }
         if ($StoreConfig) {
             $env:ULANZI_STORE_CONFIG = $StoreConfig
             $buildArguments += @('--features', 'store-licensing')
         }
-        $targetArguments = @($buildArguments)
-        if ($crossBuild) { $targetArguments += @('--target', $targetTriple) }
-        & $cargo.Source @targetArguments
+        & $cargo.Source @buildArguments --target $targetTriple
         if ($LASTEXITCODE -ne 0) { throw "Cargo build failed with exit code $LASTEXITCODE." }
-        if ($crossBuild) {
-            & $cargo.Source @buildArguments
+        if ($targetTriple -ne $hostTriple) {
+            & $cargo.Source @buildArguments --target $hostTriple
             if ($LASTEXITCODE -ne 0) { throw "Host settings-generator build failed with exit code $LASTEXITCODE." }
         }
     }
     finally {
         $env:ULANZI_STORE_CONFIG = $previousStoreConfig
-        $env:CARGO_BUILD_TARGET = $previousBuildTarget
+        $env:RUSTUP_AUTO_INSTALL = $previousAutoInstall
         Pop-Location
     }
 
-    $buildOutput = Join-Path $root "target/$targetTriple/$($Configuration.ToLowerInvariant())"
-    $seedOutput = Join-Path $root "target/$hostTriple/$($Configuration.ToLowerInvariant())"
+    $buildOutput = Join-Path $buildDir "$targetTriple/$($Configuration.ToLowerInvariant())"
+    $seedOutput = Join-Path $buildDir "$hostTriple/$($Configuration.ToLowerInvariant())"
     foreach ($binary in 'ulanzi-dock-vibeware.exe', 'ulanzi-dock-launcher.exe') {
         $source = Join-Path $buildOutput $binary
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
@@ -412,7 +416,6 @@ try {
     $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
     $assets = Join-Path $stage 'Assets'
     New-Item -ItemType Directory -Force -Path $assets | Out-Null
-    Write-MsixIcons
     $detailedLogo = Join-Path $root 'assets/brand/ulanzi-dock-msix-icon.png'
     $compactLogo = Join-Path $root 'assets/brand/ulanzi-dock-msix-icon-compact.png'
     foreach ($logo in $detailedLogo, $compactLogo) {
@@ -447,15 +450,11 @@ try {
         }
     }
 
-    # A Store submission must not remove an existing locally signed installer.
-    $packageOutputs = if ($StoreConfig -and !$SignStoreTestPackage) { @($unsigned) } else { @($unsigned, $output) }
-    foreach ($path in $packageOutputs) {
-        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-    }
-    & $makeAppx pack /o /d $stage /p $unsigned
+    & $makeAppx pack /d $stage /p $pendingPackage
     if ($LASTEXITCODE -ne 0) { throw "MakeAppx failed with exit code $LASTEXITCODE." }
 
     if ($StoreConfig -and !$SignStoreTestPackage) {
+        [IO.File]::Move($pendingPackage, $unsigned, $true)
         Write-Host "Unsigned Microsoft Store submission package: $unsigned"
         return
     }
@@ -471,16 +470,17 @@ try {
     if (-not (Test-Path -LiteralPath $trustedRoot)) {
         throw "The signing certificate for $PublisherSubject is not trusted in Cert:\CurrentUser\Root."
     }
-    Export-Certificate -Cert "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -FilePath $certificateFile -Force | Out-Null
-    & $signTool sign /fd SHA256 /sha1 $certificate.Thumbprint /s My $unsigned
+    Export-Certificate -Cert "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -FilePath $pendingCertificate | Out-Null
+    & $signTool sign /fd SHA256 /sha1 $certificate.Thumbprint /s My $pendingPackage
     if ($LASTEXITCODE -ne 0) { throw "SignTool signing failed with exit code $LASTEXITCODE." }
     # Assert the signing identity. The package must use the current user's
     # pre-trusted local certificate; no certificate-store mutation occurs here.
-    $signature = Get-AuthenticodeSignature -FilePath $unsigned
+    $signature = Get-AuthenticodeSignature -FilePath $pendingPackage
     if ($null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
         throw 'The MSIX signer does not match the local UlanziDeck certificate.'
     }
-    Move-Item -LiteralPath $unsigned -Destination $output -Force
+    [IO.File]::Move($pendingPackage, $output, $true)
+    [IO.File]::Move($pendingCertificate, $certificateFile, $true)
 
     if ($Install) {
         Add-AppxPackage -Path $output -ForceApplicationShutdown -ForceUpdateFromAnyVersion
@@ -491,7 +491,15 @@ try {
     Write-Host "MSIX ready: $output"
 }
 finally {
-    if ((Test-Path -LiteralPath $stage) -and -not $KeepStaging) {
-        Remove-Item -LiteralPath $stage -Recurse -Force
+    try {
+        if (Test-Path -LiteralPath $buildDir) {
+            Remove-Item -LiteralPath (Assert-WorkspacePath $buildDir) -Recurse -Force
+        }
+        if ((Test-Path -LiteralPath $stage) -and -not $KeepStaging) {
+            Remove-Item -LiteralPath (Assert-WorkspacePath $stage) -Recurse -Force
+        }
+    }
+    finally {
+        $buildLock.Dispose()
     }
 }

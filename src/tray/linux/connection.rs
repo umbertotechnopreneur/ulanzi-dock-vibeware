@@ -4,7 +4,6 @@
 //! Share the live controller state with the settings window on the user bus.
 
 use super::{ConnectionState, Control};
-use crate::startup::LINUX_UNIT;
 use anyhow::Result;
 use std::{
     env, fs,
@@ -12,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use zbus::{blocking::{connection::Builder, Connection}, zvariant::OwnedObjectPath};
+use zbus::blocking::{connection::Builder, Connection};
 
 const INTERFACE: &str = "io.github.umbertotechnopreneur.UlanziDeck.Controller";
 const PATH: &str = "/io/github/umbertotechnopreneur/UlanziDeck/Controller";
@@ -76,20 +75,15 @@ pub(crate) fn can_start(profile: &Path) -> bool {
         })
 }
 
-pub(crate) fn reconnect(bus: &Connection, name: &str, managed: bool) -> Result<()> {
+/// Return true when the user service has been asked to start.
+pub(crate) fn reconnect(bus: &Connection, name: &str, managed: bool) -> Result<bool> {
     if state(bus, name)?.is_some() {
         bus.call_method(Some(name), PATH, Some(INTERFACE), "Reconnect", &())?;
+        Ok(false)
     } else if managed {
-        let reply = bus.call_method(
-            Some("org.freedesktop.systemd1"),
-            "/org/freedesktop/systemd1",
-            Some("org.freedesktop.systemd1.Manager"),
-            "StartUnit",
-            &(LINUX_UNIT, "replace"),
-        )?;
-        let _: OwnedObjectPath = reply.body().deserialize()?;
+        crate::startup::launch_controller()?;
+        Ok(true)
     } else {
         anyhow::bail!("Start the controller for this profile first.");
     }
-    Ok(())
 }

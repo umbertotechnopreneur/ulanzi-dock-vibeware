@@ -115,11 +115,11 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
 
     let executable = env::current_exe().context("finding this executable")?;
     let launcher = executable.with_file_name("ulanzi-dock-launcher.exe");
-    let workdir = env::current_dir().context("finding the working directory")?;
-    let config = workdir.join("settings.json");
+    let config = crate::paths::default_settings()?;
+    let workdir = config.parent().context("finding the settings folder")?;
     ensure!(
         !enable || config.is_file(),
-        "{} is missing; run 'init' in the intended working directory first",
+        "{} is missing; run 'init --config' with that path first",
         config.display()
     );
     ensure!(
@@ -127,7 +127,7 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
         "{} is missing; keep the Windows launcher beside the controller executable",
         launcher.display()
     );
-    for path in [&executable, &workdir, &config] {
+    for path in [executable.as_path(), workdir, config.as_path()] {
         let value = path.to_string_lossy();
         ensure!(
             !value.chars().any(|c| matches!(c, '"' | '\n' | '\r')),
@@ -145,7 +145,7 @@ pub fn manage(enable: bool, disable: bool) -> Result<()> {
         .arg(include_str!("startup.ps1"))
         .env("ULANZIDOCK_STARTUP_EXE", &executable)
         .env("ULANZIDOCK_STARTUP_LAUNCHER", &launcher)
-        .env("ULANZIDOCK_STARTUP_WORKDIR", &workdir)
+        .env("ULANZIDOCK_STARTUP_WORKDIR", workdir)
         .env("ULANZIDOCK_STARTUP_CONFIG", &config)
         .env(
             "ULANZIDOCK_STARTUP_MODE",

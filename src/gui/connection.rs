@@ -13,15 +13,33 @@ use crate::tray::ConnectionState;
 use slint::ComponentHandle;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-fn show_state(window: &MainWindow, state: Option<ConnectionState>, can_retry: bool) {
-    let label = match state {
-        Some(ConnectionState::Connected) => "Connected",
-        Some(ConnectionState::Waiting) => "Connecting",
-        Some(ConnectionState::Disconnected) => "Disconnected",
-        None => "Unavailable",
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControllerStatus {
+    #[cfg(target_os = "linux")]
+    Unavailable,
+    #[cfg(target_os = "linux")]
+    Stopped,
+    #[cfg(target_os = "linux")]
+    Starting,
+    Dock(ConnectionState),
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn show_state(window: &MainWindow, state: ControllerStatus, can_retry: bool) {
+    use super::DockStatus;
+    let status = match state {
+        #[cfg(target_os = "linux")]
+        ControllerStatus::Unavailable => DockStatus::Unavailable,
+        #[cfg(target_os = "linux")]
+        ControllerStatus::Stopped => DockStatus::ControllerStopped,
+        #[cfg(target_os = "linux")]
+        ControllerStatus::Starting => DockStatus::ControllerStarting,
+        ControllerStatus::Dock(ConnectionState::Connected) => DockStatus::Connected,
+        ControllerStatus::Dock(ConnectionState::Waiting) => DockStatus::Waiting,
+        ControllerStatus::Dock(ConnectionState::Disconnected) => DockStatus::Disconnected,
     };
-    window.set_dock_status(label.into());
-    window.set_can_reconnect(can_retry && matches!(state, None | Some(ConnectionState::Disconnected)));
+    window.set_dock_status(status);
+    window.set_can_reconnect(can_retry);
 }
 
 #[cfg(target_os = "linux")]
@@ -30,9 +48,10 @@ pub(super) fn bind(
     profile: &Path,
     _control: Arc<Control>,
     _resident: bool,
+    start_controller: bool,
 ) -> Option<slint::Timer> {
     use crate::tray::linux::connection as link;
-    use std::{sync::mpsc, thread, time::Duration};
+    use std::{sync::mpsc, thread, time::{Duration, Instant}};
     use zbus::blocking::connection::Builder;
 
     let name = match link::name(profile) {
@@ -49,43 +68,81 @@ pub(super) fn bind(
         let mut bus = None;
         let mut previous = None;
         let mut retry = false;
+        let mut start_deadline = None;
+        let mut error = None;
+        if start_controller {
+            if weak.upgrade_in_event_loop(|window| {
+                show_state(&window, ControllerStatus::Starting, false);
+            }).is_err() {
+                return;
+            }
+            let result = if managed {
+                crate::startup::launch_controller()
+            } else {
+                Err(anyhow::anyhow!("Only the installed default profile can start the controller from Settings."))
+            };
+            match result {
+                Ok(()) => start_deadline = Some(Instant::now() + Duration::from_secs(5)),
+                Err(cause) => error = Some(format!("Could not start the controller: {cause:#}")),
+            }
+        }
         loop {
             if bus.is_none() {
                 bus = Builder::session()
                     .and_then(|builder| builder.method_timeout(Duration::from_millis(750)).build())
                     .ok();
             }
-            let error = if retry {
-                match &bus {
-                    Some(bus) => link::reconnect(bus, &name, managed)
-                        .err()
-                        .map(|error| format!("Could not reconnect: {error:#}")),
-                    None => Some("Could not connect to the desktop session bus.".into()),
+            if retry {
+                let result = match &bus {
+                    Some(bus) => link::reconnect(bus, &name, managed),
+                    None => Err(anyhow::anyhow!("Could not connect to the desktop session bus.")),
+                };
+                match result {
+                    Ok(true) => start_deadline = Some(Instant::now() + Duration::from_secs(5)),
+                    Ok(false) => {}
+                    Err(cause) => error = Some(format!("Could not reconnect: {cause:#}")),
                 }
-            } else {
-                None
-            };
+            }
             let (state, can_retry) = match bus.as_ref().map(|bus| link::state(bus, &name)) {
-                Some(Ok(Some(state))) => (Some(state), true),
-                Some(Ok(None)) => (None, managed),
+                Some(Ok(Some(state))) => {
+                    start_deadline = None;
+                    (ControllerStatus::Dock(state), state == ConnectionState::Disconnected)
+                }
+                Some(Ok(None)) if start_deadline.is_some_and(|end| Instant::now() < end) => {
+                    (ControllerStatus::Starting, false)
+                }
+                Some(Ok(None)) => {
+                    if start_deadline.take().is_some() {
+                        error = Some("The controller did not start for this profile. Check the application log.".into());
+                    }
+                    (ControllerStatus::Stopped, managed)
+                }
                 _ => {
                     bus = None;
-                    (None, false)
+                    (ControllerStatus::Unavailable, false)
                 }
             };
             let view = (state, can_retry);
-            if retry || previous != Some(view) {
+            let changed = previous != Some(view);
+            if error.is_some() || retry || changed {
+                let message = if let Some(error) = error.take() {
+                    eprintln!("{error}");
+                    Some(error)
+                } else {
+                    (retry || (changed && matches!(state, ControllerStatus::Dock(_))))
+                        .then(String::new)
+                };
                 if weak.upgrade_in_event_loop(move |window| {
                     show_state(&window, state, can_retry);
-                    if let Some(error) = error {
-                        window.set_message(error.into());
+                    if let Some(message) = message {
+                        window.set_dock_message(message.into());
                     }
                 }).is_err() {
                     break;
                 }
                 previous = Some(view);
             }
-            // The callback owns the sender. Closing the dialog releases the worker.
+            // Dropping the dialog releases the sender and stops the worker.
             retry = match requests.recv_timeout(Duration::from_millis(750)) {
                 Ok(()) => true,
                 Err(mpsc::RecvTimeoutError::Timeout) => false,
@@ -97,13 +154,8 @@ pub(super) fn bind(
         eprintln!("Could not start the dock status reader: {error}");
         return None;
     }
-    let weak = window.as_weak();
     window.on_reconnect(move || {
-        if request.try_send(()).is_ok() {
-            if let Some(window) = weak.upgrade() {
-                show_state(&window, Some(ConnectionState::Waiting), false);
-            }
-        }
+        let _ = request.try_send(());
     });
     None
 }
@@ -114,6 +166,7 @@ pub(super) fn bind(
     _profile: &Path,
     control: Arc<Control>,
     resident: bool,
+    _start_controller: bool,
 ) -> Option<slint::Timer> {
     if !resident {
         return None;
@@ -124,7 +177,8 @@ pub(super) fn bind(
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(250), move || {
         if let Some(window) = weak.upgrade() {
-            show_state(&window, Some(control.connection()), true);
+            let state = control.connection();
+            show_state(&window, ControllerStatus::Dock(state), state == ConnectionState::Disconnected);
         }
     });
     Some(timer)
@@ -136,6 +190,7 @@ pub(super) fn bind(
     _profile: &Path,
     _control: Arc<Control>,
     _resident: bool,
+    _start_controller: bool,
 ) -> Option<slint::Timer> {
     None
 }

@@ -21,94 +21,68 @@ The app is written in **Rust**. Rust turns source code into a fast, self-contain
 
 **Slint** draws the settings windows and connects their controls to Rust. **Python** prepares pictures, the printable OBS guide and license notices. It is a development tool, not part of the running controller.
 
+## Prepare new dependencies
+
+Get the locked versions and native packages from their official sources.
+Stage each new archive and its extracted files outside the repository. Check
+the source and version, then scan the staging files with Microsoft Windows
+Defender. For Linux imports, use a Windows-accessible staging drive and scan
+the Linux files there before moving them to the build host. Use the files once
+the targeted scan has finished without detections. Reuse the same unchanged
+staging files during that session. Keep scan results in the current session.
+
+An unavailable or failed scan stops the import. Builds and tests use prepared
+dependencies offline. Remove temporary staging files and intermediate build
+output after the task.
+
 ## Build on Windows
 
-You need Git, Rust 1.90 or newer with its MSVC toolchain, Visual Studio C++ build tools, the Windows SDK and PowerShell 7. These tools download the source and turn it into an app.
+Use Git, Rust 1.90 or newer with its MSVC toolchain, Visual Studio C++ build
+tools, the Windows SDK and PowerShell 7. Prepare missing dependencies before
+compiling. The following builds the current source with the prepared Cargo cache.
 
 ```powershell
-git clone https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware.git
-Set-Location .\ulanzi-dock-vibeware
-cargo build --locked --bins
+pwsh -NoProfile -File scripts/ulanzi.ps1 -Command build
 ```
 
-This makes a Debug build in `target/debug/`. Add `--release` for an optimized build in `target/release/`. Neither command needs a dock. Build from the current source, not from an installed app or an older download.
-
-Before introducing a new external library or binary, scan its downloaded archive and extracted files with Microsoft Windows Defender. Keep the source, version or SHA-256, command and clean result. Reuse that evidence for unchanged files. Do not add antivirus scans to builds or tests.
+The controller and launcher go to `artifacts/`. For a Debug build from source,
+use `cargo build --frozen --bins` with the same cache.
 
 ## Build on Linux
 
-Prepare Rust 1.90 or newer, a C compiler and linker, C library headers,
-`pkg-config` and the xkbcommon development files. On Ubuntu, the baseline native
-packages are `gcc`, `libc6-dev`, `pkg-config` and `libxkbcommon-dev`.
-The [build workflow](../.github/workflows/build.yml) installs a broader library
-set; that list is not a confirmed minimum for the current enabled features.
-Prepare and scan missing toolchain or system packages before installing them.
-The build script does not install prerequisites.
+Prepare Rust 1.90 or newer, a C compiler, C library headers, `pkg-config` and
+the native development libraries listed in the [build workflow](../.github/workflows/build.yml).
+Use `dpkg-dev` for Debian packaging and Pillow and ReportLab for artwork tools.
 
-Keep downloaded dependencies outside the repository. Reuse an existing scanned
-Cargo cache where possible. On a live USB with persistence, use another mounted
-disk for the cache, temporary files and build output. Check its mount, free space
-and filesystem first. The settings writer needs hard-link support. Avoid making
-a second copy of a cache that is already available.
-
-Choose absolute paths appropriate for your machine. For example, set these to
-writable directories on the selected disk:
+If you need fresh Cargo dependencies, stage the locked dependencies for your
+native architecture with the shared console.
 
 ```sh
-export CARGO_HOME="/path/to/cargo-cache"
+python3 scripts/ulanzi.py setup /path/to/empty-staging
+```
+
+This fetches dependencies into an empty directory outside the repository. It
+uses the installed toolchain and does not compile or install anything. Stage
+and scan the new `.crate` archives and extracted sources before using the cache.
+If Cargo has only downloaded an archive, extract a copy for the scan. Include
+any fetched Git dependency checkouts. The same first-import steps apply to any
+new native packages you prepare separately.
+
+Point `CARGO_HOME` to your prepared Cargo cache. Use a writable directory for
+build output. On a live USB, choose a mounted disk with enough space.
+
+```sh
+export CARGO_HOME="/path/to/prepared-cargo-cache"
 export CARGO_TARGET_DIR="/path/to/build-output"
-export TMPDIR="/path/to/temporary-files"
-```
-
-Prepare dependencies separately from compilation. From the repository folder,
-fetch the locked Linux x64 dependencies into that external cache:
-
-```sh
-cargo fetch --locked --target x86_64-unknown-linux-gnu
-```
-
-[`cargo fetch`](https://doc.rust-lang.org/cargo/commands/cargo-fetch.html)
-downloads dependency material without compiling it or executing dependency
-`build.rs` scripts. It can extract crate sources into the cache. Before any
-build, scan the downloaded `.crate` archives in `$CARGO_HOME/registry/cache` with
-ClamAV using current signatures, then scan the extracted sources in
-`$CARGO_HOME/registry/src`. Include any Git dependency checkouts under
-`$CARGO_HOME/git` and any separately downloaded tools. Preserve the source,
-versions and clean scan results. Scan errors, skipped files or scan limits must
-be resolved before proceeding; they are not a clean result. Do not execute
-installers or dependency build scripts before this scan is complete.
-
-Once the toolchain, native libraries and cached dependencies are ready and
-scanned, build from the repository folder:
-
-```sh
 bash scripts/build-linux.sh
 ```
 
-The script calls the shared console, checks prerequisites and the dependency
-scan receipt, then runs `cargo build --frozen --release --bins`. It inherits the
-cache, output and temporary directories above. It also prevents rustup from
-automatically installing a missing toolchain. Cargo's
-[`--frozen`](https://doc.rust-lang.org/cargo/commands/cargo-build.html#manifest-options)
-combines `--locked` and `--offline`: the build keeps `Cargo.lock` unchanged and
-Cargo does not download missing dependencies. An incomplete cache causes an
-error. Fetch and scan the missing material separately before trying again.
+The script runs `cargo build --frozen --release --bins`. An incomplete cache
+stops the build. The controller is in `$CARGO_TARGET_DIR/release/`. To open
+settings, use `"$CARGO_TARGET_DIR/release/ulanzi-dock-vibeware" configure`.
 
-The script builds optimized binaries without running the app, software tests or
-dock checks. It leaves the cache and build output available for reuse. With the
-example output directory above, the controller is at
-`$CARGO_TARGET_DIR/release/ulanzi-dock-vibeware`. To open its configurator without
-connecting to the dock:
-
-```sh
-"$CARGO_TARGET_DIR/release/ulanzi-dock-vibeware" configure
-```
-
-The configurator lists supported installed Linux apps and saves explicit choices.
 See [Linux application choices](PLATFORMS.md#linux-application-choices) for
-profiles, shortcut editing and current desktop limitations. Start the controller
-with `run` only when ready for an authorized dock trial. A successful build does
-not prove that HID access or desktop shortcuts work.
+profiles, shortcut editing and desktop limitations.
 
 ## One console for the tools
 
@@ -120,14 +94,11 @@ python3 scripts/ulanzi.py
 
 On Windows, use `python` instead of `python3`. The PowerShell entry
 `pwsh -NoProfile -File scripts/ulanzi.ps1` opens the same menu. The shared console
-owns navigation and native Linux build/setup/packaging. Windows packaging and
-artwork implementations remain separate modules called by that console; they
-are not copies of a second menu. Commands can run
-directly without prompts:
+provides the shared menu. Linux build and packaging run directly from it. The
+console calls the Windows and artwork scripts for their commands.
 
 ```sh
 python3 scripts/ulanzi.py preflight
-python3 scripts/ulanzi.py setup
 python3 scripts/ulanzi.py build
 python3 scripts/ulanzi.py configure
 ```
@@ -136,36 +107,14 @@ When ready to use the connected dock, select `run` in the menu or execute
 `python3 scripts/ulanzi.py run`. This opens the device and dispatches configured
 shortcuts. It is a separate explicit action, never part of setup or build.
 
-`preflight` checks installed build prerequisites. It does not connect to the dock.
-`setup` installs missing build packages on Debian/Ubuntu through APT, using sudo
-when needed. Setup also installs ClamAV and its updater from authenticated distribution
-repositories when missing. This scanner bootstrap is the sole exception to the
-scan-before-install rule: APT verifies repository signatures and package hashes.
-Setup updates missing or stale signatures automatically. If the system updater
-is running, setup stops it during the update and restores it afterward.
-Signatures must be under 48 hours old. Signature updates use
-[FreshClam](https://docs.clamav.net/manual/Usage/SignatureManagement.html).
-The scanner accepts individual files up to 1 GiB and scan data up to 2 GiB;
-exceeding either limit stops setup. It scans downloaded DEBs
-and their extracted contents before installation. APT package scripts run only
-after those scans pass. The distribution must provide Rust 1.90 or newer.
-Pillow and ReportLab are included in the Linux package prerequisites.
-Other operating systems still need the manual prerequisites described above.
-No vendor software, drivers or firmware are installed by setup.
+`preflight` checks installed build tools. `setup` stages new Linux Cargo
+dependencies for a separate first-import scan. `build` uses the prepared cache
+offline. `configure` opens settings without accessing the dock.
 
-Setup fetches locked Cargo dependencies, scans archives, extracted sources and
-Git checkouts, and records the scan in the external cache. Errors and scan-limit
-alerts stop setup. Builds compare cached dependency contents with the scan
-receipt before compiling; they do not run antivirus scans. Run setup again if the
-cache changes. Keep the cache private to your user.
-
-Linux build output, Cargo material and temporary files default to
-`$XDG_CACHE_HOME/ulanzideck` (or `~/.cache/ulanzideck`). Explicit `CARGO_HOME`,
-`CARGO_TARGET_DIR` and `TMPDIR` override those locations. Select a suitable mounted
-disk when using a live USB. Builds use up to four parallel jobs by default;
-`CARGO_BUILD_JOBS` can override this. `scripts/build-linux.sh` forwards to the same build
-command. Compilation uses `--frozen --release --bins` and never downloads missing
-dependencies. `configure` opens settings without starting a dock trial.
+On Linux, build output and temporary files default to `$XDG_CACHE_HOME/ulanzideck`
+or `~/.cache/ulanzideck`. Set `CARGO_TARGET_DIR` and `TMPDIR` to use other
+directories. Builds use up to four parallel jobs by default. Set
+`CARGO_BUILD_JOBS` to change that.
 
 Use `python3 scripts/ulanzi.py deb` to package a native Linux build.
 See [Debian packages](RELEASING.md#make-a-debian-package) for options and installation.
@@ -175,14 +124,13 @@ and scanned Pillow or ReportLab dependencies. Windows packaging tasks require
 PowerShell 7 and retain their existing options:
 
 ```powershell
-pwsh -NoProfile -File scripts/ulanzi.ps1 -Command build -KeepBuildCache
+pwsh -NoProfile -File scripts/ulanzi.ps1 -Command build
 pwsh -NoProfile -File scripts/ulanzi.ps1 -Command msix -Configuration Debug -PublisherSubject 'CN=Your Local Publisher'
 ```
 
-The Windows build preserves staged replacement, backups and explicit process-stop
-options. Its existing dependency preparation remains manual. Packaging never
-publishes a GitHub release. The console does not run software tests, diagnostics
-or dock trials automatically. Running preflight is an explicit inspection command.
+The Windows build stages both executables before replacing the output pair.
+MSIX packaging uses a separate build directory. Both use prepared dependencies.
+Packaging and publication are separate commands.
 
 ## Check Linux actions without a dock
 
@@ -208,12 +156,16 @@ separately by observing the desktop when you release the physical button.
 | `src/model.rs` and `src/settings.rs` | Define pages and save preferences. |
 | `src/persistence.rs` | Lock, back up and atomically publish state across processes. |
 | `src/actions.rs` and `src/applications.rs` | Send configured shortcuts and match applications. |
-| `ui/dialogs.slint`, `src/gui.rs` and `src/gui/placement.rs` | Define windows, connect their buttons and remember Windows display placement. |
+| `ui/dialogs.slint`, `src/gui.rs` and `src/gui/placement.rs` | Draw the model, send control requests and remember Windows display placement. |
 | `src/paths.rs`, `src/startup.rs` and `src/tray.rs` | Find settings and provide Windows desktop integration. |
 | `src/art.rs`, `src/art/icons.rs`, `src/art/palette.rs` | Compose button pictures, build icon masks and choose theme colors/motifs. |
 | `src/licensing.rs`, `src/licensing/store.rs`, `src/gui/store_ui.rs` | Apply the Store theme policy, read licenses and connect purchase controls. |
 
-`settings.json` stores pages, shortcuts and runtime preferences. `applications.yaml` maps apps to pages and can provide app commands. Keep preferences such as automatic switching in the JSON file. The app accepts the current formats; it does not convert older ones.
+`settings.json` stores pages, shortcuts and preferences. `applications.yaml` maps
+apps to pages and can provide app commands. The controller applies those mappings
+when it starts. Live preference changes retain the foreground options passed to `run`.
+The settings editor sends a single change at a time and draws the confirmed
+model after saving.
 
 Windows dialogs save their size, position, monitor and DPI in `settings.windows.json` beside the selected settings file. If a saved monitor is disconnected, the dialog uses the monitor under the mouse, or the primary monitor if the pointer is unavailable. A second interactive launch in the same Windows session brings the existing Configuration window forward if it is open, or shows About otherwise. It preserves the current window size and does not force maximization. The second process exits successfully without a dialog or console prompt. A duplicate background launch exits silently without opening a window.
 

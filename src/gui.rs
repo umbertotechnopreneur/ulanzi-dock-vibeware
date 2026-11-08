@@ -24,13 +24,19 @@
 //! never discover HID devices; resident mode runs the controller on another thread.
 
 use crate::{
-    model::Theme,
-    settings::SettingsStore,
+    model::{Config, Theme},
+    settings::{SettingsChange, SettingsStore},
     tray::Control,
 };
 use anyhow::{Context, Result};
-use slint::{ComponentHandle, Model};
-use std::{cell::{Cell, RefCell}, path::PathBuf, rc::Rc, sync::Arc};
+use slint::ComponentHandle;
+use std::{
+    cell::{Cell, RefCell},
+    path::PathBuf,
+    rc::Rc,
+    sync::Arc,
+    thread::{self, JoinHandle},
+};
 
 slint::include_modules!();
 
@@ -58,7 +64,7 @@ enum Mode {
 struct Dialogs {
     about: AboutDialog,
     config: MainWindow,
-    _store_timer: slint::Timer,
+    _store_timer: Option<slint::Timer>,
     _connection_timer: Option<slint::Timer>,
 }
 
@@ -70,7 +76,11 @@ impl Drop for Dialogs {
         let _ = self.config.hide();
         let _ = self.about.hide();
         ABOUT.with(|slot| *slot.borrow_mut() = None);
-        CONFIGURATOR.with(|slot| *slot.borrow_mut() = None);
+        CONFIGURATOR.with(|slot| {
+            if let Some(state) = slot.borrow_mut().take().and_then(|state| state.upgrade()) {
+                state.wait_for_worker();
+            }
+        });
     }
 }
 
@@ -237,15 +247,18 @@ struct LinuxPageChoices {
     ids: Vec<Option<String>>,
 }
 
-/// Owns the editable settings, not the window. Callbacks hold this state without
-/// keeping a closed Slint window alive.
+struct SettingsSnapshot {
+    config: Config,
+    #[cfg(target_os = "linux")]
+    installed: Result<Vec<&'static crate::linux_apps::Profile>>,
+}
+
+/// Own the confirmed settings and send snapshots to the window.
 struct Configurator {
     window: slint::Weak<MainWindow>,
-    settings: RefCell<Option<SettingsStore>>,
-    refreshing: Cell<bool>,
-    app_pages: Rc<slint::VecModel<AppPage>>,
-    #[cfg(target_os = "linux")]
-    linux_app_pages: Rc<slint::VecModel<LinuxAppPage>>,
+    confirmed: RefCell<Option<Config>>,
+    busy: Cell<bool>,
+    worker: RefCell<Option<JoinHandle<()>>>,
     #[cfg(target_os = "linux")]
     linux_choices: RefCell<Vec<LinuxPageChoices>>,
     path: PathBuf,
@@ -253,21 +266,78 @@ struct Configurator {
 }
 
 impl Configurator {
-    /// Replace editor fields from disk, including stale-write snapshots. Display
-    /// parse/validation errors and disable saving rather than fabricating defaults.
-    fn reload(&self) {
+    /// Load or edit the latest settings away from the event loop.
+    fn request(&self, change: Option<SettingsChange>) {
         let Some(window) = self.window.upgrade() else {
             return;
         };
 
-        if self.refreshing.replace(true) {
+        if self.busy.get() || (change.is_some() && self.confirmed.borrow().is_none()) {
             return;
         }
+        self.busy.set(true);
         window.set_ready(false);
-        match SettingsStore::load(&self.path) {
-            Ok(loaded) => {
-                let pages = loaded
-                    .config
+        window.set_settings_message(if change.is_some() {
+            "Saving settings…"
+        } else {
+            "Loading settings…"
+        }.into());
+        let path = self.path.clone();
+        let control = Arc::clone(&self.control);
+        let weak = self.window.clone();
+        let worker = thread::Builder::new().name("ulanzi-settings".into()).spawn(move || {
+            let saved = change.map(|change| -> Result<SettingsStore> {
+                let _lock = control.lock_settings()?;
+                let mut latest = SettingsStore::load(&path)?;
+                latest.apply_change(change)?;
+                Ok(latest)
+            });
+            let (loaded, message) = match saved {
+                Some(Ok(settings)) => (Ok(settings), None),
+                Some(Err(error)) => (
+                    SettingsStore::load(&path),
+                    Some(format!("Could not save changes: {error:#}")),
+                ),
+                None => (SettingsStore::load(&path), None),
+            };
+            let snapshot = loaded.map(|settings| SettingsSnapshot {
+                config: settings.config,
+                #[cfg(target_os = "linux")]
+                installed: crate::linux_apps::installed(),
+            });
+            let _ = weak.upgrade_in_event_loop(move |_| {
+                if let Some(state) = CONFIGURATOR.with(|slot| {
+                    slot.borrow().as_ref().and_then(std::rc::Weak::upgrade)
+                }) {
+                    state.publish(snapshot, message);
+                }
+            });
+        });
+        match worker {
+            Ok(worker) => *self.worker.borrow_mut() = Some(worker),
+            Err(error) => {
+                self.busy.set(false);
+                window.set_ready(self.confirmed.borrow().is_some());
+                window.set_settings_message(format!("Could not load or save settings: {error}").into());
+            }
+        }
+    }
+
+    fn wait_for_worker(&self) {
+        if let Some(worker) = self.worker.borrow_mut().take() {
+            let _ = worker.join();
+        }
+    }
+
+    /// Display a confirmed snapshot, or disable editing if it could not be read.
+    fn publish(&self, snapshot: Result<SettingsSnapshot>, error: Option<String>) {
+        let Some(window) = self.window.upgrade() else {
+            return;
+        };
+        let message = match snapshot {
+            Ok(snapshot) => {
+                let config = snapshot.config;
+                let pages = config
                     .pages
                     .iter()
                     .filter(|page| !page.executables.is_empty())
@@ -276,39 +346,54 @@ impl Configurator {
                         enabled: page.enabled,
                     })
                     .collect::<Vec<_>>();
-                self.app_pages.set_vec(pages);
-
+                window.set_app_pages(slint::ModelRc::new(slint::VecModel::from(pages)));
                 let theme_index = Theme::ALL
                     .iter()
-                    .position(|&theme| theme == loaded.config.theme)
+                    .position(|&theme| theme == config.theme)
                     .expect("every theme is listed in Theme::ALL");
                 window.set_theme_index(theme_index as i32);
-                window.set_auto_switch(loaded.config.runtime.auto_switch);
-                window.set_detect_applications(loaded.config.runtime.detect_applications);
-                window.set_poll_seconds(loaded.config.runtime.focus_poll_seconds as i32);
-                window.set_message("".into());
+                window.set_auto_switch(config.runtime.auto_switch);
+                window.set_detect_applications(config.runtime.detect_applications);
+                window.set_poll_seconds(config.runtime.focus_poll_seconds as i32);
+                let message = error.unwrap_or_default();
                 #[cfg(target_os = "linux")]
-                if let Err(error) = self.reload_linux_apps(&loaded.config) {
-                    self.linux_app_pages.set_vec(Vec::new());
-                    self.linux_choices.borrow_mut().clear();
-                    window.set_message(format!("Could not read installed applications: {error:#}").into());
-                }
-                *self.settings.borrow_mut() = Some(loaded);
-                window.set_ready(true);
+                let message = match snapshot.installed.and_then(|installed| {
+                    self.publish_linux_apps(&window, &config, &installed)
+                }) {
+                    Ok(()) => message,
+                    Err(error) => {
+                        window.set_linux_app_pages(slint::ModelRc::default());
+                        self.linux_choices.borrow_mut().clear();
+                        if message.is_empty() {
+                            format!("Could not read installed applications: {error:#}")
+                        } else {
+                            message
+                        }
+                    }
+                };
+                *self.confirmed.borrow_mut() = Some(config);
+                message
             }
-            Err(error) => {
-                window.set_ready(false);
-                window.set_message(format!("{error:#}").into());
-                *self.settings.borrow_mut() = None;
+            Err(load_error) => {
+                *self.confirmed.borrow_mut() = None;
+                error.map_or_else(
+                    || format!("Could not load settings: {load_error:#}"),
+                    |error| format!("{error}. Could not reload settings: {load_error:#}"),
+                )
             }
-        }
-        self.refreshing.set(false);
+        };
+        self.busy.set(false);
+        window.set_settings_message(message.into());
+        window.set_ready(self.confirmed.borrow().is_some());
     }
 
-    /// Refresh known native, Flatpak and Snap launchers without running commands.
     #[cfg(target_os = "linux")]
-    fn reload_linux_apps(&self, config: &crate::model::Config) -> Result<()> {
-        let installed = crate::linux_apps::installed()?;
+    fn publish_linux_apps(
+        &self,
+        window: &MainWindow,
+        config: &Config,
+        installed: &[&crate::linux_apps::Profile],
+    ) -> Result<()> {
         let mut rows = Vec::new();
         let mut choices = Vec::new();
         for page in &config.pages {
@@ -316,7 +401,7 @@ impl Configurator {
                 continue;
             }
             let selected = config.linux_applications.get(&page.name).map(|choice| &choice.application);
-            let mut labels: Vec<slint::SharedString> = vec!["Use applications.yaml mapping".into()];
+            let mut labels: Vec<slint::SharedString> = vec!["Use shared app mapping".into()];
             let mut ids = vec![None];
             let mut selected_index = 0;
             let mut available = false;
@@ -352,52 +437,37 @@ impl Configurator {
             });
             choices.push(LinuxPageChoices { page: page.name.clone(), ids });
         }
-        self.linux_app_pages.set_vec(rows);
+        window.set_linux_app_pages(slint::ModelRc::new(slint::VecModel::from(rows)));
         *self.linux_choices.borrow_mut() = choices;
         Ok(())
     }
 
     /// Persist only an explicit app selection or request for suggested shortcuts.
     #[cfg(target_os = "linux")]
-    fn save_linux_choice(&self, row: i32, selection: Option<i32>) {
-        if self.refreshing.get() { return; }
-        let (page, id) = {
-            let choices = self.linux_choices.borrow();
-            let Some(choice) = usize::try_from(row).ok().and_then(|index| choices.get(index)) else { return; };
-            let id = match selection {
-                Some(index) => {
-                    let Some(id) = usize::try_from(index).ok().and_then(|index| choice.ids.get(index)) else { return; };
-                    id.clone()
-                }
-                None => None,
-            };
-            (choice.page.clone(), id)
+    fn edit_linux_application(&self, row: i32, selection: Option<i32>) {
+        let choices = self.linux_choices.borrow();
+        let Some(choice) = choices.get(row as usize) else {
+            return;
         };
-        let expected_app = self.settings.borrow().as_ref().and_then(|settings|
-            settings.config.linux_applications.get(&page).map(|choice| choice.application.clone()));
-        let result = (|| -> Result<()> {
-            let _lock = self.control.lock_settings()?;
-            let mut latest = SettingsStore::load(&self.path)?;
-            if selection.is_none() {
-                let current = latest.config.linux_applications.get(&page).map(|choice| &choice.application);
-                anyhow::ensure!(current == expected_app.as_ref(),
-                    "The selected application changed. Refresh the list before applying shortcuts.");
+        let change = if let Some(index) = selection {
+            let Some(id) = choice.ids.get(index as usize) else {
+                return;
+            };
+            SettingsChange::LinuxApplication(choice.page.clone(), id.clone())
+        } else {
+            let confirmed = self.confirmed.borrow();
+            let Some(application) = confirmed.as_ref().and_then(|config| {
+                config.linux_applications.get(&choice.page)
+            }) else {
+                return;
+            };
+            SettingsChange::LinuxShortcuts {
+                page: choice.page.clone(),
+                application: application.application.clone(),
             }
-            match selection {
-                Some(_) => latest.save_linux_application(&page, id.as_deref()),
-                None => latest.save_linux_shortcuts(&page),
-            }
-        })();
-        match result {
-            Ok(()) => self.reload(),
-            Err(error) => {
-                // Restore the saved selection so a failed save cannot look successful.
-                self.reload();
-                if let Some(window) = self.window.upgrade() {
-                    window.set_message(format!("Could not save changes: {error:#}").into());
-                }
-            }
-        }
+        };
+        drop(choices);
+        self.request(Some(change));
     }
 
     /// Open or activate configuration; keep edits intact if it is already visible.
@@ -406,53 +476,13 @@ impl Configurator {
             return;
         };
 
-        // A second Configure click must not discard edits in the open window.
+        // Reload when a hidden window is opened again.
         if !window.window().is_visible() {
-            self.reload();
+            self.request(None);
             crate::licensing::refresh();
         }
         if let Err(error) = present_dialog(&window, DialogKind::Configuration) {
             window.set_message(format!("{error:#}").into());
-        }
-    }
-
-    /// Save a user gesture atomically; failures remain visible for retry.
-    fn save(&self, theme_changed: bool) {
-        if self.refreshing.get() { return; }
-        let Some(window) = self.window.upgrade() else {
-            return;
-        };
-        let Some(&theme) = Theme::ALL.get(window.get_theme_index() as usize) else {
-            return;
-        };
-        let stored = self.settings.borrow();
-        let Some(previous) = stored.as_ref() else { return; };
-        let selected_pages = self.app_pages.iter()
-            .filter(|page| previous.config.pages.iter().any(|old|
-                old.name == page.name.as_str() && old.enabled != page.enabled))
-            .map(|page| (page.name.to_string(), page.enabled)).collect::<Vec<_>>();
-        // Merge only changed fields into the latest disk snapshot. A dock theme
-        // selection must survive an unrelated checkbox change in this window.
-        let result = (|| -> Result<()> {
-            let _lock = self.control.lock_settings()?;
-            let mut latest = SettingsStore::load(&self.path)?;
-            let mut runtime = latest.config.runtime;
-            if window.get_detect_applications() != previous.config.runtime.detect_applications {
-                runtime.detect_applications = window.get_detect_applications();
-            }
-            if window.get_auto_switch() != previous.config.runtime.auto_switch {
-                runtime.auto_switch = window.get_auto_switch();
-            }
-            if window.get_poll_seconds() as u64 != previous.config.runtime.focus_poll_seconds {
-                runtime.focus_poll_seconds = window.get_poll_seconds() as u64;
-            }
-            let theme = if theme_changed { theme } else { latest.config.theme };
-            latest.save(theme, runtime, &selected_pages)
-        })();
-        drop(stored);
-        match result {
-            Ok(()) => self.reload(),
-            Err(error) => window.set_message(format!("Could not save changes: {error:#}").into()),
         }
     }
 
@@ -493,9 +523,9 @@ fn bind_configurator(
     window.set_resident(mode == Mode::Resident);
     window.set_foreground_supported(cfg!(target_os = "windows"));
     window.set_save_hint(if cfg!(target_os = "windows") {
-        "Changes are saved and applied automatically."
+        "These preferences apply automatically. Restart the controller after editing app mappings or shortcuts."
     } else {
-        "Changes are saved automatically. Restart the controller after changing apps or shortcuts."
+        "Theme and page changes apply automatically. Restart the controller after changing apps or shortcuts."
     }.into());
     #[cfg(target_os = "linux")]
     window.set_linux_app_selection(true);
@@ -505,19 +535,11 @@ fn bind_configurator(
         .collect::<Vec<slint::SharedString>>();
     window.set_themes(slint::ModelRc::new(slint::VecModel::from(themes)));
 
-    let app_pages = Rc::new(slint::VecModel::<AppPage>::default());
-    window.set_app_pages(slint::ModelRc::from(Rc::clone(&app_pages)));
-    #[cfg(target_os = "linux")]
-    let linux_app_pages = Rc::new(slint::VecModel::<LinuxAppPage>::default());
-    #[cfg(target_os = "linux")]
-    window.set_linux_app_pages(slint::ModelRc::from(Rc::clone(&linux_app_pages)));
     let state = Rc::new(Configurator {
         window: window.as_weak(),
-        settings: RefCell::new(None),
-        refreshing: Cell::new(false),
-        app_pages,
-        #[cfg(target_os = "linux")]
-        linux_app_pages,
+        confirmed: RefCell::new(None),
+        busy: Cell::new(false),
+        worker: RefCell::new(None),
         #[cfg(target_os = "linux")]
         linux_choices: RefCell::new(Vec::new()),
         path,
@@ -526,27 +548,38 @@ fn bind_configurator(
     CONFIGURATOR.with(|slot| *slot.borrow_mut() = Some(Rc::downgrade(&state)));
 
     let toggled = Rc::clone(&state);
-    window.on_page_toggled(move |index, enabled| {
-        if toggled.refreshing.get() { return; }
-        if let Some(mut page) = toggled.app_pages.row_data(index as usize) {
-            page.enabled = enabled;
-            toggled.app_pages.set_row_data(index as usize, page);
-            toggled.save(false);
-        }
+    window.on_page_toggled(move |page, enabled| {
+        toggled.request(Some(SettingsChange::PageEnabled(page.to_string(), enabled)));
     });
     #[cfg(target_os = "linux")]
     {
         let select = Rc::clone(&state);
-        window.on_linux_app_selected(move |row, index| select.save_linux_choice(row, Some(index)));
+        window.on_linux_app_selected(move |row, index| select.edit_linux_application(row, Some(index)));
         let shortcuts = Rc::clone(&state);
-        window.on_linux_shortcuts_requested(move |row| shortcuts.save_linux_choice(row, None));
+        window.on_linux_shortcuts_requested(move |row| shortcuts.edit_linux_application(row, None));
         let refresh = Rc::clone(&state);
-        window.on_refresh_linux_apps(move || refresh.reload());
+        window.on_refresh_linux_apps(move || refresh.request(None));
     }
-    let save = Rc::clone(&state);
-    window.on_preferences_changed(move || save.save(false));
     let theme = Rc::clone(&state);
-    window.on_theme_changed(move || theme.save(true));
+    window.on_theme_changed(move |index| {
+        if let Some(&selected) = Theme::ALL.get(index as usize) {
+            theme.request(Some(SettingsChange::Theme(selected)));
+        }
+    });
+    let detection = Rc::clone(&state);
+    window.on_detect_applications_requested(move |enabled| {
+        detection.request(Some(SettingsChange::DetectApplications(enabled)));
+    });
+    let switching = Rc::clone(&state);
+    window.on_auto_switch_requested(move |enabled| {
+        switching.request(Some(SettingsChange::AutoSwitch(enabled)));
+    });
+    let interval = Rc::clone(&state);
+    window.on_poll_seconds_requested(move |seconds| {
+        if let Ok(seconds) = u64::try_from(seconds) {
+            interval.request(Some(SettingsChange::FocusPollSeconds(seconds)));
+        }
+    });
     let open = Rc::clone(&state);
     window.on_open_file(move |catalogue| open.open_file(catalogue));
 
@@ -630,7 +663,7 @@ fn bind_close_handlers(about: &AboutDialog, window: &MainWindow, mode: Mode) {
 
 /// Construct and bind windows for `path` and `mode`, sharing lifecycle `control`.
 /// Return strong owners; UI creation failures occur before controller startup.
-fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
+fn create(path: PathBuf, control: Arc<Control>, mode: Mode, start_controller: bool) -> Result<Dialogs> {
     placement::initialize(&path);
     let about = AboutDialog::new().context("creating the About dialog")?;
     // Slint has initialized its backend, but neither native window is shown yet.
@@ -640,7 +673,13 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
     let config = MainWindow::new().context("creating the configurator")?;
     #[cfg(target_os = "linux")]
     linux::bind_startup(&config, &path);
-    let connection_timer = connection::bind(&config, &path, Arc::clone(&control), mode == Mode::Resident);
+    let connection_timer = connection::bind(
+        &config,
+        &path,
+        Arc::clone(&control),
+        mode == Mode::Resident,
+        start_controller,
+    );
     let state = bind_configurator(&config, path, control, mode);
     let store_timer = store_ui::bind(&config);
 
@@ -650,7 +689,7 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode) -> Result<Dialogs> {
 
     ABOUT.with(|slot| *slot.borrow_mut() = Some(about.as_weak()));
     if mode == Mode::Configure {
-        state.reload();
+        state.request(None);
     }
 
     Ok(Dialogs {
@@ -690,6 +729,7 @@ pub fn standalone(
         } else {
             Mode::About
         },
+        _start_controller,
     )?;
     #[cfg(target_os = "linux")]
     let _tray_commands = linux::publish(&path).map_err(|error| {
@@ -698,13 +738,6 @@ pub fn standalone(
     let _console = crate::console::detach_if_owned()?;
     control.enter_background();
     eprintln!("Opening UlanziDeck {}: {}", if configure { "configurator" } else { "About dialog" }, path.display());
-    #[cfg(target_os = "linux")]
-    if _start_controller {
-        if let Err(error) = crate::startup::launch_controller() {
-            eprintln!("Could not start the dock controller: {error:#}");
-            dialogs.config.set_message("Could not start the dock controller. See the application log for details.".into());
-        }
-    }
     if configure {
         present_dialog(&dialogs.config, DialogKind::Configuration)?;
     } else {
@@ -734,7 +767,7 @@ pub fn resident<F>(
 where
     F: FnOnce() -> Result<()> + Send + 'static,
 {
-    let dialogs = create(path.clone(), Arc::clone(&control), Mode::Resident)?;
+    let dialogs = create(path.clone(), Arc::clone(&control), Mode::Resident, false)?;
     if first_run {
         show_first_welcome(&dialogs.about, path)?;
     }

@@ -632,22 +632,30 @@ impl Config {
     /// Read the current settings format. Missing files use the initial defaults.
     /// Old or incomplete settings are rejected rather than silently rewritten.
     pub fn load(path: &Path) -> Result<Self> {
-        let mut config: Self = match persistence::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).with_context(|| {
+        let json = persistence::read_optional(path)?;
+        let catalogue = persistence::read_optional(&path.with_file_name("applications.yaml"))?;
+        Self::from_documents(path, json.as_deref(), catalogue.as_deref())
+    }
+
+    /// Resolve and validate effective settings from one captured pair of inputs.
+    pub(crate) fn from_documents(
+        path: &Path,
+        json: Option<&[u8]>,
+        catalogue: Option<&[u8]>,
+    ) -> Result<Self> {
+        let mut config: Self = match json {
+            Some(bytes) => serde_json::from_slice(bytes).with_context(|| {
                 format!(
                     "parsing {}: use the current settings format",
                     path.display()
                 )
             })?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
-            Err(error) => {
-                return Err(error).with_context(|| format!("reading {}", path.display()));
-            }
+            None => Self::default(),
         };
 
         config.validate()?;
         config.refresh_theme_selector(config.theme)?;
-        crate::applications::load(path)?.apply(&mut config)?;
+        crate::applications::parse(path, catalogue)?.apply(&mut config)?;
         #[cfg(target_os = "linux")]
         for (name, selection) in &config.linux_applications {
             let profile = crate::linux_apps::profile(&selection.application)
@@ -662,26 +670,6 @@ impl Config {
         config.validate()?;
 
         Ok(config)
-    }
-
-    // Read only brightness so a running controller does not reload pages or shortcuts.
-    // A missing file uses the initial default; an existing file must contain brightness.
-    pub fn load_brightness(path: &Path) -> Result<u8> {
-        #[derive(Deserialize)]
-        struct Brightness {
-            brightness: u8,
-        }
-        let level = match persistence::read(path) {
-            Ok(bytes) => {
-                serde_json::from_slice::<Brightness>(&bytes)
-                    .with_context(|| format!("reading brightness from {}", path.display()))?
-                    .brightness
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => default_brightness(),
-            Err(error) => return Err(error).context("reading brightness settings"),
-        };
-        anyhow::ensure!(level <= 100, "brightness must be 0-100");
-        Ok(level)
     }
 
     // path: destination JSON settings file; existing files are preserved.

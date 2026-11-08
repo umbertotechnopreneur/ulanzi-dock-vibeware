@@ -33,6 +33,9 @@ pub(crate) mod desktop;
 
 use anyhow::Result;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use std::sync::Arc;
+
+use crate::tray::Control;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Distinguish a known executable from a failed lookup or an unsupported platform.
@@ -218,22 +221,52 @@ fn dispatch(plan: ActionPlan<'_>, mut send: impl FnMut(Output) -> Result<()>) ->
 }
 
 thread_local! {
-    // Keep one input connection for the controller thread and its portal authorization.
-    #[cfg(target_os = "linux")]
-    static WAYLAND_KEYBOARD: std::cell::RefCell<Option<wayland::Keyboard>> = const { std::cell::RefCell::new(None) };
+    // Reuse the native input connection on the controller thread.
     static KEYBOARD: std::cell::RefCell<Option<Enigo>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Keep input teardown inside the controller stack, before thread-local destruction.
-pub(crate) struct InputSession;
+/// Dispatch accepted releases. Wayland consent and keyboard I/O run off the dock loop.
+pub(crate) struct ActionExecutor {
+    #[cfg(target_os = "linux")]
+    wayland: Option<wayland::Executor>,
+}
 
-impl Drop for InputSession {
-    fn drop(&mut self) {
+impl ActionExecutor {
+    pub(crate) fn start(_control: Arc<Control>) -> Result<Self> {
+        Ok(Self {
+            #[cfg(target_os = "linux")]
+            wayland: if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                Some(wayland::Executor::start(_control)?)
+            } else {
+                None
+            },
+        })
+    }
+
+    pub(crate) fn execute(&self, action: &str, label: &str) {
         #[cfg(target_os = "linux")]
-        let _ = WAYLAND_KEYBOARD.try_with(|slot| {
-            let input = slot.borrow_mut().take();
-            drop(input);
-        });
+        if let Some(wayland) = &self.wayland {
+            if action.starts_with("hotkey:") || action == "desktop:clipboard" {
+                wayland.submit(action, label);
+                return;
+            }
+        }
+
+        if let Err(error) = execute_immediate(action) {
+            eprintln!("Action '{label}' failed: {error:#}");
+        }
+    }
+
+    pub(crate) fn cancel_pending(&self) {
+        #[cfg(target_os = "linux")]
+        if let Some(wayland) = &self.wayland {
+            wayland.cancel_pending();
+        }
+    }
+}
+
+impl Drop for ActionExecutor {
+    fn drop(&mut self) {
         let _ = KEYBOARD.try_with(|slot| {
             let input = slot.borrow_mut().take();
             drop(input);
@@ -241,29 +274,16 @@ impl Drop for InputSession {
     }
 }
 
-pub fn execute(action: &str) -> Result<()> {
+fn execute_immediate(action: &str) -> Result<()> {
     dispatch(plan(action)?, |event| match event {
-        Output::Key(key, direction) => {
-            #[cfg(target_os = "linux")]
-            if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-                return WAYLAND_KEYBOARD.with(|keyboard| {
-                    let mut keyboard = keyboard.borrow_mut();
-                    let input = match &mut *keyboard {
-                        Some(input) => input,
-                        slot @ None => slot.insert(wayland::Keyboard::new()?),
-                    };
-                    input.key(key, direction)
-                });
-            }
-            KEYBOARD.with(|keyboard| {
-                let mut keyboard = keyboard.borrow_mut();
-                let input = match &mut *keyboard {
-                    Some(input) => input,
-                    slot @ None => slot.insert(Enigo::new(&Settings::default())?),
-                };
-                Ok(input.key(key, direction)?)
-            })
-        },
+        Output::Key(key, direction) => KEYBOARD.with(|keyboard| {
+            let mut keyboard = keyboard.borrow_mut();
+            let input = match &mut *keyboard {
+                Some(input) => input,
+                slot @ None => slot.insert(Enigo::new(&Settings::default())?),
+            };
+            Ok(input.key(key, direction)?)
+        }),
         #[cfg(target_os = "linux")]
         Output::Mpris(method) => mpris::dispatch(method),
         #[cfg(target_os = "linux")]

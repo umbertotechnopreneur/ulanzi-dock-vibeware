@@ -24,8 +24,8 @@ Packages go in `artifacts/msix/`. The artwork command writes listing images,
 Windows icons and brand files to the selected output folder. It preserves
 separately captured screenshots and photos. Use screenshots of the current app.
 
-Before importing a new external dependency, scan its archive and extracted files
-once with Windows Defender. Record the source, version, scan command and result.
+Before importing a new dependency, follow the
+[first-import steps](DEVELOPMENT.md#prepare-new-dependencies).
 
 ## Upload files
 

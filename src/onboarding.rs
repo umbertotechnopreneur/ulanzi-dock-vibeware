@@ -180,16 +180,18 @@ pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<boo
             );
             cli_pages::setup_text(
                 &format!(
-                    "{} Key 4 moves to the next page. Pick your look on the Themes page.",
+                    "{} Press NEXT PAGE to move to the next page. Pick your look on the Themes page.",
                     cli_pages::setup_icon("🎨", ">")
                 ),
                 Tone::Primary,
             );
+            let page_hint = if cfg!(target_os = "windows") {
+                "Turn on automatic page switching in Settings to follow the app you are using."
+            } else {
+                "Press the wide bottom display to open the page index."
+            };
             cli_pages::setup_text(
-                &format!(
-                    "{} Codex, VS Code and Spotify select their page when they enter the foreground.",
-                    cli_pages::setup_icon("💡", ">")
-                ),
+                &format!("{} {page_hint}", cli_pages::setup_icon("💡", ">")),
                 Tone::Info,
             );
             choose(&[
@@ -231,15 +233,16 @@ pub fn show(config: &mut Config, path: &Path, show_branding: bool) -> Result<boo
                 "Personalize shortcuts in this file while the controller is stopped.",
                 Tone::Muted,
             );
-            println!();
-            cli_pages::setup_text(
-                &format!("{} Start with Windows", cli_pages::setup_icon("🖥️", ">")),
-                Tone::Accent,
-            );
-            cli_pages::setup_text(
-                "Use 'startup --enable' from the folder containing your settings.",
-                Tone::Muted,
-            );
+            if cfg!(any(target_os = "windows", target_os = "linux")) {
+                println!();
+                cli_pages::setup_text("Start at sign-in", Tone::Accent);
+                let startup_hint = if cfg!(target_os = "windows") {
+                    "For a portable copy, run 'startup --enable'. For an installed copy, use Windows Startup apps."
+                } else {
+                    "In the Debian package, turn on Start at sign-in in Settings."
+                };
+                cli_pages::setup_text(startup_hint, Tone::Muted);
+            }
             choose(&[
                 OptionRow {
                     icon: "🚀",

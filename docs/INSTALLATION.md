@@ -34,11 +34,13 @@ A locally signed installer needs a trusted certificate from its maker. Check who
 
 Extract the whole Windows ZIP into a writable folder. Open `ulanzi-dock-vibeware.exe`. Keep `ulanzi-dock-launcher.exe` beside it for startup at sign-in.
 
-Linux and macOS use a terminal. See [platform instructions](PLATFORMS.md).
+On Windows, `run`, `configure`, `brightness` and portable sign-in startup use the default profile beside the app. Use `--config` with `run`, `configure` and `brightness` to work with another profile.
+
+The Debian package adds UlanziDeck to the Linux application menu. Portable Linux and macOS archives use a terminal. See the [platform guide](PLATFORMS.md).
 
 ## Change and back up settings
 
-On Windows, choose **Settings** from the tray menu. Pick a theme, enable pages and choose whether the dock follows the app you are using. Changes are saved and applied automatically.
+On Windows, choose **Settings** from the tray menu. On Linux, open UlanziDeck from the application menu or choose **Settings** from its tray icon where supported. Theme and enabled pages update while the controller runs. On Windows, foreground preferences also update live. Restart the controller after changing app mappings or shortcuts.
 
 The settings buttons open two text files:
 

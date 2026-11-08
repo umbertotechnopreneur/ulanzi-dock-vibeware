@@ -135,9 +135,8 @@ enum Command {
     },
     /// Display a page, listen to this device, and dispatch configured actions.
     Run {
-        /// Use an explicit profile. On Linux the default is the same as for configure.
+        /// Use a different profile from the application's default settings.
         #[arg(long)]
-        #[cfg_attr(not(target_os = "linux"), arg(default_value = "settings.json"))]
         config: Option<PathBuf>,
         #[arg(long, value_enum)]
         theme: Option<Theme>,
@@ -168,6 +167,10 @@ enum Command {
         /// Show the guided first-run introduction again.
         #[arg(long)]
         oobe: bool,
+        /// Start the controller without the terminal welcome (Linux service).
+        #[cfg(target_os = "linux")]
+        #[arg(long, conflicts_with = "oobe")]
+        non_interactive: bool,
     },
 }
 
@@ -315,6 +318,8 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
                 no_app_detection: false,
                 background: false,
                 oobe: false,
+                #[cfg(target_os = "linux")]
+                non_interactive: false,
             },
         }
     } else {
@@ -405,6 +410,8 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             no_app_detection,
             background,
             oobe,
+            #[cfg(target_os = "linux")]
+            non_interactive,
         } => {
             // Detach before settings, UI and HID initialization. A sign-in launch never
             // waits for console input, including when configuration loading fails.
@@ -432,19 +439,19 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             let mut settings = Config::load(&config)?;
             // MSIX launches have redirected handles. Automatic console onboarding
             // returned false there, silently ending the app before its GUI existed.
-            let console_welcome =
-                oobe || (!cfg!(target_os = "windows") && !settings.setup_completed && !no_actions);
+            #[cfg(not(target_os = "linux"))]
+            let non_interactive = false;
+            let console_welcome = oobe
+                || (!cfg!(target_os = "windows")
+                    && !non_interactive
+                    && !settings.setup_completed
+                    && !no_actions);
             if !background
                 && console_welcome
                 && !onboarding::show(&mut settings, &config, !args.is_empty())?
             {
                 return Ok(());
             }
-            let selected = theme.unwrap_or(settings.theme);
-            let focus_poll_seconds =
-                focus_poll_seconds.unwrap_or(settings.runtime.focus_poll_seconds);
-            let detect_applications = settings.runtime.detect_applications && !no_app_detection;
-            let auto_page = detect_applications && settings.runtime.auto_switch && !no_auto_page;
             #[cfg(target_os = "windows")]
             let ui_config = config.clone();
             #[cfg(target_os = "windows")]
@@ -454,14 +461,14 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             let controller = move || {
                 let options = controller::RunOptions {
                     config_path: config,
-                    theme: selected,
+                    theme,
                     seconds,
                     no_actions,
                     clock: !no_clock,
                     status_display,
                     focus_poll_seconds,
-                    auto_page,
-                    detect_applications,
+                    no_auto_page,
+                    no_app_detection,
                 };
                 controller::run(settings, options, control)
             };
@@ -474,8 +481,8 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(test, target_os = "linux"))]
-mod linux_cli_tests {
+#[cfg(test)]
+mod cli_tests {
     use super::*;
 
     #[test]

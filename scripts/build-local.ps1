@@ -24,7 +24,7 @@ Build both Windows programs from the current source and replace workspace artifa
 .DESCRIPTION
 Uses a dedicated build directory and staged replacement with recoverable previous files.
 It does not install, publish, run tests or contact the dock. Cleanup stays inside the
-validated workspace paths. A build failure is propagated before replacing final binaries.
+validated workspace paths. Cargo uses the locked dependencies already available on this machine.
 .PARAMETER StopRunning
 Explicitly allow stopping matching controller processes whose verified paths are in this workspace.
 .PARAMETER KeepBuildCache
@@ -70,72 +70,90 @@ function Assert-WorkspacePath([string] $path) {
 $temporaryParent = Assert-WorkspacePath (Join-Path $project 'tmp')
 $artifactDir = Assert-WorkspacePath (Join-Path $project 'artifacts')
 $buildDir = Assert-WorkspacePath (Join-Path $temporaryParent 'local-build')
-$stableExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.exe')
-$stableLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.exe')
-$pendingLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.new.exe')
-$previousLauncher = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-launcher.previous.exe')
-$pendingExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.new.exe')
-$previousExe = Assert-WorkspacePath (Join-Path $artifactDir 'ulanzi-dock-vibeware.previous.exe')
+$pendingReplacement = Assert-WorkspacePath (Join-Path $artifactDir 'local-build.pending')
+$executables = foreach ($name in 'ulanzi-dock-launcher', 'ulanzi-dock-vibeware') {
+    @{
+        Name = "$name.exe"
+        Stable = Assert-WorkspacePath (Join-Path $artifactDir "$name.exe")
+        Pending = Assert-WorkspacePath (Join-Path $artifactDir "$name.new.exe")
+        Previous = Assert-WorkspacePath (Join-Path $artifactDir "$name.previous.exe")
+    }
+}
+
+# Keep the backups until both restores finish so recovery itself can be retried.
+function Restore-Executables {
+    foreach ($file in $executables) {
+        if ([IO.File]::Exists($file.Previous)) {
+            [IO.File]::Copy($file.Previous, $file.Pending, $true)
+            [IO.File]::Move($file.Pending, $file.Stable, $true)
+        }
+        else {
+            [IO.File]::Delete($file.Stable)
+        }
+    }
+    [IO.File]::Delete($pendingReplacement)
+}
 
 Get-Command cargo -ErrorAction Stop | Out-Null
 New-Item -ItemType Directory -Force -Path $temporaryParent, $artifactDir | Out-Null
-
-if (Test-Path -LiteralPath $previousExe) {
-    if (Test-Path -LiteralPath $stableExe) {
-        Remove-Item -LiteralPath $previousExe -Force
-    }
-    else {
-        [System.IO.File]::Move($previousExe, $stableExe)
-    }
-}
-if (Test-Path -LiteralPath $previousLauncher) {
-    if (Test-Path -LiteralPath $stableLauncher) {
-        Remove-Item -LiteralPath $previousLauncher -Force
-    }
-    else {
-        [System.IO.File]::Move($previousLauncher, $stableLauncher)
-    }
-}
-
-$running = Get-CimInstance Win32_Process -Filter "Name='ulanzi-dock-vibeware.exe'" |
-    Where-Object {
-        $_.ExecutablePath -and
-        ([System.IO.Path]::GetFullPath($_.ExecutablePath)).StartsWith(
-            $workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase
-        )
-    }
-if ($running -and -not $StopRunning) {
-    throw 'UlanziDeck is running in this workspace. Stop it or pass -StopRunning before building.'
-}
-foreach ($instance in $running) {
-    $process = $null
-    try {
-        $process = [System.Diagnostics.Process]::GetProcessById($instance.ProcessId)
-        # Recheck the live process path before killing, even if the snapshot PID was reused.
-        if (-not $process.HasExited) {
-            $actualPath = [System.IO.Path]::GetFullPath($process.MainModule.FileName)
-            if ($actualPath -ine $instance.ExecutablePath) {
-                throw "PID $($instance.ProcessId) changed executable; refusing to stop it."
-            }
-            Write-Output "Stopping UlanziDeck PID $($instance.ProcessId): $actualPath"
-            $process.Kill()
-            if (-not $process.WaitForExit(5000)) {
-                throw "UlanziDeck PID $($instance.ProcessId) did not exit within five seconds."
-            }
-        }
-    }
-    catch [System.ArgumentException] {
-        # The selected instance may exit between the snapshot and opening its process handle.
-        Write-Output "UlanziDeck PID $($instance.ProcessId) has already exited."
-    }
-    finally {
-        if ($null -ne $process) {
-            $process.Dispose()
-        }
-    }
-}
+$lockPath = Assert-WorkspacePath (Join-Path $temporaryParent 'local-build.lock')
+$buildLock = [IO.FileStream]::new($lockPath, 'OpenOrCreate', 'ReadWrite', 'None', 1, 'DeleteOnClose')
+$cleanupStaging = $false
+$ownsBuildDir = $false
 
 try {
+    $running = Get-CimInstance Win32_Process -Filter "Name='ulanzi-dock-vibeware.exe'" |
+        Where-Object {
+            $_.ExecutablePath -and
+            ([System.IO.Path]::GetFullPath($_.ExecutablePath)).StartsWith(
+                $workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase
+            )
+        }
+    if ($running -and -not $StopRunning) {
+        throw 'UlanziDeck is running in this workspace. Stop it or pass -StopRunning before building.'
+    }
+    foreach ($instance in $running) {
+        $process = $null
+        try {
+            $process = [System.Diagnostics.Process]::GetProcessById($instance.ProcessId)
+            # Recheck the live process path before killing, even if the snapshot PID was reused.
+            if (-not $process.HasExited) {
+                $actualPath = [System.IO.Path]::GetFullPath($process.MainModule.FileName)
+                if ($actualPath -ine $instance.ExecutablePath) {
+                    throw "PID $($instance.ProcessId) changed executable; refusing to stop it."
+                }
+                Write-Output "Stopping UlanziDeck PID $($instance.ProcessId): $actualPath"
+                $process.Kill()
+                if (-not $process.WaitForExit(5000)) {
+                    throw "UlanziDeck PID $($instance.ProcessId) did not exit within five seconds."
+                }
+            }
+        }
+        catch [System.ArgumentException] {
+            # The selected instance may exit between the snapshot and opening its process handle.
+            Write-Output "UlanziDeck PID $($instance.ProcessId) has already exited."
+        }
+        finally {
+            if ($null -ne $process) {
+                $process.Dispose()
+            }
+        }
+    }
+    if ([IO.File]::Exists($pendingReplacement)) {
+        Restore-Executables
+    }
+    foreach ($file in $executables) {
+        if ([IO.File]::Exists($file.Previous)) {
+            if ([IO.File]::Exists($file.Stable)) {
+                [IO.File]::Delete($file.Previous)
+            }
+            else {
+                [IO.File]::Move($file.Previous, $file.Stable)
+            }
+        }
+    }
+    $cleanupStaging = $true
+    $ownsBuildDir = $true
     if ((Test-Path -LiteralPath $buildDir) -and -not $KeepBuildCache) {
         $buildDir = Assert-WorkspacePath $buildDir
         Remove-Item -LiteralPath $buildDir -Recurse -Force
@@ -143,51 +161,60 @@ try {
     New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
     Push-Location -LiteralPath $project
+    $previousAutoInstall = $env:RUSTUP_AUTO_INSTALL
     try {
-        & cargo build --release --bins --target-dir $buildDir
+        $env:RUSTUP_AUTO_INSTALL = '0'
+        $rustVersion = & rustc -vV
+        if ($LASTEXITCODE -ne 0) { throw 'Could not read the Rust host target.' }
+        $hostLine = $rustVersion | Where-Object { $_ -match '^host: ' } | Select-Object -First 1
+        if (!$hostLine) { throw 'Rust did not report its host target.' }
+        $hostTriple = $hostLine.Substring(6).Trim()
+        & cargo build --frozen --release --bins --target $hostTriple --target-dir $buildDir
         if ($LASTEXITCODE -ne 0) {
             throw "Cargo build failed with exit code $LASTEXITCODE."
         }
     }
     finally {
+        $env:RUSTUP_AUTO_INSTALL = $previousAutoInstall
         Pop-Location
     }
 
-    $builtExe = Assert-WorkspacePath (Join-Path $buildDir 'release\ulanzi-dock-vibeware.exe')
-    $builtLauncher = Assert-WorkspacePath (Join-Path $buildDir 'release\ulanzi-dock-launcher.exe')
-    if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
-        throw "Cargo did not produce $builtExe"
+    foreach ($file in $executables) {
+        $built = Assert-WorkspacePath (Join-Path $buildDir "$hostTriple/release/$($file.Name)")
+        if (-not [IO.File]::Exists($built)) { throw "Cargo did not produce $built" }
+        [IO.File]::Copy($built, $file.Pending, $true)
+        if ([IO.File]::Exists($file.Stable)) {
+            [IO.File]::Copy($file.Stable, $file.Previous)
+        }
     }
-    Copy-Item -LiteralPath $builtExe -Destination $pendingExe -Force
-    Copy-Item -LiteralPath $builtLauncher -Destination $pendingLauncher -Force
-    if (Test-Path -LiteralPath $stableLauncher) {
-        [System.IO.File]::Replace($pendingLauncher, $stableLauncher, $previousLauncher)
-        Remove-Item -LiteralPath $previousLauncher -Force
+    # A failed or interrupted pair replacement is rolled back from both backups.
+    [IO.File]::Open($pendingReplacement, 'CreateNew').Dispose()
+    try {
+        foreach ($file in $executables) {
+            [IO.File]::Move($file.Pending, $file.Stable, $true)
+        }
+        [IO.File]::Delete($pendingReplacement)
     }
-    else {
-        [System.IO.File]::Move($pendingLauncher, $stableLauncher)
+    catch {
+        Restore-Executables
+        throw
     }
-    if (Test-Path -LiteralPath $stableExe) {
-        [System.IO.File]::Replace($pendingExe, $stableExe, $previousExe)
-        Remove-Item -LiteralPath $previousExe -Force
-    }
-    else {
-        [System.IO.File]::Move($pendingExe, $stableExe)
-    }
-    Write-Output "Stable executable: $stableExe"
+    Write-Output "Built the controller and launcher in $artifactDir"
 }
 finally {
-    if (Test-Path -LiteralPath $pendingExe) {
-        $pendingExe = Assert-WorkspacePath $pendingExe
-        Remove-Item -LiteralPath $pendingExe -Force
+    try {
+        if ($cleanupStaging -and -not [IO.File]::Exists($pendingReplacement)) {
+            foreach ($file in $executables) {
+                [IO.File]::Delete($file.Pending)
+                [IO.File]::Delete($file.Previous)
+            }
+        }
+        if ($ownsBuildDir -and (Test-Path -LiteralPath $buildDir) -and -not $KeepBuildCache) {
+            $buildDir = Assert-WorkspacePath $buildDir
+            Remove-Item -LiteralPath $buildDir -Recurse -Force
+        }
     }
-    if (Test-Path -LiteralPath $pendingLauncher) {
-        $pendingLauncher = Assert-WorkspacePath $pendingLauncher
-        Remove-Item -LiteralPath $pendingLauncher -Force
-    }
-    if ((Test-Path -LiteralPath $buildDir) -and -not $KeepBuildCache) {
-        $buildDir = Assert-WorkspacePath $buildDir
-        Remove-Item -LiteralPath $buildDir -Recurse -Force
-        Write-Output "Removed temporary build data: $buildDir"
+    finally {
+        $buildLock.Dispose()
     }
 }

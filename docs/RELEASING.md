@@ -39,13 +39,13 @@ The package and its checksum go to `~/.cache/ulanzideck/dist` by default
 (or `$XDG_CACHE_HOME/ulanzideck/dist`). Build material remains on the selected
 portable cache disk. The command never installs the package or starts the app.
 Existing output names are preserved. Use `--output` to select another destination
-and `--binary` to select an existing native executable:
+and `--binary` to select the native executable you just built from this checkout.
 
 ```sh
 python3 scripts/ulanzi.py deb --binary target/x86_64-unknown-linux-gnu/release/ulanzi-dock-vibeware --output dist
 ```
 
-Debian packaging requires `dpkg-dev`, included in Linux setup. The package carries
+Install `dpkg-dev` before packaging. The package carries
 the controller, configurator launcher, original icon, project license, artwork
 credits, font licenses and locked dependency notices. Shared-library dependencies
 come from `dpkg-shlibdeps`; dynamically loaded desktop libraries are listed too.

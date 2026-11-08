@@ -23,7 +23,7 @@
 //! locking, backups and atomic replacement. This module preserves unknown JSON
 //! metadata and never rewrites the read-only application catalogue on normal saves.
 
-use crate::model::{Config, RuntimeSettings, Theme, PAGE_INDEX_NAME};
+use crate::model::{Config, Theme, PAGE_INDEX_NAME};
 use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -38,6 +38,19 @@ pub struct SettingsStore {
     path: PathBuf,
     json: Option<Vec<u8>>,
     catalogue: Option<Vec<u8>>,
+}
+
+/// One explicit change to the latest profile.
+pub(crate) enum SettingsChange {
+    Theme(Theme),
+    DetectApplications(bool),
+    AutoSwitch(bool),
+    FocusPollSeconds(u64),
+    PageEnabled(String, bool),
+    #[cfg(target_os = "linux")]
+    LinuxApplication(String, Option<String>),
+    #[cfg(target_os = "linux")]
+    LinuxShortcuts { page: String, application: String },
 }
 
 // Session state is kept apart from settings, so page navigation cannot make an
@@ -107,14 +120,10 @@ impl SettingsStore {
     /// Return validation/I/O errors instead of substituting incompatible defaults.
     pub fn load(path: &Path) -> Result<Self> {
         let transaction = Transaction::begin(path)?;
-        Self::load_unlocked(transaction.path())
-    }
-
-    /// Load `path` while the caller already owns its transaction (no nested lock).
-    fn load_unlocked(path: &Path) -> Result<Self> {
-        let json = read_optional(path)?;
+        let path = transaction.path();
+        let json = transaction.read()?;
         let catalogue = read_optional(&path.with_file_name("applications.yaml"))?;
-        let config = Config::load(path)?;
+        let config = Config::from_documents(path, json.as_deref(), catalogue.as_deref())?;
 
         let settings = Self {
             config,
@@ -143,8 +152,39 @@ impl SettingsStore {
     fn document(&self) -> Result<serde_json::Value> {
         match &self.json {
             Some(bytes) => Ok(serde_json::from_slice(bytes)?),
-            None => Ok(serde_json::to_value(&self.config)?),
+            // The effective config already includes catalogue overrides.
+            None => Ok(serde_json::to_value(Config::default())?),
         }
+    }
+
+    /// Apply the requested change without copying other values from the editor.
+    pub(crate) fn apply_change(&mut self, change: SettingsChange) -> Result<()> {
+        let mut runtime = self.config.runtime;
+        match change {
+            SettingsChange::Theme(theme) => return self.save_theme(theme),
+            SettingsChange::DetectApplications(enabled) => runtime.detect_applications = enabled,
+            SettingsChange::AutoSwitch(enabled) => runtime.auto_switch = enabled,
+            SettingsChange::FocusPollSeconds(seconds) => runtime.focus_poll_seconds = seconds,
+            SettingsChange::PageEnabled(page, enabled) => {
+                return self.save_page_enabled(&page, enabled);
+            }
+            #[cfg(target_os = "linux")]
+            SettingsChange::LinuxApplication(page, id) => {
+                return self.save_linux_application(&page, id.as_deref());
+            }
+            #[cfg(target_os = "linux")]
+            SettingsChange::LinuxShortcuts { page, application } => {
+                ensure!(
+                    self.config
+                        .linux_applications
+                        .get(&page)
+                        .is_some_and(|choice| choice.application == application),
+                    "The selected application changed. Check the selection before applying shortcuts."
+                );
+                return self.save_linux_shortcuts(&page);
+            }
+        }
+        self.save_field("runtime", serde_json::to_value(runtime)?)
     }
 
     /// Back up and atomically replace one file. The application catalogue is read-only here.
@@ -152,16 +192,15 @@ impl SettingsStore {
         let transaction = Transaction::begin(&self.path)?;
         self.check_current()?;
 
-        let config: Config = serde_json::from_value(document.clone())?;
-        config.validate()?;
-
         let mut bytes = serde_json::to_vec_pretty(&document)?;
         bytes.push(b'\n');
+        let config = Config::from_documents(&self.path, Some(&bytes), self.catalogue.as_deref())?;
 
         self.check_current()?;
         transaction.replace(self.json.as_deref(), &bytes)?;
 
-        *self = Self::load_unlocked(transaction.path())?;
+        self.config = config;
+        self.json = Some(bytes);
         Ok(())
     }
 
@@ -247,49 +286,23 @@ impl SettingsStore {
         self.save_document(document)
     }
 
-    /// Persist configurator preferences without deleting shortcuts or rewriting YAML.
-    /// `theme`: desired appearance; all thirteen themes are included.
-    /// `runtime`: validated detection/polling settings.
-    /// `app_pages`: known application page names paired with their enabled flags.
-    /// Validation, stale-editor and write failures propagate to the dialog.
-    pub fn save(
-        &mut self,
-        theme: Theme,
-        runtime: RuntimeSettings,
-        app_pages: &[(String, bool)],
-    ) -> Result<()> {
-        runtime.validate()?;
-        // Keep a previously chosen theme on disk when changing unrelated settings.
-        // Runtime policy independently checks it before drawing, including hand-edited JSON.
-        if theme != self.config.theme {
-            crate::licensing::require(theme)?;
-        }
-
-        for (name, _) in app_pages {
-            let known_page = self
-                .config
+    /// Change one application page's enabled flag while preserving its keys.
+    fn save_page_enabled(&mut self, name: &str, enabled: bool) -> Result<()> {
+        ensure!(
+            self.config
                 .pages
                 .iter()
-                .any(|page| page.name == *name && !page.executables.is_empty());
-            ensure!(known_page, "Unknown application page: {name}");
-        }
-
+                .any(|page| page.name == name && !page.executables.is_empty()),
+            "Unknown application page: {name}"
+        );
         let mut document = self.document()?;
-        document["theme"] = serde_json::to_value(theme)?;
-        document["runtime"] = serde_json::to_value(runtime)?;
-
-        let pages = document["pages"]
+        let page = document["pages"]
             .as_array_mut()
-            .context("settings.json must contain a pages array")?;
-
-        for (name, enabled) in app_pages {
-            let page = pages
-                .iter_mut()
-                .find(|page| page["name"].as_str() == Some(name))
-                .context("application page missing from settings")?;
-            page["enabled"] = (*enabled).into();
-        }
-
+            .context("settings.json must contain a pages array")?
+            .iter_mut()
+            .find(|page| page["name"].as_str() == Some(name))
+            .context("application page missing from settings")?;
+        page["enabled"] = enabled.into();
         self.save_document(document)
     }
 }
@@ -392,15 +405,20 @@ mod tests {
         let catalogue = fs::read(path.with_file_name("applications.yaml"))?;
         let mut settings = SettingsStore::load(&path)?;
 
-        settings.save(
-            Theme::LightClassic,
-            RuntimeSettings {
-                detect_applications: false,
-                auto_switch: false,
-                focus_poll_seconds: 7,
-            },
-            &[("Word".into(), false), ("Codex".into(), false)],
-        )?;
+        settings.apply_change(SettingsChange::Theme(Theme::LightClassic))?;
+        assert_eq!(
+            fs::read(fixture.0.join("settings.json.gui.bak"))?,
+            original_json
+        );
+        for change in [
+            SettingsChange::DetectApplications(false),
+            SettingsChange::AutoSwitch(false),
+            SettingsChange::FocusPollSeconds(7),
+            SettingsChange::PageEnabled("Word".into(), false),
+            SettingsChange::PageEnabled("Codex".into(), false),
+        ] {
+            settings.apply_change(change)?;
+        }
 
         let original: serde_json::Value = serde_json::from_slice(&original_json)?;
         let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
@@ -410,11 +428,6 @@ mod tests {
             fs::read(path.with_file_name("applications.yaml"))?,
             catalogue
         );
-        assert_eq!(
-            fs::read(fixture.0.join("settings.json.gui.bak"))?,
-            original_json
-        );
-
         let loaded = Config::load(&path)?;
         assert_eq!(loaded.theme, Theme::LightClassic);
         assert!(!loaded.runtime.auto_switch);
@@ -424,6 +437,28 @@ mod tests {
         assert!(!loaded.pages[5].enabled);
         assert_eq!(loaded.next_enabled_page(1), 3);
         assert_eq!(loaded.next_enabled_page(4), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn first_save_does_not_copy_catalogue_overrides_into_settings() -> Result<()> {
+        let fixture = Fixture::create()?;
+        let path = fixture.0.join("settings.json");
+        fs::remove_file(&path)?;
+        let catalogue = include_str!("../applications.yaml").replacen(
+            "action: \"hotkey:ctrl+n\"",
+            "action: \"hotkey:ctrl+shift+f12\"",
+            1,
+        );
+        fs::write(path.with_file_name("applications.yaml"), catalogue)?;
+
+        let mut settings = SettingsStore::load(&path)?;
+        assert_eq!(settings.config.pages[2].keys[0].action, "hotkey:ctrl+shift+f12");
+        settings.apply_change(SettingsChange::PageEnabled("Word".into(), false))?;
+
+        let saved: Config = serde_json::from_slice(&fs::read(&path)?)?;
+        assert_eq!(saved.pages[2].keys[0].action, "hotkey:ctrl+n");
+        assert!(!saved.pages[5].enabled);
         Ok(())
     }
 
@@ -455,7 +490,7 @@ mod tests {
         } else {
             assert_eq!(effective.action, "hotkey:f12");
         }
-        settings.save(settings.config.theme, settings.config.runtime, &[("Word".into(), false)])?;
+        settings.apply_change(SettingsChange::PageEnabled("Word".into(), false))?;
         let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
         assert_eq!(saved["pages"][5]["keys"], shared_keys);
         assert_eq!(saved["linux_applications"], document["linux_applications"]);
@@ -490,9 +525,7 @@ mod tests {
         external.push(b'\n');
         fs::write(&path, &external)?;
 
-        assert!(settings
-            .save(Theme::Memphis, RuntimeSettings::default(), &[])
-            .is_err());
+        assert!(settings.apply_change(SettingsChange::Theme(Theme::Memphis)).is_err());
         assert_eq!(fs::read(&path)?, external);
         Ok(())
     }
@@ -507,7 +540,7 @@ mod tests {
             .join(format!("settings.gui-{}.tmp", std::process::id()));
         fs::write(&temporary, b"keep existing staging data")?;
 
-        settings.save(Theme::Memphis, RuntimeSettings::default(), &[])?;
+        settings.apply_change(SettingsChange::Theme(Theme::Memphis))?;
         assert_eq!(Config::load(&path)?.theme, Theme::Memphis);
         assert_eq!(fs::read(&temporary)?, b"keep existing staging data");
         Ok(())

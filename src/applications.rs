@@ -168,15 +168,11 @@ pub fn create_default(path: &Path) -> Result<()> {
     persistence::create_new(path, include_bytes!("../applications.yaml"))
 }
 
-/// Read the catalogue beside `settings`, or use the bundled current default if absent.
-/// Propagate file/parse errors; an invalid existing catalogue is never replaced.
-pub fn load(settings: &Path) -> Result<Catalog> {
+/// Parse the captured catalogue, using the bundled default for an absent file.
+pub(crate) fn parse(settings: &Path, bytes: Option<&[u8]>) -> Result<Catalog> {
     let path = settings.with_file_name("applications.yaml");
-    let yaml = if let Some(bytes) = persistence::read_optional(&path)? {
-        String::from_utf8(bytes).with_context(|| format!("reading {}", path.display()))?
-    } else {
-        include_str!("../applications.yaml").to_owned()
-    };
-    serde_yaml_ng::from_str(&yaml)
+    let yaml = std::str::from_utf8(bytes.unwrap_or(include_bytes!("../applications.yaml")))
+        .with_context(|| format!("reading {}", path.display()))?;
+    serde_yaml_ng::from_str(yaml)
         .with_context(|| format!("parsing application catalog {}", path.display()))
 }

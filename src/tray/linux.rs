@@ -11,7 +11,7 @@ use std::{
     process::Command,
     sync::{mpsc::{self, Receiver, Sender}, Arc},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use zbus::{
     blocking::{connection::Builder, fdo::DBusProxy, Connection},
@@ -250,23 +250,37 @@ fn serve(profile: PathBuf, control: Arc<Control>, stop: Receiver<()>) -> Result<
     let dbus = DBusProxy::new(&bus)?;
     let mut announced = false;
     let mut registered = None;
+    let mut next_watcher_check = Instant::now();
+    let mut previous = control.connection();
     loop {
         // Re-register if the desktop shell starts later or replaces its watcher.
-        let owner = dbus.get_name_owner(WATCHER.try_into()?).ok();
-        if owner != registered {
-            registered = None;
-            if let Some(owner) = owner {
-                if bus.call_method(Some(owner.as_str()), "/StatusNotifierWatcher", Some(WATCHER),
-                    "RegisterStatusNotifierItem", &(ITEM,)).is_ok() {
-                    registered = Some(owner);
-                    if !announced {
-                        println!("Desktop status icon registered.");
-                        announced = true;
+        if Instant::now() >= next_watcher_check {
+            let owner = dbus.get_name_owner(WATCHER.try_into()?).ok();
+            if owner != registered {
+                registered = None;
+                if let Some(owner) = owner {
+                    if bus.call_method(Some(owner.as_str()), "/StatusNotifierWatcher", Some(WATCHER),
+                        "RegisterStatusNotifierItem", &(ITEM,)).is_ok() {
+                        registered = Some(owner);
+                        if !announced {
+                            println!("Desktop status icon registered.");
+                            announced = true;
+                        }
                     }
                 }
             }
+            next_watcher_check = Instant::now() + Duration::from_secs(10);
         }
-        if stop.recv_timeout(Duration::from_secs(10)) != Err(mpsc::RecvTimeoutError::Timeout) {
+        let current = control.connection();
+        if current != previous {
+            previous = current;
+            if registered.is_some() {
+                if let Err(error) = bus.emit_signal(None::<&str>, ITEM, "org.kde.StatusNotifierItem", "NewToolTip", &()) {
+                    eprintln!("Could not update the desktop tooltip: {error:#}");
+                }
+            }
+        }
+        if stop.recv_timeout(Duration::from_millis(250)) != Err(mpsc::RecvTimeoutError::Timeout) {
             break;
         }
     }

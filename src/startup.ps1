@@ -41,12 +41,29 @@ $ownedShortcut = $shell.CreateShortcut($shortcutPath)
 if ($existingShortcut -and $ownedShortcut.Description -ne $marker) {
     throw "Preserving an unrecognized startup shortcut: $shortcutPath"
 }
+
+# Paths are passed directly to the native launcher. A trailing backslash must
+# be doubled before the closing quote.
+$shortcutArguments = (@($env:ULANZIDOCK_STARTUP_EXE, $env:ULANZIDOCK_STARTUP_WORKDIR, $env:ULANZIDOCK_STARTUP_CONFIG) | ForEach-Object {
+    '"' + ($_ -replace '(\\+)$', '$1$1') + '"'
+}) -join ' '
 if ($env:ULANZIDOCK_STARTUP_MODE -eq 'status') {
-    if ($existingShortcut) {
-        Write-Output "Launch at Windows sign-in: enabled (hidden tray launch)"
-        Write-Output "Entry: $shortcutPath"
+    if (-not $existingShortcut) {
+        Write-Output 'Launch at Windows sign-in: disabled'
+        exit 0
     }
-    else { Write-Output 'Launch at Windows sign-in: disabled' }
+    if ($ownedShortcut.TargetPath -ine $env:ULANZIDOCK_STARTUP_LAUNCHER -or $ownedShortcut.Arguments -cne $shortcutArguments) {
+        Write-Output "The sign-in shortcut points to another app or profile path. Run 'startup --enable' to use this copy."
+    }
+    elseif (-not (Test-Path -LiteralPath $ownedShortcut.TargetPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $env:ULANZIDOCK_STARTUP_CONFIG -PathType Leaf)) {
+        Write-Output "The launcher or settings file is missing. Restore it and run 'startup --enable'."
+    }
+    else {
+        Write-Output 'The shortcut for a hidden launch at Windows sign-in is configured.'
+        Write-Output "Settings: $env:ULANZIDOCK_STARTUP_CONFIG"
+    }
+    Write-Output "Entry: $shortcutPath"
     exit 0
 }
 
@@ -62,11 +79,6 @@ if ($env:ULANZIDOCK_STARTUP_MODE -eq 'disable') {
 }
 if ($env:ULANZIDOCK_STARTUP_MODE -ne 'enable') { throw 'Unknown startup operation.' }
 
-# Native argument quoting: each path is data, with no shell expansion. Double quotes
-# were rejected by the caller. Doubling a trailing backslash protects the closing quote.
-$shortcutArguments = (@($env:ULANZIDOCK_STARTUP_EXE, $env:ULANZIDOCK_STARTUP_WORKDIR, $env:ULANZIDOCK_STARTUP_CONFIG) | ForEach-Object {
-    '"' + ($_ -replace '(\\+)$', '$1$1') + '"'
-}) -join ' '
 if ($shortcutArguments.Length -gt 1023) { throw 'Startup paths exceed the Windows shortcut argument limit; preserving the existing entry.' }
 $stagedPath = Join-Path $backupDirectory "$operationId.new.lnk"
 try {
@@ -95,4 +107,5 @@ finally {
 }
 Write-Output 'Enabled hidden tray launch at Windows sign-in for this user.'
 Write-Output "Executable: $env:ULANZIDOCK_STARTUP_EXE"
+Write-Output "Settings: $env:ULANZIDOCK_STARTUP_CONFIG"
 Write-Output "Entry: $shortcutPath"

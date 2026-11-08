@@ -67,9 +67,9 @@ The code is free to use, change and share under the [MIT License](LICENSE).
 
 ## Get it running
 
-Download the right package from [Releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases). Extract the whole archive into a writable folder. On Windows, open `ulanzi-dock-vibeware.exe`. Keep the launcher beside it for startup at sign-in.
+Download a package for your system from [Releases](https://github.com/umbertotechnopreneur/ulanzi-dock-vibeware/releases). For a portable package, extract the whole archive into a writable folder. On Windows, open `ulanzi-dock-vibeware.exe`. Keep the launcher beside it for startup at sign-in.
 
-Linux and macOS Apple Silicon use `./ulanzi-dock-vibeware run`. Features differ by system; see [Windows, Linux and macOS](docs/PLATFORMS.md).
+On Debian and Ubuntu, install the `.deb` and open UlanziDeck from the application menu. From a portable Linux or macOS Apple Silicon archive, use `./ulanzi-dock-vibeware run`. See the [platform guide](docs/PLATFORMS.md) for the options on each system.
 
 Linux source builds also offer `./ulanzi-dock-vibeware configure` to choose supported installed apps, including LibreOffice. Choosing an app keeps its current shortcuts; suggested Linux shortcuts are a separate choice. See [Linux application choices](docs/PLATFORMS.md#linux-application-choices). Linux support is in development.
 
@@ -109,7 +109,7 @@ On page changes, buttons fade in from left to right, top to bottom. The animatio
 
 When the app closes normally, the current dock screen fades to black over one second. This does not change the saved brightness. A forced termination, crash or USB disconnection cannot guarantee the closing animation.
 
-On Windows, a USB disconnection shows a system notification. No click is needed. The app waits 250 ms between reconnect attempts and shows another notification once the dock is ready again. The reconnect notice replaces the disconnect notice. Windows notification settings control whether these notices appear. This notification and automatic reconnect behavior is Windows-only.
+The controller retries automatically when the dock is missing or disconnects. On Windows, it shows a system notification when the dock disconnects and another when it reconnects. Windows notification settings control whether these notices appear.
 
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 
@@ -146,7 +146,7 @@ Copyright © 2026 Umberto Giacobbi. [MIT License](LICENSE).
 
 ## A note on security
 
-Before adding an external library or binary, I require a targeted Microsoft Windows Defender scan of the downloaded archive and extracted files. New imports stay aside until the scan finishes without detections; I record the source and result. See [development](docs/DEVELOPMENT.md) for the first-import rule.
+Before I add a library or binary, I check its source and version and scan the downloaded archive and extracted files with Microsoft Defender. I use the files after the targeted scan finishes without detections. See the [first-import steps](docs/DEVELOPMENT.md#prepare-new-dependencies).
 
 ---
 

@@ -7,7 +7,12 @@ use super::MainWindow;
 use crate::{startup, tray::linux::connection};
 use anyhow::Result;
 use slint::ComponentHandle;
-use std::{path::Path, time::Duration};
+use std::{
+    path::Path,
+    sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc},
+    thread,
+    time::Duration,
+};
 use zbus::{blocking, fdo, Connection};
 
 const INTERFACE: &str = "io.github.umbertotechnopreneur.UlanziDeck.Gui";
@@ -60,28 +65,69 @@ pub(super) fn bind_startup(window: &MainWindow, profile: &Path) {
         return;
     }
     window.set_startup_visible(true);
-    match startup::linux_enabled() {
-        Ok(enabled) => {
-            window.set_startup_enabled(enabled);
-            window.set_startup_ready(true);
-        }
-        Err(error) => window.set_startup_message(format!("{error:#}").into()),
-    }
+    let (request, requests) = mpsc::sync_channel::<bool>(1);
+    let pending = Arc::new(AtomicBool::new(true));
+    let busy = Arc::clone(&pending);
     let weak = window.as_weak();
-    window.on_startup_toggled(move |enabled| {
-        let Some(window) = weak.upgrade() else { return; };
-        match startup::linux_set_enabled(enabled) {
-            Ok(()) => window.set_startup_message("".into()),
-            Err(error) => {
-                match startup::linux_enabled() {
-                    Ok(actual) => window.set_startup_enabled(actual),
-                    Err(_) => {
-                        window.set_startup_enabled(!enabled);
-                        window.set_startup_ready(false);
-                    }
+    let worker = thread::Builder::new().name("sign-in-startup".into()).spawn(move || {
+        let mut state = StartupState::read();
+        busy.store(false, Ordering::Release);
+        if !state.publish(&weak, false) {
+            return;
+        }
+        while let Ok(enabled) = requests.recv() {
+            state.message = "Updating sign-in startup…".into();
+            if !state.publish(&weak, true) {
+                return;
+            }
+            state = match startup::linux_set_enabled(enabled) {
+                Ok(()) => StartupState { enabled: Some(enabled), message: String::new() },
+                Err(error) => {
+                    let mut actual = StartupState::read();
+                    actual.message = format!("Could not update sign-in startup: {error:#}");
+                    actual
                 }
-                window.set_startup_message(format!("{error:#}").into());
+            };
+            busy.store(false, Ordering::Release);
+            if !state.publish(&weak, false) {
+                return;
             }
         }
     });
+    if let Err(error) = worker {
+        window.set_startup_message(format!("Could not read sign-in startup: {error}").into());
+        return;
+    }
+    window.on_startup_toggled(move |enabled| {
+        if pending.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        if request.try_send(enabled).is_err() {
+            pending.store(false, Ordering::Release);
+        }
+    });
+}
+
+struct StartupState {
+    enabled: Option<bool>,
+    message: String,
+}
+
+impl StartupState {
+    fn read() -> Self {
+        match startup::linux_enabled() {
+            Ok(enabled) => Self { enabled: Some(enabled), message: String::new() },
+            Err(error) => Self { enabled: None, message: format!("{error:#}") },
+        }
+    }
+
+    fn publish(&self, window: &slint::Weak<MainWindow>, updating: bool) -> bool {
+        let enabled = self.enabled;
+        let message = self.message.clone();
+        window.upgrade_in_event_loop(move |window| {
+            window.set_startup_enabled(enabled.unwrap_or(false));
+            window.set_startup_ready(enabled.is_some() && !updating);
+            window.set_startup_message(message.into());
+        }).is_ok()
+    }
 }

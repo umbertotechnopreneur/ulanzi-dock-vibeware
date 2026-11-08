@@ -24,14 +24,17 @@
 //! in `licensing`, so this module does not perform network I/O or grant themes.
 
 use super::MainWindow;
-use crate::{licensing, model::Theme};
+use crate::licensing;
 use slint::ComponentHandle;
 use std::{cell::RefCell, time::Duration};
 
 /// Attach callbacks to `window` and return the timer its owner must retain.
 /// Weak window handles prevent the timer and callbacks from keeping closed UI alive.
-pub(super) fn bind(window: &MainWindow) -> slint::Timer {
-    window.set_store_edition(licensing::premium_enabled());
+pub(super) fn bind(window: &MainWindow) -> Option<slint::Timer> {
+    if !licensing::premium_enabled() {
+        return None;
+    }
+    window.set_store_edition(true);
     let weak = window.as_weak();
     window.on_buy_themes(move || {
         if let Some(window) = weak.upgrade() {
@@ -41,9 +44,10 @@ pub(super) fn bind(window: &MainWindow) -> slint::Timer {
         }
     });
     window.on_restore_purchases(licensing::refresh);
-    apply(window, &licensing::snapshot());
+    let initial = licensing::snapshot();
+    apply(window, &initial);
     let weak = window.as_weak();
-    let previous = RefCell::new(None);
+    let previous = RefCell::new(initial);
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -53,13 +57,13 @@ pub(super) fn bind(window: &MainWindow) -> slint::Timer {
                 return;
             };
             let snapshot = licensing::snapshot();
-            if previous.borrow().as_ref() != Some(&snapshot) {
+            if *previous.borrow() != snapshot {
                 apply(&window, &snapshot);
-                *previous.borrow_mut() = Some(snapshot);
+                *previous.borrow_mut() = snapshot;
             }
         },
     );
-    timer
+    Some(timer)
 }
 
 /// Copy one consistent `snapshot` into `window` without changing an unsaved selection.
@@ -69,9 +73,4 @@ fn apply(window: &MainWindow, snapshot: &licensing::Snapshot) {
     window.set_store_can_purchase(snapshot.can_purchase);
     window.set_store_price(snapshot.price.clone().into());
     window.set_store_message(snapshot.message.clone().into());
-    let themes: Vec<slint::SharedString> = Theme::ALL
-        .into_iter()
-        .map(|theme| theme.label().into())
-        .collect();
-    window.set_themes(slint::ModelRc::new(slint::VecModel::from(themes)));
 }
