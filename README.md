@@ -113,6 +113,13 @@ The controller retries automatically when the dock is missing or disconnects. On
 
 Press the wide bottom display to open the page index, then choose a page. Disabled pages cannot be selected. Automatic switching pauses while this menu is open. NEXT PAGE still cycles through the regular pages.
 
+On Windows, with the ten standard pages, the two bottom buttons in the index show
+**APP DETECT ON/OFF** and **AUTO PAGE ON/OFF**. Press and release either button to change its setting.
+Changes are saved immediately. AUTO PAGE becomes available when app detection is
+on. Turning detection off keeps enabled pages available for manual use. These
+buttons show UNAVAILABLE on Linux and macOS, or when a command-line option locks
+the setting for the current run.
+
 ### OBS recording page
 
 New settings include OBS Creator before Themes. The [OBS Creator guide](presets/obs-creator/README.md) explains how to add it to existing settings and how to configure the matching OBS hotkeys. Its recording, scene and audio buttons use all thirteen themes. There is also a [quick-start PDF](docs/obs-creator-quick-start.pdf).

@@ -53,10 +53,8 @@ impl Endpoint {
         super::show_settings().map_err(|error| fdo::Error::Failed(error.to_string()))
     }
 
-    fn quit(&self) -> fdo::Result<()> {
-        slint::invoke_from_event_loop(|| {
-            let _ = slint::quit_event_loop();
-        }).map_err(|error| fdo::Error::Failed(error.to_string()))
+    fn shutdown(&self) -> fdo::Result<()> {
+        super::shutdown::show().map_err(|error| fdo::Error::Failed(error.to_string()))
     }
 }
 

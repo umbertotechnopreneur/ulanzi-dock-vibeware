@@ -36,6 +36,8 @@ mod gui;
 mod licensing;
 #[cfg(target_os = "linux")]
 mod linux_apps;
+#[cfg(target_os = "linux")]
+mod linux_session;
 mod model;
 mod onboarding;
 mod settings;
@@ -84,6 +86,12 @@ enum Command {
         #[cfg(target_os = "linux")]
         #[arg(long, hide = true)]
         start_controller: bool,
+    },
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    Quit {
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Manage launch at sign-in for the current user.
     Startup {
@@ -352,6 +360,10 @@ fn execute(control: Arc<tray::Control>) -> Result<()> {
             )?;
         }
         Command::Startup { enable, disable } => startup::manage(enable, disable)?,
+        #[cfg(target_os = "linux")]
+        Command::Quit { config } => {
+            gui::shutdown::standalone(config.map_or_else(paths::default_settings, Ok)?)?;
+        }
         Command::Doctor => {
             let (_, found) = dock::discover()?;
             println!(

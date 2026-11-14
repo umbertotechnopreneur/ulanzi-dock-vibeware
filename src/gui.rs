@@ -43,6 +43,8 @@ slint::include_modules!();
 mod connection;
 #[cfg(target_os = "linux")]
 pub(crate) mod linux;
+#[cfg(target_os = "linux")]
+pub(crate) mod shutdown;
 mod placement;
 mod store_ui;
 use placement::DialogKind;
@@ -66,11 +68,15 @@ struct Dialogs {
     config: MainWindow,
     _store_timer: Option<slint::Timer>,
     _connection_timer: Option<slint::Timer>,
+    #[cfg(target_os = "linux")]
+    _shutdown: ShutdownDialog,
 }
 
 impl Drop for Dialogs {
     // Hide any visible windows before restart and release the tray's weak reference.
     fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        shutdown::clear();
         placement::remember(self.config.window(), DialogKind::Configuration);
         placement::remember(self.about.window(), DialogKind::About);
         let _ = self.config.hide();
@@ -672,6 +678,10 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode, start_controller: bo
     slint::set_xdg_app_id("ulanzideck").context("setting the Linux desktop application ID")?;
     let config = MainWindow::new().context("creating the configurator")?;
     #[cfg(target_os = "linux")]
+    let shutdown_dialog = ShutdownDialog::new().context("creating the shutdown dialog")?;
+    #[cfg(target_os = "linux")]
+    shutdown::bind(&shutdown_dialog, path.clone());
+    #[cfg(target_os = "linux")]
     linux::bind_startup(&config, &path);
     let connection_timer = connection::bind(
         &config,
@@ -697,6 +707,8 @@ fn create(path: PathBuf, control: Arc<Control>, mode: Mode, start_controller: bo
         config,
         _store_timer: store_timer,
         _connection_timer: connection_timer,
+        #[cfg(target_os = "linux")]
+        _shutdown: shutdown_dialog,
     })
 }
 

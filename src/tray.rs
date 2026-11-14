@@ -1018,6 +1018,7 @@ mod linux_openers {
     static ACTIVE: Mutex<Option<Vec<Child>>> = Mutex::new(None);
 
     pub(super) fn spawn(command: &mut Command) -> Result<()> {
+        crate::linux_session::prepare(command)?;
         let mut active = ACTIVE.lock().unwrap_or_else(PoisonError::into_inner);
         if active.is_none() {
             // Start the reaper before creating any process it would have to own.

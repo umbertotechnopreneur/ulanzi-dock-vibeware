@@ -26,8 +26,10 @@
 use crate::{
     actions::{self, ForegroundProcess},
     dock::{self, ButtonEvent, Dock},
-    model::{Config, PageConfig, RuntimeSettings, Theme, CLOCK_KEY, NEXT_KEY, PAGE_INDEX_NAME},
-    settings::{self, SettingsStore},
+    model::{
+        Config, PageConfig, RuntimeSettings, RuntimeToggle, Theme, CLOCK_KEY, NEXT_KEY, PAGE_INDEX_NAME,
+    },
+    settings::{self, SettingsChange, SettingsStore},
     tray::{ConnectionState, Control},
 };
 use anyhow::{Context, Result};
@@ -172,6 +174,14 @@ impl Controller {
         foreground_process(self.options.runtime(self.config.runtime).detect_applications)
     }
 
+    fn refresh_runtime_controls(&mut self) {
+        self.config.refresh_runtime_controls(
+            self.options.runtime(self.config.runtime),
+            !self.options.no_app_detection,
+            !self.options.no_auto_page,
+        );
+    }
+
     /// Own connection sessions until shutdown. Recover only recognized connection
     /// failures on every platform; configuration/artwork errors are returned to the caller.
     fn run(mut self) -> Result<()> {
@@ -251,6 +261,7 @@ impl Controller {
     fn connect_once(&mut self) -> Result<Dock> {
         self.refresh_preferences();
         self.config.refresh_theme_selector(self.theme)?;
+        self.refresh_runtime_controls();
         let (api, _) = dock::discover()?;
         let dock = Dock::open(&api)?;
 
@@ -306,6 +317,7 @@ impl Controller {
     /// A generated page index is transient and must never become the startup page.
     fn show_page(&mut self, dock: &Dock) -> Result<()> {
         self.actions.cancel_pending();
+        self.refresh_runtime_controls();
         dock.show_transition(
             self.page(),
             self.theme,
@@ -569,6 +581,7 @@ impl Controller {
     fn apply_brightness(&mut self, dock: &Dock, level: u8) -> Result<()> {
         self.config.brightness = level;
         self.config.refresh_key_availability();
+        self.refresh_runtime_controls();
         if self
             .held_key
             .is_some_and(|index| !self.page().key_available(index))
@@ -607,6 +620,37 @@ impl Controller {
             Err(error) => {
                 eprintln!("Could not change brightness: {error:#}");
                 Ok(())
+            }
+        }
+    }
+
+    /// Persist an index toggle against the latest settings, then update the running model.
+    fn toggle_runtime(&mut self, toggle: RuntimeToggle) -> bool {
+        self.actions.cancel_pending();
+        let saved = (|| -> Result<RuntimeSettings> {
+            let _lock = self.control.lock_settings()?;
+            let mut settings = SettingsStore::load(&self.options.config_path)?;
+            let change = match toggle {
+                RuntimeToggle::ApplicationDetection => {
+                    SettingsChange::DetectApplications(!settings.config.runtime.detect_applications)
+                }
+                RuntimeToggle::AutoSwitch => {
+                    SettingsChange::AutoSwitch(!settings.config.runtime.auto_switch)
+                }
+            };
+            settings.apply_change(change)?;
+            Ok(settings.config.runtime)
+        })();
+        match saved {
+            Ok(runtime) => {
+                self.config.runtime = runtime;
+                self.observed_settings = None;
+                self.last_known_process = None;
+                true
+            }
+            Err(error) => {
+                eprintln!("Could not change the dock setting: {error:#}");
+                false
             }
         }
     }
@@ -663,6 +707,7 @@ impl Controller {
                 self.adjust_brightness(dock, increase)?;
                 false
             }
+            ButtonRoute::RuntimeToggle(toggle) => self.toggle_runtime(toggle),
             ButtonRoute::Desktop(action) => {
                 if actions::page_available(self.page(), &self.foreground()) {
                     self.actions.execute(action, &self.page().keys[index].label);

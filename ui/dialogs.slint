@@ -23,7 +23,7 @@
 // Scrollable bodies provide preferred sizes while footers remain reachable.
 // Store properties are display-only snapshots for future premium functionality.
 
-import { AboutSlint, CheckBox, ComboBox, ScrollView, SpinBox } from "std-widgets.slint";
+import { AboutSlint, CheckBox, ComboBox, ScrollView, SpinBox, Spinner } from "std-widgets.slint";
 import { Palette as WidgetPalette } from "std-widgets.slint";
 
 global Palette {
@@ -235,6 +235,29 @@ export component AboutDialog inherits Window {
             TextLink { text: "Privacy"; icon: @image-url("icons/privacy.svg"); clicked => { root.open-link("privacy"); } }
         }
      }
+    }
+}
+
+export component ShutdownDialog inherits Window {
+    title: "UlanziDeck";
+    preferred-width: 380px;
+    preferred-height: 150px;
+    min-width: 320px;
+    background: Palette.paper;
+    icon: @image-url("../assets/brand/ulanzi-dock-icon.png");
+    in-out property <bool> busy;
+    in-out property <string> message: "Shutting down UlanziDeck…";
+    callback dismiss();
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16px;
+            if root.busy: Spinner { indeterminate: true; }
+            Text { text: root.message; color: Palette.ink; wrap: word-wrap; vertical-alignment: center; }
+        }
+        if !root.busy: PixelButton { text: "Close"; clicked => { root.dismiss(); } }
     }
 }
 

@@ -45,7 +45,7 @@ Certificate subject for a local package. StoreConfig supplies the Store publishe
 .PARAMETER Install
 Install the locally signed package, closing the existing app when needed.
 .PARAMETER KeepStaging
-Retain generated manifest, executables and assets for inspection.
+Build and package staging folders are retained on every run.
 .PARAMETER IconsOnly
 Generate MSIX logo assets without building or packaging the application.
 .PARAMETER DetailedPath
@@ -332,7 +332,7 @@ $buildDir = Assert-WorkspacePath (Join-Path $temporaryParent "msix-build-$([Guid
 $outputDir = Assert-WorkspacePath (Join-Path $artifacts 'msix')
 $output = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.msix")
 $unsigned = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.unsigned.msix")
-$certificateFile = Assert-WorkspacePath (Join-Path $outputDir 'ulanzi-dock-vibeware-local.cer')
+$certificateFile = Assert-WorkspacePath (Join-Path $outputDir "ulanzi-dock-vibeware-$version-$Architecture$configurationSuffix.cer")
 $pendingPackage = Join-Path $buildDir 'candidate.msix'
 $pendingCertificate = Join-Path $buildDir 'signing.cer'
 New-Item -ItemType Directory -Force -Path $temporaryParent, $outputDir | Out-Null
@@ -340,8 +340,14 @@ $lockPath = Assert-WorkspacePath (Join-Path $temporaryParent 'msix-build.lock')
 $buildLock = [IO.FileStream]::new($lockPath, 'OpenOrCreate', 'ReadWrite', 'None', 1, 'DeleteOnClose')
 
 try {
+    $destination = if ($StoreConfig -and !$SignStoreTestPackage) { $unsigned } else { $output }
+    foreach ($path in $destination, $certificateFile) {
+        if (Test-Path -LiteralPath $path) { throw "Output already exists: $path. Choose a new PackageVersion." }
+    }
     if (Test-Path -LiteralPath $stage) {
-        Remove-Item -LiteralPath (Assert-WorkspacePath $stage) -Recurse -Force
+        $previousStage = Assert-WorkspacePath "$stage-previous-$([Guid]::NewGuid().ToString('N'))"
+        Move-Item -LiteralPath (Assert-WorkspacePath $stage) -Destination $previousStage
+        Write-Host "Previous package staging retained: $previousStage"
     }
     New-Item -ItemType Directory -Path $stage, $buildDir | Out-Null
     Push-Location -LiteralPath $root
@@ -386,10 +392,11 @@ try {
     # Ship clean defaults, never the developer's personal settings or completed setup.
     & (Join-Path $seedOutput 'ulanzi-dock-vibeware.exe') init --config (Join-Path $stage 'settings.json')
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the initial package settings.' }
-    # The seeding process has exited; its empty lock sidecar is runtime state,
-    # not package content. Remove only this known file within the staging folder.
+    # Keep the generator's lock with the build output, outside the package payload.
     $seedLock = Join-Path $stage 'settings.json.lock'
-    if (Test-Path -LiteralPath $seedLock) { Remove-Item -LiteralPath $seedLock }
+    if (Test-Path -LiteralPath $seedLock) {
+        Move-Item -LiteralPath $seedLock -Destination (Join-Path $buildDir 'settings.json.lock')
+    }
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $stage 'LICENSE') -Force
     Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination (Join-Path $stage 'README.md') -Force
     $notices = Join-Path $stage 'Notices'
@@ -454,7 +461,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "MakeAppx failed with exit code $LASTEXITCODE." }
 
     if ($StoreConfig -and !$SignStoreTestPackage) {
-        [IO.File]::Move($pendingPackage, $unsigned, $true)
+        [IO.File]::Move($pendingPackage, $unsigned)
         Write-Host "Unsigned Microsoft Store submission package: $unsigned"
         return
     }
@@ -479,8 +486,8 @@ try {
     if ($null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
         throw 'The MSIX signer does not match the local UlanziDeck certificate.'
     }
-    [IO.File]::Move($pendingPackage, $output, $true)
-    [IO.File]::Move($pendingCertificate, $certificateFile, $true)
+    [IO.File]::Move($pendingPackage, $output)
+    [IO.File]::Move($pendingCertificate, $certificateFile)
 
     if ($Install) {
         Add-AppxPackage -Path $output -ForceApplicationShutdown -ForceUpdateFromAnyVersion
@@ -491,15 +498,7 @@ try {
     Write-Host "MSIX ready: $output"
 }
 finally {
-    try {
-        if (Test-Path -LiteralPath $buildDir) {
-            Remove-Item -LiteralPath (Assert-WorkspacePath $buildDir) -Recurse -Force
-        }
-        if ((Test-Path -LiteralPath $stage) -and -not $KeepStaging) {
-            Remove-Item -LiteralPath (Assert-WorkspacePath $stage) -Recurse -Force
-        }
-    }
-    finally {
-        $buildLock.Dispose()
-    }
+    $buildLock.Dispose()
+    Write-Host "Build output retained: $buildDir"
+    Write-Host "Package staging retained: $stage"
 }

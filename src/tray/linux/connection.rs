@@ -41,6 +41,17 @@ impl Endpoint {
     fn reconnect(&self) {
         self.0.request_reconnect();
     }
+
+    fn quit(&self) {
+        self.0.stop();
+    }
+}
+
+pub(crate) fn quit(bus: &Connection, name: &str) -> Result<()> {
+    if state(bus, name)?.is_some() {
+        bus.call_method(Some(name), PATH, Some(INTERFACE), "Quit", &())?;
+    }
+    Ok(())
 }
 
 /// A missing bus owner means the controller for this profile is absent.

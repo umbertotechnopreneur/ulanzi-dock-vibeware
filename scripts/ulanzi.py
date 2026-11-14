@@ -164,7 +164,7 @@ binary=/usr/lib/ulanzideck/ulanzi-dock-vibeware
 if [ "$#" -eq 0 ]; then set -- run; fi
 # Desktop launches have no terminal. Preserve errors and panic backtraces locally.
 case "$1" in
-    run|configure|launch)
+    run|configure|about|quit|launch)
         logdir="${XDG_STATE_HOME:-$HOME/.local/state}/ulanzideck/logs"
         if mkdir -p "$logdir"; then
             if log=$(umask 077; mktemp "$logdir/$1-XXXXXXXX.log"); then
@@ -184,7 +184,7 @@ if [ "$1" = launch ]; then
     set -- configure --start-controller
 fi
 case "$1" in
-    run|configure|about|brightness)
+    run|configure|about|quit|brightness)
         profile="${XDG_CONFIG_HOME:-$HOME/.config}/ulanzideck/settings.json"
         # An explicit --config belongs to the caller; do not append a second one.
         for argument in "$@"; do

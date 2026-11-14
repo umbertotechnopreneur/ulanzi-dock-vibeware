@@ -29,7 +29,10 @@ fn bus() -> Result<&'static Connection> {
 }
 
 fn spawn(program: &str, args: &[&std::ffi::OsStr]) -> Result<()> {
-    let mut child = Command::new(program).args(args).stdin(Stdio::null()).spawn()
+    let mut command = Command::new(program);
+    command.args(args).stdin(Stdio::null());
+    crate::linux_session::prepare(&mut command)?;
+    let mut child = command.spawn()
         .with_context(|| format!("starting {program}"))?;
     std::thread::spawn(move || { let _ = child.wait(); });
     Ok(())
