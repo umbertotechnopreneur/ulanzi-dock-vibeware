@@ -2,7 +2,7 @@
 
 use crate::{
     dock::ButtonEvent,
-    model::{Config, Theme, CLOCK_KEY, NEXT_KEY},
+    model::{Config, RuntimeToggle, Theme, CLOCK_KEY, NEXT_KEY},
 };
 use anyhow::{Context, Result};
 
@@ -14,6 +14,7 @@ pub(crate) enum ButtonRoute<'a> {
     Page(usize),
     Theme(Theme),
     Brightness(bool),
+    RuntimeToggle(RuntimeToggle),
     Desktop(&'a str),
 }
 
@@ -71,6 +72,9 @@ pub(crate) fn route_button<'a>(
         let theme = Theme::from_slug(slug)
             .with_context(|| format!("unknown selected theme '{slug}'"))?;
         return Ok(ButtonRoute::Theme(theme));
+    }
+    if let Some(toggle) = RuntimeToggle::from_action(action) {
+        return Ok(ButtonRoute::RuntimeToggle(toggle));
     }
     if !actions_enabled {
         return Ok(ButtonRoute::Released);

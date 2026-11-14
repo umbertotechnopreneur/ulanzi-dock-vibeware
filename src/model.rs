@@ -32,6 +32,24 @@ pub const NEXT_KEY: usize = 4;
 pub const CLOCK_KEY: usize = 13;
 pub const PAGE_INDEX_NAME: &str = "Page index";
 pub const THEME_KEYS: [usize; 12] = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12];
+pub const APP_DETECTION_ACTION: &str = "settings:app-detection";
+pub const AUTO_SWITCH_ACTION: &str = "settings:auto-switch";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RuntimeToggle {
+    ApplicationDetection,
+    AutoSwitch,
+}
+
+impl RuntimeToggle {
+    pub(crate) fn from_action(action: &str) -> Option<Self> {
+        match action {
+            APP_DETECTION_ACTION => Some(Self::ApplicationDetection),
+            AUTO_SWITCH_ACTION => Some(Self::AutoSwitch),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "kebab-case")]
@@ -526,7 +544,7 @@ impl Config {
     }
 
     /// Rebuild direct page choices from the current ordered pages.
-    /// Keep navigation/clock slots fixed; validation enforces the twelve-choice limit.
+    /// Use the two remaining slots for settings when page choices leave them free.
     fn refresh_page_index(&mut self) {
         let mut keys = vec![
             KeyConfig {
@@ -588,6 +606,49 @@ impl Config {
         } else {
             self.pages.push(index);
         }
+        self.refresh_runtime_controls(self.runtime, true, true);
+    }
+
+    /// Project effective runtime settings into the index without storing widget state.
+    pub fn refresh_runtime_controls(
+        &mut self,
+        runtime: RuntimeSettings,
+        detection_available: bool,
+        auto_switch_available: bool,
+    ) {
+        let position = self.page_index_position();
+        let page = &mut self.pages[position];
+        let detection_on = cfg!(target_os = "windows") && runtime.detect_applications;
+        for (index, action, label, enabled, available, asset) in [
+            (
+                11,
+                APP_DETECTION_ACTION,
+                "APP DETECT",
+                detection_on,
+                detection_available,
+                "windows:11",
+            ),
+            (
+                12,
+                AUTO_SWITCH_ACTION,
+                "AUTO PAGE",
+                detection_on && runtime.auto_switch,
+                auto_switch_available && detection_on,
+                "windows:4",
+            ),
+        ] {
+            if page.keys[index].action != "none" && page.keys[index].action != action {
+                continue;
+            }
+            page.keys[index] = KeyConfig {
+                label: format!("{label} {}", if enabled { "ON" } else { "OFF" }),
+                action: action.into(),
+                description: format!("Toggle {}", label.to_ascii_lowercase()),
+                asset: asset.into(),
+            };
+            page.key_availability.resize(KEY_COUNT, true);
+            page.key_availability[index] = cfg!(target_os = "windows") && available;
+        }
     }
 
     // Per-key availability is derived in memory; no disabled images or flags are saved.
@@ -604,6 +665,10 @@ impl Config {
                 .map(|key| match key.action.as_str() {
                     "brightness:up" => self.brightness < 100,
                     "brightness:down" => self.brightness > 0,
+                    APP_DETECTION_ACTION => cfg!(target_os = "windows"),
+                    AUTO_SWITCH_ACTION => {
+                        cfg!(target_os = "windows") && self.runtime.detect_applications
+                    }
                     "none" if page.name == PAGE_INDEX_NAME => false,
                     action => action.strip_prefix("page:go:").map_or(true, |name| {
                         targets
@@ -768,6 +833,12 @@ fn validate_page_keys(
     for (index, key) in keys.iter().enumerate() {
         let action = key.action.as_str();
         let valid = if matches!(action, "page:next" | "brightness:up" | "brightness:down") {
+            Ok(())
+        } else if RuntimeToggle::from_action(action).is_some() {
+            anyhow::ensure!(
+                name == PAGE_INDEX_NAME,
+                "runtime controls belong on the page index"
+            );
             Ok(())
         } else if let Some(target) = action.strip_prefix("page:go:") {
             anyhow::ensure!(

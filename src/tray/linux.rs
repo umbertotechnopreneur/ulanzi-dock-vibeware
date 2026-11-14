@@ -101,26 +101,31 @@ impl Indicator {
     async fn activate(&self, _x: i32, _y: i32, #[zbus(connection)] bus: &zbus::Connection)
         -> zbus::fdo::Result<()>
     {
-        open_dialog(bus, &self.profile, false).await.map_err(menu_error)
+        open_dialog(bus, &self.profile, "configure").await.map_err(menu_error)
     }
 }
 
-async fn open_dialog(bus: &zbus::Connection, profile: &std::path::Path, about: bool) -> Result<()> {
-    let method = if about { "ShowAbout" } else { "ShowSettings" };
+async fn open_dialog(bus: &zbus::Connection, profile: &std::path::Path, action: &str) -> Result<()> {
+    let method = match action {
+        "about" => "ShowAbout",
+        "quit" => "Shutdown",
+        _ => "ShowSettings",
+    };
     if crate::gui::linux::request(bus, profile, method).await? {
         return Ok(());
     }
     let mut command = Command::new(std::env::current_exe()?);
-    if about {
+    if action == "about" {
         command.args(["about", "--gui"]);
     } else {
-        command.arg("configure");
+        command.arg(action);
     }
     command.arg("--config").arg(profile);
     super::linux_openers::spawn(&mut command)
 }
 
 fn menu_error(error: anyhow::Error) -> zbus::fdo::Error {
+    eprintln!("Tray action failed: {error:#}");
     zbus::fdo::Error::Failed(format!("{error:#}"))
 }
 
@@ -137,7 +142,6 @@ const MENU_ITEMS: [(i32, &str); 4] =
 
 struct Menu {
     profile: PathBuf,
-    control: Arc<Control>,
 }
 
 fn menu_properties(id: i32, requested: &[String]) -> Properties {
@@ -194,16 +198,10 @@ impl Menu {
             return Ok(());
         }
         match id {
-            ABOUT => open_dialog(bus, &self.profile, true).await,
+            ABOUT => open_dialog(bus, &self.profile, "about").await,
             GITHUB => super::open_browser(env!("CARGO_PKG_REPOSITORY")),
-            SETTINGS => open_dialog(bus, &self.profile, false).await,
-            QUIT => {
-                if let Err(error) = crate::gui::linux::request(bus, &self.profile, "Quit").await {
-                    eprintln!("Could not close the UlanziDeck window: {error:#}");
-                }
-                self.control.stop();
-                Ok(())
-            }
+            SETTINGS => open_dialog(bus, &self.profile, "configure").await,
+            QUIT => open_dialog(bus, &self.profile, "quit").await,
             _ => Ok(()),
         }.map_err(menu_error)
     }
@@ -237,7 +235,7 @@ fn serve(profile: PathBuf, control: Arc<Control>, stop: Receiver<()>) -> Result<
         .map_err(|error| eprintln!("Could not publish the controller connection state: {error:#}"))
         .ok();
     let bus = Builder::session()?.method_timeout(Duration::from_secs(1))
-        .serve_at("/Menu", Menu { profile: profile.clone(), control: Arc::clone(&control) })?
+        .serve_at("/Menu", Menu { profile: profile.clone() })?
         .serve_at(ITEM, Indicator::new(profile, Arc::clone(&control))?)?.build().context("opening the desktop session bus")?;
     if stop.try_recv().is_ok() { return Ok(()); }
 
